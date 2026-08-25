@@ -153,8 +153,8 @@ export class MixerGraph {
   /** Browser-reported output latency, where the browser exposes it (H15). */
   outputLatencyMs(): Measurement<number> {
     const latency = this.context?.outputLatency;
-    if (typeof latency !== "number" || Number.isNaN(latency)) {
-      return notExposed("This browser does not report AudioContext output latency.");
+    if (typeof latency !== "number" || !Number.isFinite(latency) || latency <= 0) {
+      return notExposed("This browser does not report a positive AudioContext output latency.");
     }
     return measured(latency * 1_000);
   }
