@@ -20,11 +20,11 @@ This section records implementation state; it does not weaken the acceptance cri
 
 - React, TypeScript and Vite client surfaces, the SQLite Durable Object room service, control-plane WebSocket, presenter simulation, media pipeline, inspector, telemetry and failure registry are present.
 - `moqtail` is exactly pinned at `0.12.1` and imported only by `MoqTransportAdapter`.
-- `wrangler.jsonc` leaves the relay endpoint unset, sets `MOQT_TRANSPORT_VERIFIED` to `false`, `MOQ_ROUTING_ENFORCEMENT` to `cooperative` and `MOQ_DISCOVERY` to `unknown`.
-- The adapter registry knows the supported draft metadata, but the pinned client frames draft 16 only. It refuses the draft-20 target without downgrading.
-- Short-lived, room-scoped relay-credential minting is implemented, including optional signing. With no draft-20 endpoint configured, the room service returns no credential; relay acceptance, enforcement and expiry remain unverified.
+- `wrangler.jsonc` pins the operational Cloudflare draft-16 endpoint and keeps `MOQT_TRANSPORT_VERIFIED` at `false`, `MOQ_ROUTING_ENFORCEMENT` at `cooperative` and `MOQ_DISCOVERY` at `unknown`.
+- The adapter registry knows the supported draft metadata, while the pinned client frames draft 16 only and refuses any configured draft it cannot frame without downgrading.
+- The `real-fabric-production` isolated relay is provisioned with upstream fallback disabled. The production Worker holds a seven-day, relay-scoped publish/subscribe token that expires at `2026-09-01T20:38:32Z`; relay acceptance and expiry behaviour remain unverified until a live browser trace runs.
 - Presenter responses are scripted and visibly labelled. There is no live recognition, model, synthesis or AI-worker transport pipeline.
-- `NetworkProbe` can compare a configured relay's WebTransport reachability with the room-service health gate. With no endpoint configured it returns `not_run`, so there is no live UDP/HTTP-3 result.
+- `NetworkProbe` can compare the configured relay's WebTransport reachability with the room-service health gate. The live health endpoint confirms the relay and credential configuration, but no connected browser was available to run the UDP/HTTP-3 probe.
 - Dynamic device tracking, packet-loss concealment, bounded recovery and silence-gated drift correction are implemented and unit-tested; they have not passed acoustic or live-relay acceptance.
 - A bounded capture adapter retains `MediaStreamTrackProcessor` as the preferred Chrome path and adds an exact-frame AudioWorklet path for future desktop evaluation. Selection and framing are unit-tested; real-browser and acoustic parity remain open.
 - Concurrent-room limits, relay credential rate-limiting and the per-room AI cost ceiling remain product requirements rather than implemented controls.
@@ -101,16 +101,16 @@ Point 4 is new, and it is what the AI routing controls in FR8 demonstrate. Mutin
 
 ### 2.1 Draft pin:
 
-**The only live-audio target is `draft-ietf-moq-transport-20`.** All draft-specific behaviour stays strictly encapsulated behind `MoqTransportAdapter` in §6.4. The application must connect live audio using an earlier MOQT draft merely because a relay for that draft is available.
+**The current live-audio target is Cloudflare's operational `draft-ietf-moq-transport-16` relay.** All draft-specific behaviour stays strictly encapsulated behind `MoqTransportAdapter` in §6.4. Draft 20 remains the forward target when a compatible client and deployed endpoint are available; moving to it must not change room semantics, UI state or the audio pipeline.
 
-As of 25 August 2026, the IETF datatracker publishes `draft-ietf-moq-transport-19`. Cloudflare documents production relay support for draft 16. Those facts make Gate 1 an external dependency, not permission to alter the product claim.
+As of 25 August 2026, the IETF datatracker publishes `draft-ietf-moq-transport-19`, while Cloudflare documents production relay support for drafts 14 and 16. The demo therefore uses draft 16 to establish the real transport boundary without claiming that this draft is the final protocol.
 
 The current repository therefore behaves as follows:
 
 1. Room membership, routing, presenter simulation, the frontend, media components, inspector, telemetry and automated tests continue independently of relay availability.
-2. `MoqTransportAdapter.connect` refuses any configured draft other than `20`.
-3. `MOQT_TRANSPORT_VERIFIED=false` causes the room service to return no relay credential and the client to show `draft_endpoint_missing` before any connection attempt.
-4. A draft-20 endpoint, compatible client path and least-privilege credential model must be proven together with a reproducible browser-to-relay trace before the verification flag can change.
+2. `MoqTransportAdapter.connect` attempts exactly the configured draft when the pinned client can frame it, and refuses any other draft without downgrading.
+3. A configured endpoint and provisioned credential permit a real attempt; `MOQT_TRANSPORT_VERIFIED=false` prevents that attempt from being presented as accepted transport.
+4. The configured draft-16 endpoint, client path and relay credential must pass a reproducible browser-to-relay trace before the verification flag can change.
 5. Until that trace exists, the product makes no interoperability, latency, fan-out or live-audio claim.
 
 ## 3. User and value
