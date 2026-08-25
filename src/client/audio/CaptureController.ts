@@ -1,5 +1,13 @@
 import { type Measurement, measured, notExposed } from "../../shared/measurement";
 import { AUDIO_FRAME_DURATION_MS } from "./frame";
+import {
+  type AudioCaptureAdapter,
+  CAPTURE_FRAME_SAMPLES,
+  CAPTURE_SAMPLE_RATE,
+  type CapturePath,
+  createAudioCaptureAdapter,
+  inspectCaptureSupport,
+} from "./UniversalAudioCaptureAdapter";
 import { VoiceActivityDetector } from "./VoiceActivityDetector";
 
 /**
@@ -11,7 +19,6 @@ import { VoiceActivityDetector } from "./VoiceActivityDetector";
  * rather than assumed.
  */
 
-export const CAPTURE_SAMPLE_RATE = 48_000;
 export const DEFAULT_BITRATE = 32_000;
 
 export interface CaptureOptions {
@@ -24,22 +31,13 @@ export interface CaptureOptions {
   onError?: (error: Error) => void;
 }
 
-interface AudioDataReader {
-  read(): Promise<{ done: boolean; value?: AudioData }>;
-  cancel(): Promise<void>;
-}
-
-/** Chromium's insertable-streams surface. Absent elsewhere, and not shimmed. */
-interface TrackProcessorConstructor {
-  new (init: { track: MediaStreamTrack }): { readable: ReadableStream<AudioData> };
-}
-
 export class CaptureController {
   private stream: MediaStream | null = null;
   private encoder: AudioEncoder | null = null;
-  private reader: AudioDataReader | null = null;
+  private adapter: AudioCaptureAdapter | null = null;
   private readonly detector = new VoiceActivityDetector();
   private dtx: Measurement<boolean> = notExposed("Capture has not started.");
+  private path: Measurement<CapturePath> = notExposed("Capture has not started.");
   private encodedFrames = 0;
   private encodedBytes = 0;
   private draining = false;
@@ -58,14 +56,8 @@ export class CaptureController {
     if (!("AudioEncoder" in globalThis)) {
       throw new Error("WebCodecs AudioEncoder is not exposed by this browser.");
     }
-    const processorConstructor = (
-      globalThis as unknown as { MediaStreamTrackProcessor?: TrackProcessorConstructor }
-    ).MediaStreamTrackProcessor;
-    if (!processorConstructor) {
-      throw new Error(
-        "MediaStreamTrackProcessor is not exposed by this browser, so captured audio cannot reach the Opus encoder.",
-      );
-    }
+    const support = inspectCaptureSupport();
+    if (!support.available) throw new Error(support.reason);
 
     // H4: echo cancellation is a defence, not the mechanism. Headphones are.
     this.stream = await navigator.mediaDevices.getUserMedia({
@@ -79,69 +71,57 @@ export class CaptureController {
       video: false,
     });
 
-    const bitrate = options.bitrate ?? DEFAULT_BITRATE;
-    this.dtx = await probeDtx(bitrate);
-    const configuration = buildConfiguration(bitrate, this.dtx);
+    try {
+      const bitrate = options.bitrate ?? DEFAULT_BITRATE;
+      this.dtx = await probeDtx(bitrate);
+      const configuration = buildConfiguration(bitrate, this.dtx);
 
-    this.encoder = new AudioEncoder({
-      output: (chunk) => {
-        this.encodedFrames += 1;
-        this.encodedBytes += chunk.byteLength;
-        options.onEncodedFrame(chunk);
-      },
-      error: (error) => {
-        // Never swallowed: an encoder that dies must surface as a failure state.
-        options.onError?.(new Error(`Opus encoder failed: ${error.name}`));
-      },
-    });
-    this.encoder.configure(configuration);
+      this.encoder = new AudioEncoder({
+        output: (chunk) => {
+          this.encodedFrames += 1;
+          this.encodedBytes += chunk.byteLength;
+          options.onEncodedFrame(chunk);
+        },
+        error: (error) => {
+          // Never swallowed: an encoder that dies must surface as a failure state.
+          options.onError?.(new Error(`Opus encoder failed: ${error.name}`));
+        },
+      });
+      this.encoder.configure(configuration);
 
-    const track = this.stream.getAudioTracks()[0];
-    if (!track) {
+      const scratch = new Float32Array(CAPTURE_FRAME_SAMPLES);
+      this.adapter = createAudioCaptureAdapter();
+      await this.adapter.start(this.stream, {
+        onFrame: (data) => {
+          try {
+            data.copyTo(scratch, { planeIndex: 0, frameCount: CAPTURE_FRAME_SAMPLES });
+            const event = this.detector.observe(scratch);
+            if (event === "onset") options.onOnset?.();
+            if (event === "release") options.onRelease?.();
+            this.encoder?.encode(data);
+          } catch (error) {
+            options.onError?.(error instanceof Error ? error : new Error("Capture encode failed."));
+          }
+        },
+        onError: (error) => options.onError?.(error),
+      });
+      this.path = measured(this.adapter.path);
+      this.encodedFrames = 0;
+      this.encodedBytes = 0;
+      return this.stream;
+    } catch (error) {
       await this.stop();
-      throw new Error("The microphone stream carries no audio track.");
-    }
-    const processor = new processorConstructor({ track });
-    this.reader = processor.readable.getReader() as unknown as AudioDataReader;
-    void this.pump(options);
-    return this.stream;
-  }
-
-  private async pump(options: CaptureOptions): Promise<void> {
-    const reader = this.reader;
-    if (!reader) return;
-    const scratch = new Float32Array(2_048);
-    while (this.reader === reader) {
-      let result: { done: boolean; value?: AudioData };
-      try {
-        result = await reader.read();
-      } catch (error) {
-        if (this.reader === reader) {
-          options.onError?.(error instanceof Error ? error : new Error("Capture read failed."));
-        }
-        return;
-      }
-      if (result.done || !result.value) return;
-      const data = result.value;
-      try {
-        const frames = Math.min(scratch.length, data.numberOfFrames);
-        const view = scratch.subarray(0, frames);
-        data.copyTo(view, { planeIndex: 0, frameCount: frames });
-        const event = this.detector.observe(view);
-        if (event === "onset") options.onOnset?.();
-        if (event === "release") options.onRelease?.();
-        this.encoder?.encode(data);
-      } catch (error) {
-        options.onError?.(error instanceof Error ? error : new Error("Capture encode failed."));
-      } finally {
-        data.close();
-      }
+      throw error;
     }
   }
 
   /** FR3: whether DTX is actually enabled, never a claim that it is. */
   dtxEnabled(): Measurement<boolean> {
     return this.dtx;
+  }
+
+  capturePath(): Measurement<CapturePath> {
+    return this.path;
   }
 
   get speaking(): boolean {
@@ -167,10 +147,10 @@ export class CaptureController {
   async stop(): Promise<void> {
     if (this.draining) return;
     this.draining = true;
-    const reader = this.reader;
-    this.reader = null;
+    const adapter = this.adapter;
+    this.adapter = null;
     try {
-      await reader?.cancel();
+      await adapter?.stop();
     } catch {
       // A cancelled reader on a stopped track is expected during teardown.
     }
@@ -185,6 +165,7 @@ export class CaptureController {
       this.stream = null;
       this.detector.reset();
       this.dtx = notExposed("Capture has stopped.");
+      this.path = notExposed("Capture has stopped.");
       this.draining = false;
     }
   }

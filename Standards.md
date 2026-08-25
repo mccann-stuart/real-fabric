@@ -11,7 +11,10 @@ Real Fabric's media path is intentionally narrow:
 
 ```text
 getUserMedia
-  -> MediaStreamTrackProcessor
+  -> UniversalAudioCaptureAdapter
+       -> MediaStreamTrackProcessor (preferred Chrome fast path)
+       -> MediaStreamAudioSourceNode + capture AudioWorklet
+  -> exact 960-sample mono frames
   -> WebCodecs AudioEncoder (Opus)
   -> MoqTransportAdapter
   -> WebTransport / HTTP/3 / QUIC / MOQT draft 20
@@ -24,7 +27,7 @@ The current code requires:
 - a secure context;
 - `WebTransport`;
 - WebCodecs `AudioEncoder` with Opus at 48 kHz, mono and 32 kbit/s;
-- `MediaStreamTrackProcessor` for capture;
+- either `MediaStreamTrackProcessor` or `MediaStreamAudioSourceNode` plus `AudioWorkletNode` for capture;
 - WebCodecs `AudioDecoder` for received Opus;
 - `AudioWorkletNode` and a running `AudioContext` for listener-side playout;
 - a compatible MOQT endpoint and a server-minted relay credential.
@@ -83,7 +86,7 @@ Until a combination meets all ten conditions, document it as unverified.
 
 ## 5. Current automated coverage
 
-The suite has 113 passing automated tests across eight files. It covers room and Worker behaviour, validation, MOQT setup framing, credential scope and lifetime, network-probe classification, jitter buffering, packet-loss concealment, device changes, routing, presenter simulation, failure-registry invariants, telemetry sanitisation, reconnection policy, layout logic and synthetic long-run buffer bounds.
+The suite has 118 passing automated tests across nine files. It covers room and Worker behaviour, validation, MOQT setup framing, credential scope and lifetime, network-probe classification, capture-path selection, exact 960-sample frame assembly, jitter buffering, packet-loss concealment, device changes, routing, presenter simulation, failure-registry invariants, telemetry sanitisation, reconnection policy, layout logic and synthetic long-run buffer bounds.
 
 Automated tests do not provide:
 
@@ -97,32 +100,32 @@ Automated tests do not provide:
 - real mobile lifecycle or device-route tests;
 - the audible ten-minute or two clean venue-network runs.
 
-## 6. Candidate desktop capture boundary
+## 6. Implemented desktop capture boundary
 
-`MediaStreamTrackProcessor` is the first code-level barrier to evaluating Safari and Firefox as future desktop configurations. A proposed `UniversalAudioCaptureAdapter`, mobile support and Wasm codec are not implemented or approved, so they are recorded here as a decision boundary rather than as the current architecture.
+[`UniversalAudioCaptureAdapter.ts`](src/client/audio/UniversalAudioCaptureAdapter.ts) now removes `MediaStreamTrackProcessor` as the first code-level barrier to evaluating Safari and Firefox as future desktop configurations. It retains that API as the preferred Chrome fast path and selects a same-origin [`capture-worklet.js`](public/audio/capture-worklet.js) path only where `AudioData`, `AudioContext` and `AudioWorkletNode` are exposed. This is an implemented capture seam, not a browser-support claim: no additional browser configuration has passed H3, no mobile scope is approved, and there is no Wasm codec.
 
-The smallest useful boundary would let `CaptureController` select a capture source without changing the encoder, room or transport contracts:
+`CaptureController` selects the capture source without changing the encoder, room or transport contracts:
 
 ```text
 microphone MediaStreamTrack
   -> capture adapter
-       -> current MediaStreamTrackProcessor path
-       -> candidate MediaStreamAudioSourceNode + capture AudioWorklet path
+       -> MediaStreamTrackProcessor path
+       -> MediaStreamAudioSourceNode + capture AudioWorklet path
   -> exact 960-sample mono frames at 48 kHz
   -> existing Opus encoder and publication path
 ```
 
-Any implementation of that boundary must meet these constraints:
+The implementation observes these constraints:
 
-- Keep the current `MediaStreamTrackProcessor` path available until the alternative has equivalent measured behaviour on the recognised Chrome/macOS configuration.
-- Aggregate browser render quanta into exact 20 ms, 960-sample frames with monotonic media timestamps.
-- Bound queues and pre-allocate or pool worklet-thread storage. The `process()` callback must not perform blocking work, resize buffers or create an unbounded allocation rate.
-- Treat transferable `ArrayBuffer` messages and `SharedArrayBuffer` ring buffers as different designs. Transfer can avoid a copy but still requires storage management; shared memory additionally requires a verified cross-origin-isolated deployment.
+- The `MediaStreamTrackProcessor` path remains preferred where exposed until the alternative has equivalent measured behaviour on the recognised Chrome/macOS configuration.
+- Arbitrary processor quanta and browser render quanta are aggregated into exact 20 ms, 960-sample frames with monotonic media timestamps.
+- Worklet PCM storage is an eight-buffer transferable `ArrayBuffer` pool. Exhaustion drops and reports frames; it cannot create an unbounded queue or allocation rate.
+- No `SharedArrayBuffer` is used, so the capture seam does not assume a cross-origin-isolated deployment.
 - Keep voice-onset detection local and fast enough to leave a measured end-to-end budget for H6. A local callback or unit test does not prove audible stop within 300 ms.
 - Preserve `Measurement` truthfulness for DTX, levels, timing and unsupported codec features.
-- Keep codec selection behind a separate interface if a second implementation is approved. A Wasm Opus fallback would be a new production dependency and needs explicit approval, licensing review, bundle-size measurement and native-versus-Wasm parity tests.
+- A Wasm Opus fallback remains unimplemented. It would be a new production dependency and still needs explicit approval, licensing review, bundle-size measurement and native-versus-Wasm parity tests.
 
-This candidate addresses future desktop evaluation only. Mobile publishing, background lifecycle handling and communications-audio routing remain outside v1 and require a separate product decision.
+The pre-flight now reports which capture path is available, and the inspector reports which path is active. This boundary addresses future desktop evaluation only. Mobile publishing, background lifecycle handling and communications-audio routing remain outside v1 and require a separate product decision.
 
 ### 6.1 Existing playback, drift and barge-in seams
 
@@ -140,7 +143,7 @@ The test plan separates fast deterministic tests from browser, relay, acoustic a
 
 | Tier | Purpose | Current evidence | Next evidence boundary |
 |---|---|---|---|
-| 1 — unit and subsystem | Deterministic contracts, state machines and bounded media behaviour | 113 Vitest tests across eight files | Add focused tests with each new seam; keep protocol and failure-state assertions exact. |
+| 1 — unit and subsystem | Deterministic contracts, state machines and bounded media behaviour | 118 Vitest tests across nine files | Add focused tests with each new seam; keep protocol and failure-state assertions exact. |
 | 2 — browser integration | Entry, pre-flight, room lifecycle, routing controls, inspector and capability states | Manual browser acceptance remains outstanding | Automate the recognised Chrome/macOS flow first; add another browser only after its capture and codec path exists. |
 | 3 — live media and acoustic | Real transport, latency, drift, concealment and audible barge-in | Synthetic timing and buffer tests only | Capture a browser-to-relay trace, then run calibrated acoustic and cancellation measurements. |
 | 4 — venue, capacity and endurance | Reference composition, degradation, network recovery and demo reliability | No measured-capacity or audible endurance result | Run the ten-minute reference composition and the complete demo script twice on the venue network and hotspot. |
@@ -167,7 +170,7 @@ The test plan separates fast deterministic tests from browser, relay, acoustic a
 
 1. Complete Gate 1 on the currently recognised Chrome/macOS configuration when a compatible endpoint and client exist.
 2. Capture a capability report for the next proposed desktop combination and identify the smallest missing seam.
-3. If capture is the only missing seam, prototype the adapter boundary in §6 and measure it against the current path.
+3. If capture is the only missing seam, measure the §6 AudioWorklet path against the current path on that exact browser and operating-system combination.
 4. Add a production dependency only after explicit approval and a demonstrated native-API gap.
 5. Add focused unit and browser tests for that seam.
 6. Run the complete H3 support rule before naming the combination in the README.

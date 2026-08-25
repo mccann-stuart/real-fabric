@@ -8,7 +8,7 @@ const CHECKS: Array<
   [
     keyof Pick<
       CapabilityReport,
-      "secureContext" | "webTransport" | "opus" | "microphone" | "relay"
+      "secureContext" | "webTransport" | "opus" | "capture" | "microphone" | "relay"
     >,
     string,
   ]
@@ -16,6 +16,7 @@ const CHECKS: Array<
   ["secureContext", "Secure context"],
   ["webTransport", "WebTransport"],
   ["opus", "WebCodecs Opus"],
+  ["capture", "20 ms audio capture"],
   ["microphone", "Microphone"],
   ["relay", "Relay configuration"],
 ];
@@ -64,6 +65,7 @@ export function PreflightPanel({
         </div>
       </div>
       <p className="preflight-reason">{report.relayReason}</p>
+      <p className="preflight-reason">{report.captureReason}</p>
       <p className="preflight-reason">{report.network.detail}</p>
       {report.network.remediation ? (
         <p className="preflight-reason">{report.network.remediation}</p>

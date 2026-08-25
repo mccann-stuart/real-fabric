@@ -25,7 +25,7 @@ Conflating the two would have meant never attempting the connection that produce
 |---|---|---|
 | H1 — MOQT over WebTransport only, no fallback | [`MoqTransportAdapter`](src/client/transport/MoqTransportAdapter.ts) is the sole transport and the only module holding draft constants; [`RoomSession`](src/client/session/RoomSession.ts) imports no alternative | `test/milestone-1-transport.test.ts` asserts the draft registry refuses an unframeable draft by name without downgrading. **A live browser-to-relay trace is still outstanding.** |
 | H2 — one track per participant, no upstream mixing | [`tracks.ts`](src/shared/tracks.ts), [`mixer-worklet.js`](public/audio/mixer-worklet.js) — the only mixing point, on the listener's machine | `test/invariants.test.ts` |
-| H3 — supported browser matrix, others warned | [`pinnedConfiguration.ts`](src/shared/pinnedConfiguration.ts), [`PinnedConfigBanner`](src/client/components/PinnedConfigBanner.tsx) | Detection is tested, but only provisional Chrome 141+ on macOS is recognised. The complete H3 matrix is outstanding. |
+| H3 — supported browser matrix, others warned | [`pinnedConfiguration.ts`](src/shared/pinnedConfiguration.ts), [`PinnedConfigBanner`](src/client/components/PinnedConfigBanner.tsx), [`UniversalAudioCaptureAdapter`](src/client/audio/UniversalAudioCaptureAdapter.ts) | Configuration detection, capture-path selection and exact frame assembly are unit-tested, but only provisional Chrome 141+ on macOS is recognised. The complete H3 matrix and real-browser acceptance are outstanding. |
 | H4 — headphones required and stated | Entry page, pre-flight page and room top bar | Visual |
 | H5 — each AI addressed, silent otherwise | [`AiDirector.address`](src/client/ai/AiDirector.ts) is the only path to a turn | `test/invariants.test.ts`, `test/room-service.test.ts` |
 | H6 — barge-in inside 300 ms, including in flight | `AiDirector.bargeIn`, [`AdaptiveJitterBuffer.cancelGroup`](src/client/audio/AdaptiveJitterBuffer.ts), `TrackPlayer.cancelGroup` | `test/invariants.test.ts` measures the latency and the discarded objects |
@@ -107,13 +107,14 @@ The production relay is `real-fabric-production` (`5266d64d9209fb9a8961f00974580
 - `src/shared` — contracts, the draft list, the §10 failure registry, `Measurement<T>`, track addressing, the §9.3 latency budget and the pinned configuration.
 - `src/client/transport` — `MoqTransportAdapter` (the only module holding draft constants, wire versions or ALPN identifiers) and the draft-free HTTP/3 reachability probe.
 - `src/client/session` — `RoomSession`, the bounded reconnection policy and the inspector event log.
-- `src/client/audio` — capture and Opus encode, per-track receive path, adaptive jitter buffer, packet loss concealment, drift estimation, device tracking, degradation ladder, playback deduplication and the mixer graph.
+- `src/client/audio` — bounded capture adapters and Opus encode, per-track receive path, adaptive jitter buffer, packet loss concealment, drift estimation, device tracking, degradation ladder, playback deduplication and the mixer graph.
+- `public/audio/capture-worklet.js` — the same-origin AudioWorklet capture path, with a fixed transferable-buffer pool and exact 20 ms frames.
 - `src/client/ai` — the addressing, floor-control and barge-in state machine, plus the labelled scripted responder.
 - `src/client/presenter` — the §12 demo-script runner.
 - `src/client/components`, `src/client/pages` — entry, pre-flight, room, inspector and presenter surfaces.
 - `public/audio/mixer-worklet.js` — the single mixing point, served same-origin so it satisfies the existing `script-src 'self'` policy.
 - `src/worker` — API routing, security headers, redacted structured logs, provisioned relay credential handling and the SQLite Durable Object room service.
-- `test` — 113 automated tests across eight files covering the requirements above.
+- `test` — 118 automated tests across nine files covering the requirements above.
 
 ## Local setup
 
@@ -178,5 +179,6 @@ Automated checks cover the requirements marked above. They do not cover, and thi
 - milestones 3 and 4 of the §11 release plan, which are not built;
 - the §12 script on a venue network (H16);
 - browser behaviour on any configuration other than the provisional pin, and the complete supported-browser matrix required by H3.
+- real-browser and acoustic parity of the AudioWorklet capture path against `MediaStreamTrackProcessor`.
 
 Production deployment requires separate, explicit authorisation. A successful local build or GitHub push is not a production deployment.

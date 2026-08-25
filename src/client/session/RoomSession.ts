@@ -27,6 +27,7 @@ import { DeviceWatcher } from "../audio/DeviceWatcher";
 import { encodeAudioObject } from "../audio/frame";
 import { MixerGraph } from "../audio/MixerGraph";
 import { TrackPlayer } from "../audio/TrackPlayer";
+import type { CapturePath } from "../audio/UniversalAudioCaptureAdapter";
 import { SessionTelemetry } from "../telemetry/SessionTelemetry";
 import {
   type MoqNegotiation,
@@ -75,6 +76,7 @@ export interface SessionMetrics {
   lastRoutingChangeMs: Measurement<number>;
   reconnects: Measurement<number>;
   dtxEnabled: Measurement<boolean>;
+  capturePath: Measurement<CapturePath>;
   objectsPerSecond: Measurement<number>;
   /** §11.3: audio inputs seen, and how many times they changed. */
   audioInputs: Measurement<number>;
@@ -977,6 +979,9 @@ export class RoomSession {
       reconnects: measured(this.reconnects),
       dtxEnabled: this.publishing
         ? this.capture.dtxEnabled()
+        : notExposed("This participant is not publishing."),
+      capturePath: this.publishing
+        ? this.capture.capturePath()
         : notExposed("This participant is not publishing."),
       objectsPerSecond:
         liveFor < 1
