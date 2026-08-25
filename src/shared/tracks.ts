@@ -18,12 +18,22 @@ export function roomNamespace(opaqueRoomId: string): string {
   return `demo/${opaqueRoomId}`;
 }
 
+export function participantNamespace(opaqueRoomId: string, participantId: string): string {
+  return `${roomNamespace(opaqueRoomId)}/${participantId}`;
+}
+
 export function audioTrack(opaqueRoomId: string, participantId: string): TrackAddress {
-  return { namespace: roomNamespace(opaqueRoomId), name: `audio/${participantId}` };
+  return {
+    namespace: participantNamespace(opaqueRoomId, participantId),
+    name: `audio/${participantId}`,
+  };
 }
 
 export function presenceTrack(opaqueRoomId: string, participantId: string): TrackAddress {
-  return { namespace: roomNamespace(opaqueRoomId), name: `presence/${participantId}` };
+  return {
+    namespace: participantNamespace(opaqueRoomId, participantId),
+    name: `presence/${participantId}`,
+  };
 }
 
 export function trackKey(track: TrackAddress): string {

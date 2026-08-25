@@ -15,6 +15,7 @@ export type FailureCode =
   | "draft_endpoint_missing"
   | "relay_auth_unavailable"
   | "relay_protocol_error"
+  | "relay_request_refused"
   | "namespace_discovery_unavailable"
   | "participant_disconnected"
   | "reloading"
@@ -128,13 +129,25 @@ const REGISTRY: Record<FailureCode, FailureState> = {
     severity: "blocking",
     blocksPublication: true,
   },
+  relay_request_refused: {
+    code: "relay_request_refused",
+    title: "Relay rejected a publish request",
+    experience:
+      "MOQT setup completed, but the relay rejected this participant's track publication request.",
+    behaviour:
+      "Publication stops for this browser. The inspector retains the relay's request error code and reason; no transport fallback is attempted.",
+    recovery: "Check namespace ownership and the relay credential's publish scope.",
+    severity: "blocking",
+    blocksPublication: true,
+  },
   namespace_discovery_unavailable: {
     code: "namespace_discovery_unavailable",
     title: "SUBSCRIBE_NAMESPACE unavailable",
     experience: "Membership still works. The inspector states which discovery mechanism is in use.",
     behaviour:
       "Discovery falls back to the room service control channel. Audio object arrival remains the source of truth for connected.",
-    recovery: "None required. Record the endpoint's capability against Gate 1 output four.",
+    recovery:
+      "None required. The configured draft-16 endpoint is recorded as using control-channel discovery.",
     severity: "degraded",
     blocksPublication: false,
   },

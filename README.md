@@ -66,7 +66,8 @@ The ladder is implemented and unit-tested, and it announces every step. Its curr
 | Bounded session recovery | Built. Full jitter across the whole backoff window (equal jitter re-synchronises a roomful of clients), 30-second terminal threshold, and a floor so an unlucky draw is not a tight retry loop. |
 | **Gate 1 exit: `MOQT_TRANSPORT_VERIFIED = true`** | **Outstanding.** Needs a browser-to-relay trace on a real network. |
 
-**Observed during development:** HTTP/3 reached `draft-16.cloudflare.mediaoverquic.com`, while the MOQT attempt failed locally before the network because duplicate WebTransport protocols were offered. The adapter now offers `moqt-16` once. A live token-backed browser-to-relay trace remains Gate 1's first job.
+**Observed during development:** On 25 August 2026, Chrome reached `draft-16.cloudflare.mediaoverquic.com` over HTTP/3 and completed MOQT draft-16 `SERVER_SETUP`. The earlier `MOQ_DISCOVERY=unknown` path selected the control channel without testing `SUBSCRIBE_NAMESPACE`; it therefore did not record that endpoint capability. Unknown discovery now performs the live request and records its result in the inspector. This remains draft-16 evidence only and cannot satisfy the draft-20 Gate 1 exit.
+
 ### Milestone 2 — hardware resilience and audio pipeline (§11.3)
 
 | Deliverable | State |
@@ -85,7 +86,7 @@ These are read from Worker configuration rather than assumed, so recording a res
 |---|---|---|
 | `MOQT_TRANSPORT_VERIFIED` | `false` | No browser-to-relay trace has passed. Gates the *claim*, not the *attempt*: the build connects for real and reports the result honestly either way. |
 | `MOQ_ROUTING_ENFORCEMENT` | `cooperative` | The current Cloudflare token grants relay-level publish and subscribe operations rather than per-participant track scope, so inbound routing is labelled cooperative, not enforced (FR8). |
-| `MOQ_DISCOVERY` | `unknown` | `SUBSCRIBE_NAMESPACE` support on the endpoint is untested, so the inspector says discovery is undetermined (FR7). |
+| `MOQ_DISCOVERY` | `unknown` | The client probes `SUBSCRIBE_NAMESPACE` after live MOQT setup, records the observed result in the inspector, and uses control-channel discovery only if the request is refused (FR7). |
 | `MOQ_RELAY_TOKEN` | configured | Cloudflare-provisioned publish-and-subscribe token stored as a Worker secret. The current operational token expires at `2026-09-01T20:38:32Z`; rotate it before another demo window. |
 
 The production relay is `real-fabric-production` (`5266d64d9209fb9a8961f009745806ef`) with upstream fallback disabled. The endpoint remains `https://draft-16.cloudflare.mediaoverquic.com`; the relay token selects the isolated scope. `/api/health` confirms that endpoint and credential are configured while `transportVerified` remains `false`. The in-room browser probe and token-backed MOQT trace remain outstanding.
@@ -114,7 +115,7 @@ The production relay is `real-fabric-production` (`5266d64d9209fb9a8961f00974580
 - `src/client/components`, `src/client/pages` — entry, pre-flight, room, inspector and presenter surfaces.
 - `public/audio/mixer-worklet.js` — the single mixing point, served same-origin so it satisfies the existing `script-src 'self'` policy.
 - `src/worker` — API routing, security headers, redacted structured logs, provisioned relay credential handling and the SQLite Durable Object room service.
-- `test` — 118 automated tests across nine files covering the requirements above.
+- `test` — 125 automated tests across nine files covering the requirements above.
 
 ## Local setup
 
