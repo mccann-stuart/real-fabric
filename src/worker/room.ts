@@ -22,6 +22,7 @@ import {
   type TransportStatus,
 } from "../shared/contracts";
 import { configFlag, configValue } from "./env";
+import { configuredRelayCredential } from "./relayCredential";
 import { roomError } from "./roomError";
 
 /** The relay's operator-facing name, as the inspector and Gate 1 sheet quote it. */
@@ -883,6 +884,14 @@ export class Room extends DurableObject<Env> {
         availability: "draft_unavailable",
         failure: "draft_endpoint_missing",
         reason: `No relay endpoint is configured for MOQT draft ${draft}, so no session is attempted.`,
+      };
+    }
+    if (!configuredRelayCredential(this.env.MOQ_RELAY_TOKEN)) {
+      return {
+        ...shared,
+        availability: "relay_unavailable",
+        failure: "relay_auth_unavailable",
+        reason: `No provisioned credential is configured for ${shared.endpointName}, so no session is attempted.`,
       };
     }
     return {

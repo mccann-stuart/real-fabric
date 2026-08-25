@@ -142,10 +142,10 @@ export interface CreateRoomResponse {
   participant: Participant;
   rejoinToken: string;
   /**
-   * §8 link separation: the relay credential is minted server-side at join and
-   * returned here, never in the room snapshot and never in a shareable URL.
-   * Null while no relay endpoint serves the pinned draft — the client then
-   * reports the §10 failure rather than attempting a downgraded connection.
+   * §8 link separation: the provisioned relay credential is returned only at
+   * create/join, never in the room snapshot or shareable room URL. Null while
+   * either the endpoint or its credential is unconfigured — the client then
+   * reports the specific §10 failure rather than attempting anonymously.
    */
   relayCredential: string | null;
   correlationId: string;

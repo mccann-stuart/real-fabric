@@ -13,6 +13,8 @@ export type FailureCode =
   | "microphone_no_device"
   | "draft_mismatch"
   | "draft_endpoint_missing"
+  | "relay_auth_unavailable"
+  | "relay_protocol_error"
   | "namespace_discovery_unavailable"
   | "participant_disconnected"
   | "reloading"
@@ -101,6 +103,28 @@ const REGISTRY: Record<FailureCode, FailureState> = {
       "Room membership, routing, inspection and presenter simulation stay available. The draft is never downgraded to reach a relay that exists.",
     recovery:
       "Escalate per specification §2.1. Presenter simulation demonstrates the room without claiming transport.",
+    severity: "blocking",
+    blocksPublication: true,
+  },
+  relay_auth_unavailable: {
+    code: "relay_auth_unavailable",
+    title: "Relay credential unavailable",
+    experience:
+      "The configured draft-16 relay requires a provisioned credential, so live audio cannot start.",
+    behaviour:
+      "No WebTransport session is attempted. Room membership, routing, inspection and presenter simulation remain available.",
+    recovery: "Configure MOQ_RELAY_TOKEN with a current Cloudflare publish-and-subscribe token.",
+    severity: "blocking",
+    blocksPublication: true,
+  },
+  relay_protocol_error: {
+    code: "relay_protocol_error",
+    title: "Relay protocol negotiation failed",
+    experience:
+      "WebTransport opened, but the relay did not complete the required MOQT setup for the pinned draft.",
+    behaviour:
+      "The partial session is closed immediately. The same deterministic protocol refusal is not retried as a transient outage.",
+    recovery: "Check the pinned draft, relay feature matrix and SERVER_SETUP trace.",
     severity: "blocking",
     blocksPublication: true,
   },

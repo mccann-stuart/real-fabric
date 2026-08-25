@@ -14,6 +14,7 @@ export default defineConfig({
           APP_ENV: "test",
           MOQT_DRAFT: "16",
           MOQ_RELAY_URL: "https://draft-16.example.invalid",
+          MOQ_RELAY_TOKEN: "test-relay-token",
           MOQT_TRANSPORT_VERIFIED: "false",
           MOQ_ROUTING_ENFORCEMENT: "cooperative",
           MOQ_DISCOVERY: "unknown",

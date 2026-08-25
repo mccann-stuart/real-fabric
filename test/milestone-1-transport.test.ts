@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ReconnectionPolicy, TERMINAL_AFTER_MS } from "../src/client/session/ReconnectionPolicy";
+import { isRetryableTransportFailure } from "../src/client/session/RoomSession";
 import {
   draftsFramedByClient,
   MoqTransportAdapter,
@@ -7,6 +8,7 @@ import {
 } from "../src/client/transport/MoqTransportAdapter";
 import { HOTSPOT_REMEDIATION, probeRelayReachability } from "../src/client/transport/NetworkProbe";
 import { asMoqDraft, MOQT_DRAFTS, PINNED_MOQT_DRAFT } from "../src/shared/contracts";
+import { configuredRelayCredential } from "../src/worker/relayCredential";
 
 /**
  * §11.2 milestone 1: live transport unblocking and relay interoperability.
@@ -59,7 +61,7 @@ describe("M1 — draft registry and relay interoperability", () => {
 
   it("reports a missing WebTransport capability ahead of anything further out", async () => {
     // The nearer cause wins: a browser without WebTransport cannot be fixed by
-    // minting a credential, and its recovery advice is different.
+    // provisioning a credential, and its recovery advice is different.
     expect("WebTransport" in globalThis).toBe(false);
     const adapter = new MoqTransportAdapter();
     await expect(
@@ -68,8 +70,8 @@ describe("M1 — draft registry and relay interoperability", () => {
     expect(adapter.sessionStats().negotiation).toBeNull();
   });
 
-  it("attempts no connection without a minted relay credential", async () => {
-    // Past the capability gate, an unminted credential still stops the attempt
+  it("attempts no connection without a provisioned relay credential", async () => {
+    // Past the capability gate, a missing credential still stops the attempt
     // rather than connecting anonymously and hoping the relay is open.
     Object.defineProperty(globalThis, "WebTransport", {
       value: class {},
@@ -79,12 +81,59 @@ describe("M1 — draft registry and relay interoperability", () => {
       const adapter = new MoqTransportAdapter();
       await expect(
         adapter.connect("https://draft-16.example.invalid", "", PINNED_MOQT_DRAFT),
-      ).rejects.toMatchObject({ code: "relay_unavailable" });
+      ).rejects.toMatchObject({ code: "relay_configuration" });
       expect(adapter.sessionStats().negotiation).toBeNull();
       expect(adapter.sessionStats().state).not.toBe("connected");
     } finally {
       Reflect.deleteProperty(globalThis, "WebTransport");
     }
+  });
+
+  it("offers the pinned WebTransport protocol once and carries the Cloudflare token in the path", async () => {
+    let observedUrl = "";
+    let observedProtocols: string[] = [];
+    Object.defineProperty(globalThis, "WebTransport", {
+      value: class {
+        readonly ready = Promise.reject(new Error("stop after constructor"));
+
+        constructor(url: string | URL, options?: WebTransportOptions) {
+          observedUrl = String(url);
+          observedProtocols = [...(options?.protocols ?? [])];
+        }
+      },
+      configurable: true,
+    });
+
+    try {
+      const adapter = new MoqTransportAdapter();
+      const error = await adapter
+        .connect("https://draft-16.example.invalid/relay", "provisioned token", PINNED_MOQT_DRAFT)
+        .then(
+          () => null,
+          (thrown: unknown) => thrown,
+        );
+
+      expect(observedProtocols).toEqual(["moqt-16"]);
+      expect(new Set(observedProtocols).size).toBe(observedProtocols.length);
+      expect(observedUrl).toBe("https://draft-16.example.invalid/relay/provisioned%20token");
+      expect(error).toMatchObject({ code: "relay_unavailable" });
+      expect((error as Error).message).not.toContain("provisioned token");
+    } finally {
+      Reflect.deleteProperty(globalThis, "WebTransport");
+    }
+  });
+
+  it("treats deterministic transport failures as blocked rather than retryable", () => {
+    expect(isRetryableTransportFailure("relay_failed")).toBe(true);
+    expect(isRetryableTransportFailure("relay_auth_unavailable")).toBe(false);
+    expect(isRetryableTransportFailure("relay_protocol_error")).toBe(false);
+    expect(isRetryableTransportFailure("draft_mismatch")).toBe(false);
+  });
+
+  it("accepts only a non-empty configured Cloudflare relay token", () => {
+    expect(configuredRelayCredential(undefined)).toBeNull();
+    expect(configuredRelayCredential("   ")).toBeNull();
+    expect(configuredRelayCredential(" provisioned-token ")).toBe("provisioned-token");
   });
 
   it("reports Not exposed for round-trip time rather than zero", () => {

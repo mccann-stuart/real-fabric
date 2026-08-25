@@ -10,10 +10,10 @@ Every hard requirement H1–H16 in [PRODUCT_SPEC_v1-demo_1.md](PRODUCT_SPEC_v1-d
 
 Milestones 1 and 2 of the §11 release plan are built. Milestones 3 and 4 are not.
 
-**The build now attempts a real MOQT session, and still claims nothing it has not traced.** Those are two separate facts, and the code keeps them separate:
+**The build attempts a real MOQT session when the relay and its provisioned credential are configured, and still claims nothing it has not traced.** Those are separate facts, and the code keeps them separate:
 
-- **Attempting** is gated on a relay endpoint being configured for a draft the pinned client can frame. `moqtail@0.12.1` frames `moqt-16`, and the Cloudflare isolated relays serve draft 16, so the build is pinned there (§11.2) and the room service mints a real short-lived, room-scoped relay credential.
-- **Claiming** is gated on `MOQT_TRANSPORT_VERIFIED`, which stays `false` until a browser-to-relay trace is recorded. Until then the inspector reads "attempted live but not yet claimed as verified", and the negotiated draft reads **Not exposed** until a SERVER_SETUP has actually been validated.
+- **Attempting** is gated on a relay endpoint, a Cloudflare-provisioned publish-and-subscribe token, and a draft the pinned client can frame. `moqtail@0.12.1` frames `moqt-16`, so the build is pinned there (§11.2). A missing token is a named blocking state and produces no WebTransport attempt.
+- **Claiming** is gated on `MOQT_TRANSPORT_VERIFIED`, which stays `false` until a browser-to-relay trace is recorded. When a live attempt is possible, the inspector reads "attempted live but not yet claimed as verified"; when configuration blocks it, the inspector says so. The negotiated draft reads **Not exposed** until a SERVER_SETUP has actually been validated.
 
 Conflating the two would have meant never attempting the connection that produces the trace. There is still no second transport to fall back to, and presenter simulation never stands in for a working relay or AI pipeline.
 
@@ -60,13 +60,13 @@ The ladder is implemented and unit-tested, and it announces every step. What is 
 
 | Deliverable | State |
 |---|---|
-| Relay endpoint integration on draft 16 | Built. `DRAFT_REGISTRY` holds the wire version and ALPN offer (`moqt-16`, `moq-00`) per draft; the frameable set is read from the library's own `SUPPORTED_VERSIONS`, so it cannot claim a draft its encoder does not implement. |
-| CLIENT_SETUP / SERVER_SETUP negotiation | Built. The credential is sent as an `AUTHORIZATION_TOKEN` setup parameter, never in the URL. A session with no SERVER_SETUP, or a `MAX_REQUEST_ID` of zero, is closed as a protocol failure rather than left to present as dead air. The negotiated draft, endpoint and parameters appear in the inspector, with the token redacted. |
+| Relay endpoint integration on draft 16 | Built. `DRAFT_REGISTRY` holds the required wire version, while the adapter permits `moqtail` to add its pinned `SUPPORTED_VERSIONS` exactly once. This prevents Chrome rejecting duplicate WebTransport protocols and prevents an unrequested draft from being negotiated. |
+| CLIENT_SETUP / SERVER_SETUP negotiation | Built. Cloudflare draft-16 authentication places its provisioned token in the WebTransport URL path; the adapter constructs that URL in memory and redacts it from errors and inspection. A session with no SERVER_SETUP, or a `MAX_REQUEST_ID` of zero, is closed as a non-retryable protocol failure rather than left to present as dead air. |
 | Pre-flight HTTP/3 and UDP probe | Built, in [`NetworkProbe`](src/client/transport/NetworkProbe.ts). Non-blocking, runs alongside the join, and compares a QUIC leg against a TCP leg to separate filtered UDP from a dead connection. It says so when the two are indistinguishable. |
 | Bounded session recovery | Built. Full jitter across the whole backoff window (equal jitter re-synchronises a roomful of clients), 30-second terminal threshold, and a floor so an unlucky draw is not a tight retry loop. |
 | **Gate 1 exit: `MOQT_TRANSPORT_VERIFIED = true`** | **Outstanding.** Needs a browser-to-relay trace on a real network. |
 
-**Observed during development:** `draft-16.cloudflare.mediaoverquic.com` did not complete a WebTransport handshake from the development machine within the 4-second probe budget. The probe reported `udp_blocked` with the correct hedge — a filtered network and a relay that is not serving look identical from the client. Confirming which, and confirming the endpoint's exact path, is Gate 1's first job.
+**Observed during development:** HTTP/3 reached `draft-16.cloudflare.mediaoverquic.com`, while the MOQT attempt failed locally before the network because duplicate WebTransport protocols were offered. The adapter now offers `moqt-16` once. A live token-backed browser-to-relay trace remains Gate 1's first job.
 
 ### Milestone 2 — hardware resilience and audio pipeline (§11.3)
 
@@ -85,9 +85,9 @@ These are read from Worker configuration rather than assumed, so recording a res
 | Variable | Current | Meaning |
 |---|---|---|
 | `MOQT_TRANSPORT_VERIFIED` | `false` | No browser-to-relay trace has passed. Gates the *claim*, not the *attempt*: the build connects for real and reports the result honestly either way. |
-| `MOQ_ROUTING_ENFORCEMENT` | `cooperative` | The operational draft-16 relays do not enforce token scope, so inbound routing is labelled cooperative, not enforced (FR8). The credential is minted in the scoped form anyway, so an enforcing relay is a configuration change. |
+| `MOQ_ROUTING_ENFORCEMENT` | `cooperative` | The current Cloudflare token grants relay-level publish and subscribe operations rather than per-participant track scope, so inbound routing is labelled cooperative, not enforced (FR8). |
 | `MOQ_DISCOVERY` | `unknown` | `SUBSCRIBE_NAMESPACE` support on the endpoint is untested, so the inspector says discovery is undetermined (FR7). |
-| `MOQ_RELAY_SECRET` | unset | Optional Worker secret that signs the relay credential. Unset, the credential is still scoped and still expires, but is marked `unsigned` rather than presented as something a relay could trust. |
+| `MOQ_RELAY_TOKEN` | unset | Required Cloudflare-provisioned publish-and-subscribe token. Store it as a Worker secret with a short demo expiry. Unset, live transport is blocked explicitly and no anonymous connection is attempted. |
 
 ## Product invariants
 
@@ -110,7 +110,7 @@ These are read from Worker configuration rather than assumed, so recording a res
 - `src/client/presenter` — the §12 demo-script runner.
 - `src/client/components`, `src/client/pages` — entry, pre-flight, room, inspector and presenter surfaces.
 - `public/audio/mixer-worklet.js` — the single mixing point, served same-origin so it satisfies the existing `script-src 'self'` policy.
-- `src/worker` — API routing, security headers, redacted structured logs, relay credential minting and the SQLite Durable Object room service.
+- `src/worker` — API routing, security headers, redacted structured logs, provisioned relay credential handling and the SQLite Durable Object room service.
 - `test` — 110 tests covering the requirements above.
 
 ## Local setup
