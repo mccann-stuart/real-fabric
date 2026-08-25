@@ -243,6 +243,90 @@ describe("M1 — bounded session recovery", () => {
     }
   });
 
+  it("does not reset recovery after a handshake that terminates immediately", () => {
+    vi.useFakeTimers();
+    try {
+      let now = 1_000;
+      const session = new RoomSession({
+        session: {
+          code: "AAAAAAAAAAAAAAAAAAAA",
+          participantId: "participant-1",
+          rejoinToken: "rejoin-token",
+          displayName: "Test participant",
+          storedAt: 0,
+        },
+        presenterMode: false,
+        now: () => now,
+      });
+      const internal = session as unknown as {
+        phase: SessionPhase;
+        transportReadyAt: number | null;
+        onTransportTerminated: (error: MoqTransportError) => void;
+      };
+
+      internal.phase = { name: "live" };
+      internal.transportReadyAt = now;
+      internal.onTransportTerminated(new MoqTransportError("relay_unavailable", "ended"));
+      now += 100;
+      internal.phase = { name: "live" };
+      internal.transportReadyAt = now;
+      internal.onTransportTerminated(new MoqTransportError("relay_unavailable", "ended"));
+
+      let phase: SessionPhase = { name: "idle" };
+      const unsubscribe = session.subscribe((state) => {
+        phase = state.phase;
+      });
+      expect(phase).toMatchObject({ name: "reconnecting", attempt: 2 });
+      unsubscribe();
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
+  it("opens one publication while concurrent audio frames wait", async () => {
+    let releaseNamespace: (() => void) | undefined;
+    const namespaceReady = new Promise<void>((resolve) => {
+      releaseNamespace = resolve;
+    });
+    const calls = { addTrack: 0, publishNamespace: 0, publish: 0 };
+    const client = {
+      addOrUpdateTrack: () => {
+        calls.addTrack += 1;
+      },
+      publishNamespace: async () => {
+        calls.publishNamespace += 1;
+        await namespaceReady;
+        return {};
+      },
+      publish: async () => {
+        calls.publish += 1;
+        return { requestId: 0n, trackAlias: 1n };
+      },
+    };
+    const adapter = new MoqTransportAdapter();
+    const internal = adapter as unknown as {
+      client: typeof client;
+      stats: ReturnType<MoqTransportAdapter["sessionStats"]>;
+    };
+    internal.client = client;
+    internal.stats = { ...adapter.sessionStats(), state: "connected" };
+    const track = { namespace: "demo/room", name: "audio/participant" };
+    const first = adapter.publish(track, { groupId: 1, objectId: 1, payload: new Uint8Array([1]) });
+    const second = adapter.publish(track, {
+      groupId: 1,
+      objectId: 2,
+      payload: new Uint8Array([2]),
+    });
+
+    expect(calls).toEqual({ addTrack: 1, publishNamespace: 1, publish: 0 });
+    releaseNamespace?.();
+    await Promise.all([first, second]);
+
+    expect(calls).toEqual({ addTrack: 1, publishNamespace: 1, publish: 1 });
+    expect(adapter.sessionStats().publishedObjects).toBe(2);
+  });
+
   it("coalesces a frame-rate burst of the same transport failure", () => {
     const log = new SessionEventLog();
     log.record("failure", "The MOQT session is not connected.", { at: 1_000 });

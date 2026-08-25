@@ -125,6 +125,7 @@ const LADDER_INTERVAL_MS = 2_000;
 const DRAIN_INTERVAL_MS = 20;
 const CONTROL_RETRY_BASE_MS = 250;
 const CONTROL_RETRY_MAX_MS = 5_000;
+const STABLE_TRANSPORT_MS = 5_000;
 
 /** Only an indeterminate relay outage benefits from the bounded retry policy. */
 export function isRetryableTransportFailure(failure: FailureCode): boolean {
@@ -282,7 +283,6 @@ export class RoomSession {
     try {
       await this.transport.connect(room.transport.endpoint, credential, room.transport.draft);
       this.transportReadyAt = this.now();
-      this.reconnection.reset();
       const negotiation = this.transport.sessionStats().negotiation;
       // §11.2 deliverable two: the negotiated draft and endpoint are recorded
       // from the handshake, not restated from configuration.
@@ -364,6 +364,13 @@ export class RoomSession {
 
   private onTransportTerminated(error: MoqTransportError): void {
     if (this.closed || this.phase.name !== "live") return;
+
+    if (
+      this.transportReadyAt !== null &&
+      this.now() - this.transportReadyAt >= STABLE_TRANSPORT_MS
+    ) {
+      this.reconnection.reset();
+    }
 
     // A dead subscription belongs to the dead MOQT session. Clearing these
     // lets the normal reconciliation path recreate each track idempotently
@@ -507,8 +514,11 @@ export class RoomSession {
         payload: object,
       })
       .catch((error: unknown) => {
-        this.raise("relay_failed");
-        this.log.record("failure", error instanceof Error ? error.message : "Publish failed.");
+        // A failed publication is a session failure, not a per-frame warning.
+        // The first rejection moves the phase out of live, which suppresses
+        // the other frames already queued behind the same publication.
+        if (this.phase.name !== "live") return;
+        void this.handleTransportFailure(error);
       });
   }
 

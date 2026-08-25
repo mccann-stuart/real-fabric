@@ -143,6 +143,7 @@ interface Publication {
 export class MoqTransportAdapter {
   private client: MOQtailClient | null = null;
   private publications = new Map<string, Publication>();
+  private pendingPublications = new Map<string, Promise<Publication>>();
   private subscriptions = new Map<string, bigint>();
   private namespaceCancels = new Map<string, () => Promise<void>>();
   private nextAlias = 1n;
@@ -232,7 +233,7 @@ export class MoqTransportAdapter {
           onMessageReceived: (message) => {
             if (message instanceof ServerSetup) serverSetupObserved = true;
           },
-          onSessionTerminated: () => {
+          onSessionTerminated: (reason) => {
             if (
               connectionGeneration !== this.connectionGeneration ||
               this.stats.state !== "connected"
@@ -249,12 +250,13 @@ export class MoqTransportAdapter {
               }
             }
             this.publications.clear();
+            this.pendingPublications.clear();
             this.subscriptions.clear();
             this.namespaceCancels.clear();
             this.onUnexpectedTermination?.(
               new MoqTransportError(
                 "relay_unavailable",
-                "The established MOQT session ended unexpectedly.",
+                `The established MOQT session ended unexpectedly: ${terminationReason(reason, credential)}`,
               ),
             );
           },
@@ -346,27 +348,19 @@ export class MoqTransportAdapter {
   }
 
   async publish(track: TrackAddress, object: MediaObject): Promise<void> {
-    const client = this.requireClient();
     const key = trackKey(track);
     let publication = this.publications.get(key);
     if (!publication) {
-      const fullName = FullTrackName.tryNew(track.namespace, track.name);
-      let controller: ReadableStreamDefaultController<MoqtObject> | undefined;
-      const stream = new ReadableStream<MoqtObject>({ start: (value) => (controller = value) });
-      if (!controller)
-        throw new MoqTransportError("protocol_error", "The publication stream did not initialise.");
-      client.addOrUpdateTrack({
-        fullTrackName: fullName,
-        trackSource: { live: new LiveTrackSource(stream) },
-        publisherPriority: 0,
-      });
-      await client.publishNamespace(fullName.namespace);
-      const result = await client.publish(fullName, true, this.nextAlias++);
-      if (result instanceof RequestError) {
-        throw new MoqTransportError("protocol_error", "The relay refused the track publication.");
+      let pending = this.pendingPublications.get(key);
+      if (!pending) {
+        pending = this.openPublication(track);
+        this.pendingPublications.set(key, pending);
       }
-      publication = { address: track, fullName, controller };
-      this.publications.set(key, publication);
+      try {
+        publication = await pending;
+      } finally {
+        if (this.pendingPublications.get(key) === pending) this.pendingPublications.delete(key);
+      }
     }
 
     publication.controller.enqueue(
@@ -381,6 +375,43 @@ export class MoqTransportAdapter {
       ),
     );
     this.stats = { ...this.stats, publishedObjects: this.stats.publishedObjects + 1 };
+  }
+
+  private async openPublication(track: TrackAddress): Promise<Publication> {
+    const client = this.requireClient();
+    const connectionGeneration = this.connectionGeneration;
+    const fullName = FullTrackName.tryNew(track.namespace, track.name);
+    let controller: ReadableStreamDefaultController<MoqtObject> | undefined;
+    const stream = new ReadableStream<MoqtObject>({ start: (value) => (controller = value) });
+    if (!controller) {
+      throw new MoqTransportError("protocol_error", "The publication stream did not initialise.");
+    }
+    client.addOrUpdateTrack({
+      fullTrackName: fullName,
+      trackSource: { live: new LiveTrackSource(stream) },
+      publisherPriority: 0,
+    });
+    const namespaceResult = await client.publishNamespace(fullName.namespace);
+    if (namespaceResult instanceof RequestError) {
+      throw new MoqTransportError(
+        "protocol_error",
+        "The relay refused the track namespace publication.",
+      );
+    }
+    const result = await client.publish(fullName, true, this.nextAlias++);
+    if (result instanceof RequestError) {
+      throw new MoqTransportError("protocol_error", "The relay refused the track publication.");
+    }
+    if (connectionGeneration !== this.connectionGeneration || client !== this.client) {
+      controller.close();
+      throw new MoqTransportError(
+        "relay_unavailable",
+        "The MOQT session ended while the track publication was opening.",
+      );
+    }
+    const publication = { address: track, fullName, controller };
+    this.publications.set(trackKey(track), publication);
+    return publication;
   }
 
   async subscribe(
@@ -453,6 +484,7 @@ export class MoqTransportAdapter {
     this.namespaceCancels.clear();
     for (const publication of this.publications.values()) publication.controller.close();
     this.publications.clear();
+    this.pendingPublications.clear();
     if (this.client) await this.client.disconnect(reason);
     this.client = null;
     this.subscriptions.clear();
@@ -523,6 +555,12 @@ function describeParameters(pairs: KeyValuePair[], credential: string): SetupPar
 function safeError(error: unknown, credential: string): string {
   if (!(error instanceof Error)) return "unknown transport failure";
   return redactCredential(error.message, credential).slice(0, 240);
+}
+
+function terminationReason(reason: unknown, credential: string): string {
+  return reason === undefined
+    ? "the peer closed the control stream without a reason"
+    : safeError(reason, credential);
 }
 
 function redactCredential(value: string, credential: string): string {
