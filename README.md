@@ -6,7 +6,7 @@ Real Fabric is a conference-stage demonstration of humans and AI agents speaking
 
 ## Status
 
-The room service, presenter simulation, client media pipeline, protocol inspector, relay-credential minting, network probe and Milestone 2 audio resilience are implemented. The demo is **not transport-accepted**: Gate 1, a live AI pipeline, measured capacity, the audible ten-minute run and two clean venue-network runs remain open.
+The room service, presenter simulation, client media pipeline, protocol inspector, provisioned relay-credential handling, network probe and Milestone 2 audio resilience are implemented. The production Worker is configured with the isolated `real-fabric-production` relay and a short-lived publish/subscribe token. The demo is **not transport-accepted**: Gate 1, a live AI pipeline, measured capacity, the audible ten-minute run and two clean venue-network runs remain open.
 
 Milestones 1 and 2 of the §11 release plan are built. Milestones 3 and 4 are not.
 
@@ -36,7 +36,7 @@ Conflating the two would have meant never attempting the connection that produce
 | H11 — presenter mode runs solo | Configurable simulated counts, reconciled server-side, labelled everywhere | `test/room-service.test.ts` |
 | H12 — 60-second reclaim, no duplicate playback | [`useRoomSession`](src/client/hooks/useRoomSession.ts) spends the token on mount; [`PlaybackDeduplicator`](src/client/audio/PlaybackDeduplicator.ts) refuses repeats | `test/invariants.test.ts`, `test/room-service.test.ts` |
 | H13 — ten minutes, no drift artefact, no unbounded buffers | [`DriftEstimator`](src/client/audio/DriftEstimator.ts), bounded jitter buffer, [`PacketLossConcealer`](src/client/audio/PacketLossConcealer.ts) and the silence-gated rebuild in [`TrackPlayer`](src/client/audio/TrackPlayer.ts) | `test/invariants.test.ts` runs 30,000 frames; `test/milestone-2-audio.test.ts` covers concealment, the 5% drift threshold and the deferred rebuild. **The live ten-minute run is outstanding.** |
-| H14 — every §10 failure distinct and non-silent | [`failures.ts`](src/shared/failures.ts) registry, [`FailureBanner`](src/client/components/FailureBanner.tsx) and [`NetworkProbe`](src/client/transport/NetworkProbe.ts) | Registry and probe logic are tested. Live endpoint is needed configured, so no direct probe has run. |
+| H14 — every §10 failure distinct and non-silent | [`failures.ts`](src/shared/failures.ts) registry, [`FailureBanner`](src/client/components/FailureBanner.tsx) and [`NetworkProbe`](src/client/transport/NetworkProbe.ts) | Registry and probe logic are tested. The production endpoint is configured; a browser-run direct probe remains outstanding. |
 | H15 — unobservable reads **Not exposed** | [`Measurement<T>`](src/shared/measurement.ts) and [`MeasurementValue`](src/client/components/MeasurementValue.tsx); no figure bypasses it | `test/invariants.test.ts` |
 | H16 — §12 script twice clean | [`DemoScript`](src/client/presenter/DemoScript.ts) runner with per-cue pass/fail and a two-clean-run gate | `test/invariants.test.ts`. **The venue-network runs are outstanding.** |
 
@@ -86,9 +86,9 @@ These are read from Worker configuration rather than assumed, so recording a res
 | `MOQT_TRANSPORT_VERIFIED` | `false` | No browser-to-relay trace has passed. Gates the *claim*, not the *attempt*: the build connects for real and reports the result honestly either way. |
 | `MOQ_ROUTING_ENFORCEMENT` | `cooperative` | The current Cloudflare token grants relay-level publish and subscribe operations rather than per-participant track scope, so inbound routing is labelled cooperative, not enforced (FR8). |
 | `MOQ_DISCOVERY` | `unknown` | `SUBSCRIBE_NAMESPACE` support on the endpoint is untested, so the inspector says discovery is undetermined (FR7). |
-| `MOQ_RELAY_TOKEN` | unset | Required Cloudflare-provisioned publish-and-subscribe token. Store it as a Worker secret with a short demo expiry. Unset, live transport is blocked explicitly and no anonymous connection is attempted. |
+| `MOQ_RELAY_TOKEN` | configured | Cloudflare-provisioned publish-and-subscribe token stored as a Worker secret. The current operational token expires at `2026-09-01T20:38:32Z`; rotate it before another demo window. |
 
-The standalone pre-flight checks browser capabilities and `/api/health`. The in-room probe can test a configured relay, but the current empty endpoint makes that check `not_run`; no UDP/HTTP-3 result is recorded.
+The production relay is `real-fabric-production` (`5266d64d9209fb9a8961f009745806ef`) with upstream fallback disabled. The endpoint remains `https://draft-16.cloudflare.mediaoverquic.com`; the relay token selects the isolated scope. `/api/health` confirms that endpoint and credential are configured while `transportVerified` remains `false`. The in-room browser probe and token-backed MOQT trace remain outstanding.
 
 ## Product invariants
 
@@ -166,9 +166,9 @@ dependency installs.
 
 Automated checks cover the requirements marked above. They do not cover, and this repository does not claim:
 
-- MOQT interoperability, or that any audio has moved over a relay. The pinned client cannot frame, no endpoint is configured and the handshake path has only unit-test evidence;
+- MOQT interoperability, or that any audio has moved over the configured relay. The pinned client frames draft 16 and the production credential is present, but the handshake path still has only unit-test evidence;
 - a live UDP/HTTP-3 network-probe result;
-- relay acceptance, enforcement or expiry of a minted credential;
+- relay acceptance and expiry behaviour for the provisioned credential, or relay-level enforcement beyond coarse publish/subscribe operations;
 - audible quality of the packet loss concealment. Its behaviour is unit-tested; nobody has listened to it;
 - a live recognition, model or speech-synthesis pipeline;
 - publication of the barge-in cancellation marker over MOQT;
