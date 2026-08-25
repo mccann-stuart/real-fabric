@@ -1,0 +1,37 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "real-fabric",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-08-25",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "./dist",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "ROOMS", "class_name": "Room" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }],
+  "vars": {
+    "APP_ENV": "production",
+    "MOQT_DRAFT": "20",
+    "MOQ_RELAY_URL": "https://draft-20.cloudflare.mediaoverquic.com"
+  },
+  "observability": {
+    "enabled": true,
+    "logs": { "head_sampling_rate": 1 },
+    "traces": { "enabled": true, "head_sampling_rate": 0.01 }
+  },
+  "env": {
+    "staging": {
+      "name": "real-fabric-staging",
+      "vars": {
+        "APP_ENV": "staging",
+        "MOQT_DRAFT": "20",
+        "MOQ_RELAY_URL": "https://draft-20.cloudflare.mediaoverquic.com"
+      }
+    }
+  }
+}
