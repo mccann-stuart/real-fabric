@@ -1,13 +1,16 @@
+import { ReasonPhrase, RequestError, RequestErrorCode } from "moqtail";
 import { describe, expect, it, vi } from "vitest";
 import { ReconnectionPolicy, TERMINAL_AFTER_MS } from "../src/client/session/ReconnectionPolicy";
 import {
   isRetryableTransportFailure,
   RoomSession,
   type SessionPhase,
+  subscriptionRetryDelay,
 } from "../src/client/session/RoomSession";
 import { SessionEventLog } from "../src/client/session/SessionEventLog";
 import {
   draftsFramedByClient,
+  isTrackNotFoundError,
   MoqTransportAdapter,
   MoqTransportError,
 } from "../src/client/transport/MoqTransportAdapter";
@@ -370,7 +373,17 @@ describe("M1 — bounded session recovery", () => {
     });
     const subscribe = vi
       .fn()
-      .mockRejectedValueOnce(new MoqTransportError("request_refused", "Not published yet."))
+      .mockRejectedValueOnce(
+        new MoqTransportError(
+          "request_refused",
+          "The relay refused the track subscription (code 16): Track not found",
+          {
+            operation: "track_subscription",
+            errorCode: 16,
+            reason: "Track not found",
+          },
+        ),
+      )
       .mockResolvedValueOnce(stream);
     const internal = session as unknown as {
       phase: SessionPhase;
@@ -406,6 +419,115 @@ describe("M1 — bounded session recovery", () => {
     await vi.waitFor(() => expect(subscribe).toHaveBeenCalledTimes(2));
     expect(internal.snapshot().subscribedParticipantIds).toEqual(["human-2"]);
     await session.close();
+  });
+
+  it("lets the listener unsubscribe and resubscribe to a remote human track", async () => {
+    const session = new RoomSession({
+      session: {
+        code: "AAAAAAAAAAAAAAAAAAAA",
+        participantId: "human-1",
+        rejoinToken: "rejoin-token",
+        displayName: "Human one",
+        storedAt: 0,
+      },
+      presenterMode: false,
+    });
+    const closedStream = () =>
+      new ReadableStream<{ groupId: number; objectId: number; payload: Uint8Array }>({
+        start(controller) {
+          controller.close();
+        },
+      });
+    const subscribe = vi.fn().mockImplementation(async () => closedStream());
+    const unsubscribe = vi.fn().mockResolvedValue(undefined);
+    const internal = session as unknown as {
+      phase: SessionPhase;
+      room: RoomSnapshot;
+      transport: { subscribe: typeof subscribe; unsubscribe: typeof unsubscribe };
+      reconcileSubscriptions: () => Promise<void>;
+      snapshot: () => {
+        subscribedParticipantIds: string[];
+        subscriptions: Array<{ participantId: string; intent: boolean; status: string }>;
+      };
+    };
+    internal.phase = { name: "live" };
+    internal.room = {
+      code: "AAAAAAAAAAAAAAAAAAAA",
+      participants: [
+        { id: "human-1", role: "human", state: "connected", simulated: false },
+        { id: "human-2", role: "human", state: "connected", simulated: false },
+      ],
+      routing: [],
+    } as unknown as RoomSnapshot;
+    internal.transport.subscribe = subscribe;
+    internal.transport.unsubscribe = unsubscribe;
+
+    await internal.reconcileSubscriptions();
+    expect(internal.snapshot().subscribedParticipantIds).toEqual(["human-2"]);
+    expect(internal.snapshot().subscriptions[0]).toMatchObject({
+      participantId: "human-2",
+      intent: true,
+      status: "subscribed",
+    });
+
+    await session.setSubscription("human-2", false);
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+    expect(internal.snapshot().subscribedParticipantIds).toEqual([]);
+    expect(internal.snapshot().subscriptions[0]).toMatchObject({
+      intent: false,
+      status: "unsubscribed",
+    });
+
+    await session.setSubscription("human-2", true);
+    expect(subscribe).toHaveBeenCalledTimes(2);
+    expect(internal.snapshot().subscribedParticipantIds).toEqual(["human-2"]);
+    await session.close();
+  });
+
+  it("stops capture and withholds the publish event when the relay refuses PUBLISH", async () => {
+    const session = new RoomSession({
+      session: {
+        code: "AAAAAAAAAAAAAAAAAAAA",
+        participantId: "human-1",
+        rejoinToken: "rejoin-token",
+        displayName: "Human one",
+        storedAt: 0,
+      },
+      presenterMode: false,
+    });
+    const internal = session as unknown as {
+      phase: SessionPhase;
+      publishing: boolean;
+      captureMode: { name: string };
+      capture: { stop: () => Promise<void> };
+      handlePublicationFailure: (error: unknown) => Promise<void>;
+      snapshot: () => {
+        phase: SessionPhase;
+        publishing: boolean;
+        capture: { name: string; reason?: string };
+        events: Array<{ kind: string; detail: string }>;
+      };
+    };
+    internal.phase = { name: "live" };
+    internal.publishing = false;
+    internal.captureMode = { name: "opening_publication" };
+    internal.capture.stop = vi.fn().mockResolvedValue(undefined);
+    const refusal = new MoqTransportError(
+      "request_refused",
+      "The relay refused the track publication (code 16): namespace denied",
+      { operation: "track_publication", errorCode: 16, reason: "namespace denied" },
+    );
+
+    await internal.handlePublicationFailure(refusal);
+
+    expect(internal.capture.stop).toHaveBeenCalledTimes(1);
+    expect(internal.snapshot()).toMatchObject({
+      phase: { name: "blocked", failure: "relay_request_refused" },
+      publishing: false,
+      capture: { name: "listen_only", reason: refusal.message },
+    });
+    expect(internal.snapshot().events.some((event) => event.kind === "publish")).toBe(false);
+    expect(internal.snapshot().events[0]?.detail).toBe(refusal.message);
   });
 
   it("probes unknown namespace discovery and records the live result", async () => {
@@ -548,22 +670,18 @@ describe("M1 — bounded session recovery", () => {
   });
 
   it("opens one publication while concurrent audio frames wait", async () => {
-    let releaseNamespace: (() => void) | undefined;
-    const namespaceReady = new Promise<void>((resolve) => {
-      releaseNamespace = resolve;
+    let releasePublish: (() => void) | undefined;
+    const publishReady = new Promise<void>((resolve) => {
+      releasePublish = resolve;
     });
-    const calls = { addTrack: 0, publishNamespace: 0, publish: 0 };
+    const calls = { addTrack: 0, publish: 0 };
     const client = {
       addOrUpdateTrack: () => {
         calls.addTrack += 1;
       },
-      publishNamespace: async () => {
-        calls.publishNamespace += 1;
-        await namespaceReady;
-        return {};
-      },
       publish: async () => {
         calls.publish += 1;
+        await publishReady;
         return { requestId: 0n, trackAlias: 1n };
       },
     };
@@ -582,12 +700,78 @@ describe("M1 — bounded session recovery", () => {
       payload: new Uint8Array([2]),
     });
 
-    expect(calls).toEqual({ addTrack: 1, publishNamespace: 1, publish: 0 });
-    releaseNamespace?.();
+    expect(calls).toEqual({ addTrack: 1, publish: 1 });
+    releasePublish?.();
     await Promise.all([first, second]);
 
-    expect(calls).toEqual({ addTrack: 1, publishNamespace: 1, publish: 1 });
+    expect(calls).toEqual({ addTrack: 1, publish: 1 });
     expect(adapter.sessionStats().publishedObjects).toBe(2);
+  });
+
+  it("preserves the exact PUBLISH refusal operation, code and reason", async () => {
+    const client = {
+      addOrUpdateTrack: vi.fn(),
+      publish: vi
+        .fn()
+        .mockResolvedValue(
+          new RequestError(
+            1n,
+            RequestErrorCode.DoesNotExist,
+            0n,
+            new ReasonPhrase("namespace denied"),
+          ),
+        ),
+    };
+    const adapter = new MoqTransportAdapter();
+    const internal = adapter as unknown as {
+      client: typeof client;
+      stats: ReturnType<MoqTransportAdapter["sessionStats"]>;
+    };
+    internal.client = client;
+    internal.stats = { ...adapter.sessionStats(), state: "connected" };
+
+    await expect(
+      adapter.publish(
+        { namespace: "demo/room", name: "audio/participant" },
+        { groupId: 1, objectId: 1, payload: new Uint8Array([1]) },
+      ),
+    ).rejects.toMatchObject({
+      code: "request_refused",
+      message: "The relay refused the track publication (code 16): namespace denied",
+      request: {
+        operation: "track_publication",
+        errorCode: 16,
+        reason: "namespace denied",
+      },
+    });
+  });
+
+  it("classifies only code-16 Track not found subscriptions as publisher-not-ready", () => {
+    expect(
+      isTrackNotFoundError(
+        new MoqTransportError("request_refused", "refused", {
+          operation: "track_subscription",
+          errorCode: 16,
+          reason: "Track not found",
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isTrackNotFoundError(
+        new MoqTransportError("request_refused", "refused", {
+          operation: "track_publication",
+          errorCode: 16,
+          reason: "Track not found",
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it("backs off missing-track subscriptions and stops automatically", () => {
+    expect(Array.from({ length: 6 }, (_, index) => subscriptionRetryDelay(index + 1))).toEqual([
+      500, 1_000, 2_000, 4_000, 5_000, 5_000,
+    ]);
+    expect(subscriptionRetryDelay(7)).toBeNull();
   });
 
   it("coalesces a frame-rate burst of the same transport failure", () => {
@@ -600,6 +784,23 @@ describe("M1 — bounded session recovery", () => {
 
     log.record("failure", "The MOQT session is not connected.", { at: 2_000 });
     expect(log.list()).toHaveLength(2);
+  });
+
+  it("retains exact relay refusal evidence across a reload in the same browser session", () => {
+    const stored = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => stored.get(key) ?? null,
+      setItem: (key: string, value: string) => stored.set(key, value),
+      removeItem: (key: string) => void stored.delete(key),
+    };
+    const detail = "The relay refused the track publication (code 16): namespace denied";
+    new SessionEventLog("room-events", storage).record("failure", detail, { at: 1_000 });
+
+    expect(new SessionEventLog("room-events", storage).list()[0]).toMatchObject({
+      kind: "failure",
+      detail,
+      at: 1_000,
+    });
   });
 
   it("draws delays across the whole backoff window, not just its top half", () => {

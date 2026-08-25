@@ -4,13 +4,16 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  moqtail@0.12.1: 58d95566c17a0c7374504ee2aa3bc5b890246864af2dac0b660c47358769f5ca
+
 importers:
 
   .:
     dependencies:
       moqtail:
         specifier: 0.12.1
-        version: 0.12.1
+        version: 0.12.1(patch_hash=58d95566c17a0c7374504ee2aa3bc5b890246864af2dac0b660c47358769f5ca)
       react:
         specifier: 19.2.8
         version: 19.2.8
@@ -1864,7 +1867,7 @@ snapshots:
       - bufferutil
       - utf-8-validate
 
-  moqtail@0.12.1: {}
+  moqtail@0.12.1(patch_hash=58d95566c17a0c7374504ee2aa3bc5b890246864af2dac0b660c47358769f5ca): {}
 
   nanoid@3.3.18: {}
 

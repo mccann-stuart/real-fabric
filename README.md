@@ -31,7 +31,7 @@ Conflating the two would have meant never attempting the connection that produce
 | H6 — barge-in inside 300 ms, including in flight | `AiDirector.bargeIn`, [`AdaptiveJitterBuffer.cancelGroup`](src/client/audio/AdaptiveJitterBuffer.ts), `TrackPlayer.cancelGroup` | `test/invariants.test.ts` measures the latency and the discarded objects |
 | H7 — no cap, visible degradation | [`DegradationLadder`](src/client/audio/DegradationLadder.ts); the room service never refuses a join | `test/invariants.test.ts`, `test/room-service.test.ts`. **Measured capacity figures are outstanding — see below.** |
 | H8 — any composition with ≥1 human | `evaluateComposition` in [`contracts.ts`](src/shared/contracts.ts) | `test/room-service.test.ts` |
-| H9 — per-AI routing, honestly labelled | Room service `routing` table, [`ParticipantCard`](src/client/components/ParticipantCard.tsx), [`SubscriptionGraph`](src/client/components/SubscriptionGraph.tsx) | `test/invariants.test.ts`, `test/room-service.test.ts` |
+| H9 — per-AI routing, honestly labelled | Room service `routing` table, [`ParticipantCard`](src/client/components/ParticipantCard.tsx), [`SubscriptionGraph`](src/client/components/SubscriptionGraph.tsx); every real remote card also exposes this listener's actual subscribe/unsubscribe intent and accepted state | `test/invariants.test.ts`, `test/room-service.test.ts`, `test/milestone-1-transport.test.ts` |
 | H10 — no AI-to-AI by default | Off by default with a hard turn cap and a visible counter | `test/invariants.test.ts`, `test/room-service.test.ts` |
 | H11 — presenter mode runs solo | Configurable simulated counts, reconciled server-side, labelled everywhere | `test/room-service.test.ts` |
 | H12 — 60-second reclaim, no duplicate playback | [`useRoomSession`](src/client/hooks/useRoomSession.ts) spends the token on mount; [`PlaybackDeduplicator`](src/client/audio/PlaybackDeduplicator.ts) refuses repeats | `test/invariants.test.ts`, `test/room-service.test.ts` |
@@ -62,6 +62,7 @@ The ladder is implemented and unit-tested, and it announces every step. Its curr
 |---|---|
 | Relay endpoint integration on draft 16 | Built. `DRAFT_REGISTRY` holds the required wire version, while the adapter permits `moqtail` to add its pinned `SUPPORTED_VERSIONS` exactly once. This prevents Chrome rejecting duplicate WebTransport protocols and prevents an unrequested draft from being negotiated. |
 | CLIENT_SETUP / SERVER_SETUP negotiation | Built. Cloudflare draft-16 authentication places its provisioned token in the WebTransport URL path; the adapter constructs that URL in memory and redacts it from errors and inspection. A session with no SERVER_SETUP, or a `MAX_REQUEST_ID` of zero, is closed as a non-retryable protocol failure rather than left to present as dead air. |
+| Publication and subscription request lifecycle | Built. Draft-16 publication sends `PUBLISH` directly and waits for `PUBLISH_OK` before showing an uplink or publish event. A refusal stops capture and retains its exact code and reason in same-tab inspector history. Missing remote tracks use capped exponential retries, wake immediately on a namespace publication announcement, and expose listener-owned subscribe/unsubscribe controls. |
 | Pre-flight HTTP/3 and UDP probe | Built, in [`NetworkProbe`](src/client/transport/NetworkProbe.ts). Non-blocking, runs alongside the join, and compares a QUIC leg against a TCP leg to separate filtered UDP from a dead connection. It says so when the two are indistinguishable. |
 | Bounded session recovery | Built. Full jitter across the whole backoff window (equal jitter re-synchronises a roomful of clients), 30-second terminal threshold, and a floor so an unlucky draw is not a tight retry loop. |
 | **Gate 1 exit: `MOQT_TRANSPORT_VERIFIED = true`** | **Outstanding.** Needs a browser-to-relay trace on a real network. |
@@ -115,7 +116,7 @@ The production relay is `real-fabric-production` (`5266d64d9209fb9a8961f00974580
 - `src/client/components`, `src/client/pages` — entry, pre-flight, room, inspector and presenter surfaces.
 - `public/audio/mixer-worklet.js` — the single mixing point, served same-origin so it satisfies the existing `script-src 'self'` policy.
 - `src/worker` — API routing, security headers, redacted structured logs, provisioned relay credential handling and the SQLite Durable Object room service.
-- `test` — 129 automated tests across nine files covering the requirements above.
+- `test` — 135 automated tests across nine files covering the requirements above.
 
 ## Local setup
 

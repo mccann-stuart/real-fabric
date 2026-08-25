@@ -456,6 +456,9 @@ input::placeholder {
   border-color: var(--cyan);
   background: linear-gradient(100deg, rgba(66, 219, 231, 0.04), transparent 60%);
 }
+.participant-card--human.participant-card--remote {
+  grid-template-columns: 80px 150px 1fr minmax(180px, 215px);
+}
 .participant-card__avatar {
   width: 64px;
   height: 64px;
@@ -527,6 +530,28 @@ input::placeholder {
   background: #090b0c;
   padding: 5px;
 }
+.track-controls {
+  border: 1px solid var(--line-strong);
+  background: #090b0c;
+  padding: 5px;
+}
+.routing-controls .track-controls {
+  padding: 0;
+  border: 0;
+}
+.track-status {
+  display: block;
+  padding: 5px;
+  color: var(--muted);
+  font: 10px var(--mono);
+}
+.track-status--subscribed {
+  color: var(--green);
+}
+.track-status--subscribing,
+.track-status--waiting {
+  color: var(--amber);
+}
 .toggle-row {
   min-height: 30px;
   display: flex;
@@ -535,6 +560,7 @@ input::placeholder {
   padding: 0 5px;
   border-bottom: 1px solid var(--line);
   font: 12px var(--mono);
+  cursor: pointer;
 }
 .toggle-row span {
   margin-right: auto;
@@ -953,7 +979,8 @@ input::placeholder {
   }
   .participant-card__avatar,
   .participant-card__labels,
-  .routing-controls {
+  .routing-controls,
+  .track-controls {
     display: none;
   }
   .participant-card h3 {

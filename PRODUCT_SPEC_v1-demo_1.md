@@ -19,7 +19,7 @@
 This section records implementation state; it does not weaken the acceptance criteria below.
 
 - React, TypeScript and Vite client surfaces, the SQLite Durable Object room service, control-plane WebSocket, presenter simulation, media pipeline, inspector, telemetry and failure registry are present.
-- `moqtail` is exactly pinned at `0.12.1` and imported only by `MoqTransportAdapter`.
+- `moqtail` is exactly pinned at `0.12.1` and imported only by `MoqTransportAdapter`. A narrow pnpm patch passes its caught control-stream error into the existing termination callback instead of replacing it with an undefined reason.
 - `wrangler.jsonc` pins the operational Cloudflare draft-16 endpoint and keeps `MOQT_TRANSPORT_VERIFIED` at `false`, `MOQ_ROUTING_ENFORCEMENT` at `cooperative` and `MOQ_DISCOVERY` at `unknown`. Unknown discovery is probed after live setup and the observed result is recorded in the inspector; it is not inferred from configuration.
 - The adapter registry knows the supported draft metadata, while the pinned client frames draft 16 only and refuses any configured draft it cannot frame without downgrading.
 - The `real-fabric-production` isolated relay is provisioned with upstream fallback disabled. The production Worker holds a seven-day, relay-scoped publish/subscribe token that expires at `2026-09-01T20:38:32Z`; relay acceptance and expiry behaviour remain unverified until a live browser trace runs.
@@ -28,7 +28,8 @@ This section records implementation state; it does not weaken the acceptance cri
 - Dynamic device tracking, packet-loss concealment, bounded recovery and silence-gated drift correction are implemented and unit-tested; they have not passed acoustic or live-relay acceptance.
 - A bounded capture adapter retains `MediaStreamTrackProcessor` as the preferred Chrome path and adds an exact-frame AudioWorklet path for future desktop evaluation. Selection and framing are unit-tested; real-browser and acoustic parity remain open.
 - Concurrent-room limits, relay credential rate-limiting and the per-room AI cost ceiling remain product requirements rather than implemented controls.
-- The automated suite contains 129 passing tests across nine files. The Objects and Latency tabs compare exposed session figures with specification-defined budgets or targets and identify diagnostic-only figures as `Reported · no gate`; acoustic loopback remains `Not exposed`. Gate 1 interoperability, cross-browser acceptance, measured capacity, the audible ten-minute run and two clean venue-network script runs remain open.
+- Capture, relay-accepted publication and local subscription intent are separate states. `PUBLISH_OK` is required before the uplink or publish event appears; a rejected request stops capture and its exact sanitised refusal remains in same-tab session history.
+- The automated suite contains 135 passing tests across nine files. The Objects and Latency tabs compare exposed session figures with specification-defined budgets or targets and identify diagnostic-only figures as `Reported · no gate`; acoustic loopback remains `Not exposed`. Gate 1 interoperability, cross-browser acceptance, measured capacity, the audible ten-minute run and two clean venue-network script runs remain open.
 
 ---
 
@@ -214,8 +215,9 @@ Leaving closes local publications and subscriptions, stops capture and signals t
 - Encode Opus at **32 kbit/s**, 20 ms frames, presenter-adjustable.
 - **Enable Opus DTX.** A silent participant then costs almost nothing across the relay and at every subscriber. This is what makes open membership affordable, and it should be visible in the inspector's per-track object rate.
 - One independent track per participant. **No mixing at the relay or room service (H2).**
+- Draft-16 publication uses the relay-supported `PUBLISH` / `PUBLISH_OK` path directly. It does not gate `PUBLISH` behind the unsupported `PUBLISH_NAMESPACE` request.
 - Subscriptions are the routing mechanism. No participant subscribes to itself.
-- Every human automatically subscribes to every other real human track. A track that is not published yet may refuse the first request; its later MOQT namespace announcement retriggers reconciliation without waiting for an unrelated membership event.
+- Every human defaults to subscribing to every other real human track and can locally unsubscribe or resubscribe from that participant's card. A track that is not published yet may return code 16 `Track not found`; retries use a capped exponential sequence, stop automatically, and restart immediately when a later MOQT namespace announcement says a publication exists.
 - **Playback graph:** each subscribed track decodes into its own buffered source node; all are summed in a single `AudioWorklet` against one output clock. The worklet is the only place mixing happens, and it happens on the listener's machine.
 - **Clock drift:** estimate per-track skew between each sender's media clock and the local `AudioContext` clock. Correct continuously by slow resampling, or by inserting and dropping frames at detected silence. Log corrections and surface them in the inspector. Cost scales with active speakers, not with membership, because DTX means silent tracks produce nothing to correct.
 - Adaptive jitter buffer per track, nominal 60 ms, bounded 40–200 ms, adapting to observed inter-arrival jitter and underrun rate.

@@ -31,6 +31,7 @@ import { TrackPlayer } from "../audio/TrackPlayer";
 import type { CapturePath } from "../audio/UniversalAudioCaptureAdapter";
 import { SessionTelemetry } from "../telemetry/SessionTelemetry";
 import {
+  isTrackNotFoundError,
   type MoqNegotiation,
   MoqTransportAdapter,
   MoqTransportError,
@@ -102,11 +103,23 @@ export type CaptureMode =
   | { name: "idle" }
   /** The automatic permission and capture request is in flight. */
   | { name: "starting" }
+  /** Capture is live, but the relay has not accepted PUBLISH yet. */
+  | { name: "opening_publication" }
   | { name: "publishing" }
   /** Listening and inspecting continue; nothing is published from here. */
   | { name: "listen_only"; failure: FailureCode; reason: string }
   /** A device appeared while in listen-only; the presenter is offered calibration. */
   | { name: "listen_only_device_available"; reason: string };
+
+export type TrackSubscriptionStatus = "unsubscribed" | "subscribing" | "waiting" | "subscribed";
+
+/** Per-listener transport state shown on each remote participant card. */
+export interface TrackSubscriptionState {
+  participantId: string;
+  intent: boolean;
+  status: TrackSubscriptionStatus;
+  detail: string;
+}
 
 export interface SessionState {
   phase: SessionPhase;
@@ -118,6 +131,7 @@ export interface SessionState {
   capture: CaptureMode;
   /** Subscriptions the relay accepted, used by the live inspector graph. */
   subscribedParticipantIds: string[];
+  subscriptions: TrackSubscriptionState[];
   speaking: boolean;
   micLevel: number;
   metrics: SessionMetrics;
@@ -140,6 +154,18 @@ const DRAIN_INTERVAL_MS = 20;
 const CONTROL_RETRY_BASE_MS = 250;
 const CONTROL_RETRY_MAX_MS = 5_000;
 const STABLE_TRANSPORT_MS = 5_000;
+export const SUBSCRIPTION_RETRY_DELAYS_MS = [500, 1_000, 2_000, 4_000, 5_000, 5_000] as const;
+
+interface SubscriptionRetry {
+  attempt: number;
+  nextAttemptAt: number | null;
+  reason: string;
+  publisherNotReady: boolean;
+}
+
+export function subscriptionRetryDelay(attempt: number): number | null {
+  return SUBSCRIPTION_RETRY_DELAYS_MS[attempt - 1] ?? null;
+}
 
 /** Only an indeterminate relay outage benefits from the bounded retry policy. */
 export function isRetryableTransportFailure(failure: FailureCode): boolean {
@@ -151,14 +177,14 @@ export class RoomSession {
   readonly scripted = new ScriptedResponder();
   readonly telemetry = new SessionTelemetry();
 
-  private readonly log = new SessionEventLog();
+  private readonly log: SessionEventLog;
   private readonly transport = new MoqTransportAdapter({
     onUnexpectedTermination: (error) => this.onTransportTerminated(error),
     onNamespacePublished: () => {
       // A human may publish after our first SUBSCRIBE was refused. Reconcile
       // on the protocol's publication announcement instead of waiting for an
       // unrelated membership or routing event.
-      void this.reconcileSubscriptions();
+      this.retryWaitingSubscriptionsNow();
     },
   });
   private readonly mixer = new MixerGraph();
@@ -166,7 +192,9 @@ export class RoomSession {
   private readonly ladder = new DegradationLadder();
   private readonly reconnection = new ReconnectionPolicy();
   private readonly players = new Map<string, TrackPlayer>();
-  private readonly refusedSubscriptions = new Set<string>();
+  private readonly subscriptionIntent = new Map<string, boolean>();
+  private readonly subscriptionRetries = new Map<string, SubscriptionRetry>();
+  private readonly subscriptionsOpening = new Set<string>();
   private readonly now: () => number;
 
   private readonly devices: DeviceWatcher;
@@ -201,11 +229,19 @@ export class RoomSession {
   private drainTimer: ReturnType<typeof setInterval> | null = null;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private controlRetryTimer: ReturnType<typeof setTimeout> | null = null;
+  private subscriptionRetryTimer: ReturnType<typeof setTimeout> | null = null;
   private controlReconnectAttempt = 0;
+  private publicationFailureHandling = false;
   private closed = false;
 
   constructor(private readonly options: RoomSessionOptions) {
     this.now = options.now ?? Date.now;
+    this.log = new SessionEventLog(
+      `real-fabric:events:${options.session.code}:${options.session.participantId}`,
+    );
+    for (const [participantId, enabled] of restoreSubscriptionIntent(options.session)) {
+      this.subscriptionIntent.set(participantId, enabled);
+    }
     this.devices = new DeviceWatcher({
       onChange: (transition) => this.onDeviceChange(transition),
     });
@@ -419,7 +455,13 @@ export class RoomSession {
     // after the bounded reconnect succeeds.
     for (const player of this.players.values()) player.close();
     this.players.clear();
-    this.refusedSubscriptions.clear();
+    this.subscriptionsOpening.clear();
+    this.subscriptionRetries.clear();
+    this.clearSubscriptionRetryTimer();
+    if (this.publishing || this.captureMode.name === "opening_publication") {
+      this.publishing = false;
+      this.captureMode = { name: "opening_publication" };
+    }
     void this.handleTransportFailure(error);
   }
 
@@ -467,7 +509,19 @@ export class RoomSession {
    */
   async startPublishing(): Promise<void> {
     if (this.publishing) return;
+    if (this.captureMode.name === "opening_publication") return;
     if (this.publishingStart) return this.publishingStart;
+
+    // A rejected PUBLISH leaves the MOQT session itself usable. Retrying the
+    // microphone re-arms only publication on that same negotiated session.
+    if (
+      this.phase.name === "blocked" &&
+      this.phase.failure === "relay_request_refused" &&
+      this.transport.sessionStats().state === "connected"
+    ) {
+      this.clearFailure("relay_request_refused");
+      this.setPhase({ name: "live" });
+    }
 
     this.captureMode = { name: "starting" };
     this.emit();
@@ -512,10 +566,10 @@ export class RoomSession {
         return;
       }
       this.mixer.resume();
-      this.publishing = true;
-      this.captureMode = { name: "publishing" };
-      this.log.record("publish", `audio/${this.options.session.participantId}`);
-      this.telemetry.record({ type: "publication_opened" });
+      // Capture and accepted relay publication are deliberately separate.
+      // The first encoded frame opens PUBLISH; only its PUBLISH_OK changes the
+      // state to publishing and creates the inspector event.
+      if (!this.publishing) this.captureMode = { name: "opening_publication" };
     } catch (error) {
       const name = error instanceof DOMException ? error.name : "";
       const failure: FailureCode =
@@ -580,13 +634,39 @@ export class RoomSession {
         objectId: this.sequence,
         payload: object,
       })
+      .then(() => this.onPublicationAccepted())
       .catch((error: unknown) => {
         // A failed publication is a session failure, not a per-frame warning.
         // The first rejection moves the phase out of live, which suppresses
         // the other frames already queued behind the same publication.
         if (this.phase.name !== "live") return;
-        void this.handleTransportFailure(error);
+        void this.handlePublicationFailure(error);
       });
+  }
+
+  private onPublicationAccepted(): void {
+    if (this.closed || this.publishing) return;
+    this.publishing = true;
+    this.captureMode = { name: "publishing" };
+    this.log.record("publish", `audio/${this.options.session.participantId}`);
+    this.telemetry.record({ type: "publication_opened" });
+    this.emit();
+  }
+
+  private async handlePublicationFailure(error: unknown): Promise<void> {
+    if (this.publicationFailureHandling || this.closed) return;
+    this.publicationFailureHandling = true;
+    try {
+      this.publishing = false;
+      await this.capture.stop();
+      const failure = this.classifyTransportFailure(error);
+      const reason = error instanceof Error ? error.message : "Track publication failed.";
+      this.captureMode = { name: "listen_only", failure, reason };
+      await this.handleTransportFailure(error);
+    } finally {
+      this.publicationFailureHandling = false;
+      this.emit();
+    }
   }
 
   /**
@@ -702,21 +782,19 @@ export class RoomSession {
     const room = this.room;
     if (!room || this.phase.name !== "live") return;
     const wanted = new Set(this.subscribableParticipants().map((participant) => participant.id));
-    for (const participantId of this.refusedSubscriptions) {
-      if (!wanted.has(participantId)) this.refusedSubscriptions.delete(participantId);
+    for (const participantId of this.subscriptionRetries.keys()) {
+      if (!wanted.has(participantId)) this.subscriptionRetries.delete(participantId);
     }
 
     for (const [participantId, player] of this.players) {
       if (wanted.has(participantId)) continue;
-      player.close();
-      this.players.delete(participantId);
-      this.refusedSubscriptions.delete(participantId);
-      await this.transport.unsubscribe(audioTrack(room.code, participantId)).catch(() => undefined);
-      this.log.record("unsubscribe", `audio/${participantId}`, { subject: participantId });
+      await this.unsubscribeParticipant(participantId, player);
     }
 
     for (const participantId of wanted) {
-      if (this.players.has(participantId)) continue;
+      if (this.players.has(participantId) || this.subscriptionsOpening.has(participantId)) continue;
+      const retry = this.subscriptionRetries.get(participantId);
+      if (retry && (retry.nextAttemptAt === null || retry.nextAttemptAt > this.now())) continue;
       const track = audioTrack(room.code, participantId);
       const player = new TrackPlayer(participantId, trackKey(track), this.mixer, {
         onFirstObject: (trackId) => {
@@ -753,33 +831,140 @@ export class RoomSession {
           this.log.record("failure", error.message, { subject: participantId });
         },
       });
-      this.players.set(participantId, player);
-      if (!this.refusedSubscriptions.has(participantId)) {
-        this.log.record("subscribe", `audio/${participantId}`, { subject: participantId });
-      }
+      this.subscriptionsOpening.add(participantId);
+      this.log.record("subscribe", `audio/${participantId}`, { subject: participantId });
+      this.emit();
 
       try {
         const stream = await this.transport.subscribe(track);
-        this.refusedSubscriptions.delete(participantId);
+        this.subscriptionsOpening.delete(participantId);
+        this.subscriptionRetries.delete(participantId);
+        if (
+          !this.subscribableParticipants().some((participant) => participant.id === participantId)
+        ) {
+          player.close();
+          await this.transport.unsubscribe(track).catch(() => undefined);
+          this.log.record("unsubscribe", `audio/${participantId}`, { subject: participantId });
+          continue;
+        }
+        this.players.set(participantId, player);
         void this.consume(participantId, player, stream);
       } catch (error) {
-        this.players.delete(participantId);
+        this.subscriptionsOpening.delete(participantId);
         player.close();
-        // A missing or not-yet-published remote track is a request-level
-        // refusal, not a dead MOQT session. Reconciliation may try again as
-        // room state changes, but it must not turn the whole room blocking.
-        const requestRefused =
-          error instanceof MoqTransportError && error.code === "request_refused";
-        if (!requestRefused) {
-          this.raise("relay_failed");
+        const reason = error instanceof Error ? error.message : "Subscribe failed.";
+        if (isTrackNotFoundError(error)) {
+          const attempt = (retry?.attempt ?? 0) + 1;
+          const delayMs = subscriptionRetryDelay(attempt);
+          this.subscriptionRetries.set(participantId, {
+            attempt,
+            nextAttemptAt: delayMs === null ? null : this.now() + delayMs,
+            reason,
+            publisherNotReady: true,
+          });
+          this.log.record(
+            "subscribe",
+            delayMs === null
+              ? `${reason} Automatic retries stopped after ${attempt} attempts; use the track control to retry.`
+              : `${reason} Publisher not ready; attempt ${attempt + 1} in ${delayMs} ms.`,
+            { subject: participantId },
+          );
+        } else {
+          this.subscriptionRetries.set(participantId, {
+            attempt: 1,
+            nextAttemptAt: null,
+            reason,
+            publisherNotReady: false,
+          });
+          if (!(error instanceof MoqTransportError && error.code === "request_refused")) {
+            this.raise("relay_failed");
+          }
+          this.log.record("failure", reason, { subject: participantId });
         }
-        if (!requestRefused || !this.refusedSubscriptions.has(participantId)) {
-          this.log.record("failure", error instanceof Error ? error.message : "Subscribe failed.");
-        }
-        if (requestRefused) this.refusedSubscriptions.add(participantId);
       }
     }
+    this.scheduleSubscriptionRetry();
     this.emit();
+  }
+
+  /** Local listener control for remote human tracks. AI intent stays in FR8 routing. */
+  async setSubscription(participantId: string, enabled: boolean): Promise<void> {
+    const participant = this.room?.participants.find((candidate) => candidate.id === participantId);
+    if (
+      !participant ||
+      participant.id === this.options.session.participantId ||
+      participant.simulated
+    ) {
+      return;
+    }
+    this.subscriptionIntent.set(participantId, enabled);
+    persistSubscriptionIntent(this.options.session, this.subscriptionIntent);
+    this.subscriptionRetries.delete(participantId);
+    if (!enabled) {
+      const player = this.players.get(participantId);
+      if (player) {
+        await this.unsubscribeParticipant(
+          participantId,
+          player,
+          `audio/${participantId} disabled by listener`,
+        );
+      } else {
+        this.log.record("unsubscribe", `audio/${participantId} disabled by listener`, {
+          subject: participantId,
+        });
+      }
+    } else {
+      this.log.record("subscribe", `audio/${participantId} enabled by listener`, {
+        subject: participantId,
+      });
+      await this.reconcileSubscriptions();
+    }
+    this.scheduleSubscriptionRetry();
+    this.emit();
+  }
+
+  private async unsubscribeParticipant(
+    participantId: string,
+    player: TrackPlayer,
+    detail = `audio/${participantId}`,
+  ): Promise<void> {
+    const room = this.room;
+    if (!room) return;
+    player.close();
+    this.players.delete(participantId);
+    this.subscriptionRetries.delete(participantId);
+    await this.transport.unsubscribe(audioTrack(room.code, participantId)).catch(() => undefined);
+    this.log.record("unsubscribe", detail, { subject: participantId });
+  }
+
+  private retryWaitingSubscriptionsNow(): void {
+    const now = this.now();
+    for (const [participantId, retry] of this.subscriptionRetries) {
+      if (!retry.publisherNotReady) continue;
+      this.subscriptionRetries.set(participantId, { ...retry, nextAttemptAt: now });
+    }
+    void this.reconcileSubscriptions();
+  }
+
+  private scheduleSubscriptionRetry(): void {
+    this.clearSubscriptionRetryTimer();
+    const due = [...this.subscriptionRetries.values()]
+      .map((retry) => retry.nextAttemptAt)
+      .filter((value): value is number => value !== null)
+      .sort((left, right) => left - right)[0];
+    if (due === undefined) return;
+    this.subscriptionRetryTimer = setTimeout(
+      () => {
+        this.subscriptionRetryTimer = null;
+        if (!this.closed) void this.reconcileSubscriptions();
+      },
+      Math.max(0, due - this.now()),
+    );
+  }
+
+  private clearSubscriptionRetryTimer(): void {
+    if (this.subscriptionRetryTimer) clearTimeout(this.subscriptionRetryTimer);
+    this.subscriptionRetryTimer = null;
   }
 
   private async consume(
@@ -830,7 +1015,7 @@ export class RoomSession {
       if (participant.state === "left") return false;
       if (participant.simulated) return false;
       if (paused.has(trackKey(audioTrack(room.code, participant.id)))) return false;
-      if (participant.role !== "ai") return true;
+      if (participant.role !== "ai") return this.subscriptionIntent.get(participant.id) ?? true;
       const row = room.routing.find(
         (candidate) =>
           candidate.aiId === participant.id &&
@@ -838,6 +1023,73 @@ export class RoomSession {
       );
       return row?.iHearIt ?? true;
     });
+  }
+
+  private subscriptionStates(): TrackSubscriptionState[] {
+    const room = this.room;
+    if (!room) return [];
+    return (room.participants ?? [])
+      .filter(
+        (participant) =>
+          participant.id !== this.options.session.participantId &&
+          participant.state !== "left" &&
+          !participant.simulated,
+      )
+      .map((participant) => {
+        const intent = this.subscriptionIntentFor(participant);
+        if (!intent) {
+          return {
+            participantId: participant.id,
+            intent,
+            status: "unsubscribed",
+            detail: "Unsubscribed by this listener.",
+          };
+        }
+        if (this.players.has(participant.id)) {
+          return {
+            participantId: participant.id,
+            intent,
+            status: "subscribed",
+            detail: "SUBSCRIBE_OK received from the relay.",
+          };
+        }
+        if (this.subscriptionsOpening.has(participant.id)) {
+          return {
+            participantId: participant.id,
+            intent,
+            status: "subscribing",
+            detail: "Waiting for the relay to answer SUBSCRIBE.",
+          };
+        }
+        const retry = this.subscriptionRetries.get(participant.id);
+        if (retry) {
+          return {
+            participantId: participant.id,
+            intent,
+            status: "waiting",
+            detail:
+              retry.nextAttemptAt === null
+                ? `${retry.reason} Automatic retries are paused; switch the control off and on to retry.`
+                : `${retry.reason} Retrying with bounded backoff.`,
+          };
+        }
+        return {
+          participantId: participant.id,
+          intent,
+          status: "waiting",
+          detail: "Waiting for a live relay session.",
+        };
+      });
+  }
+
+  private subscriptionIntentFor(participant: Participant): boolean {
+    if (participant.role !== "ai") return this.subscriptionIntent.get(participant.id) ?? true;
+    const row = this.room?.routing?.find(
+      (candidate) =>
+        candidate.aiId === participant.id &&
+        candidate.humanId === this.options.session.participantId,
+    );
+    return row?.iHearIt ?? true;
   }
 
   private tickLadder(): void {
@@ -1009,10 +1261,13 @@ export class RoomSession {
     if (this.drainTimer) clearInterval(this.drainTimer);
     if (this.retryTimer) clearTimeout(this.retryTimer);
     if (this.controlRetryTimer) clearTimeout(this.controlRetryTimer);
+    this.clearSubscriptionRetryTimer();
     this.ladderTimer = null;
     this.drainTimer = null;
     this.retryTimer = null;
     this.controlRetryTimer = null;
+    this.subscriptionRetries.clear();
+    this.subscriptionsOpening.clear();
 
     for (const player of this.players.values()) player.close();
     this.players.clear();
@@ -1047,6 +1302,7 @@ export class RoomSession {
       publishing: this.publishing,
       capture: this.captureMode,
       subscribedParticipantIds: [...this.players.keys()],
+      subscriptions: this.subscriptionStates(),
       speaking: this.capture.speaking,
       micLevel: this.capture.level,
       metrics: this.metrics(),
@@ -1190,6 +1446,38 @@ const relayCredentials = new Map<string, string>();
 export function rememberRelayCredential(participantId: string, credential: string | null): void {
   if (credential) relayCredentials.set(participantId, credential);
   else relayCredentials.delete(participantId);
+}
+
+function subscriptionIntentKey(session: StoredSession): string {
+  return `real-fabric:subscriptions:${session.code}:${session.participantId}`;
+}
+
+function restoreSubscriptionIntent(session: StoredSession): Array<[string, boolean]> {
+  try {
+    if (typeof sessionStorage === "undefined") return [];
+    const parsed = JSON.parse(
+      sessionStorage.getItem(subscriptionIntentKey(session)) ?? "[]",
+    ) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (entry): entry is [string, boolean] =>
+        Array.isArray(entry) && typeof entry[0] === "string" && typeof entry[1] === "boolean",
+    );
+  } catch {
+    return [];
+  }
+}
+
+function persistSubscriptionIntent(
+  session: StoredSession,
+  intent: ReadonlyMap<string, boolean>,
+): void {
+  try {
+    if (typeof sessionStorage === "undefined") return;
+    sessionStorage.setItem(subscriptionIntentKey(session), JSON.stringify([...intent]));
+  } catch {
+    // Storage can be disabled; controls still apply for the live page lifetime.
+  }
 }
 
 /** §6.2: relay-visible identifiers stay opaque, so the header carries a hash. */

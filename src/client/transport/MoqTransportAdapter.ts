@@ -130,9 +130,32 @@ export class MoqTransportError extends Error {
       | "request_refused"
       | "protocol_error",
     message: string,
+    readonly request: MoqRequestRefusal | null = null,
   ) {
     super(message);
   }
+}
+
+export type MoqRequestOperation =
+  | "track_publication"
+  | "track_subscription"
+  | "namespace_subscription";
+
+/** Exact, sanitised relay refusal evidence retained for the inspector. */
+export interface MoqRequestRefusal {
+  operation: MoqRequestOperation;
+  errorCode: number;
+  reason: string;
+}
+
+export function isTrackNotFoundError(error: unknown): error is MoqTransportError {
+  return (
+    error instanceof MoqTransportError &&
+    error.code === "request_refused" &&
+    error.request?.operation === "track_subscription" &&
+    error.request.errorCode === 16 &&
+    /track not found/i.test(error.request.reason)
+  );
 }
 
 export interface MoqTransportCallbacks {
@@ -402,19 +425,14 @@ export class MoqTransportAdapter {
       trackSource: { live: new LiveTrackSource(stream) },
       publisherPriority: 0,
     });
-    const namespaceResult = await client.publishNamespace(fullName.namespace);
-    if (namespaceResult instanceof RequestError) {
-      throw new MoqTransportError(
-        "request_refused",
-        requestErrorMessage("track namespace publication", namespaceResult),
-      );
-    }
+    // Cloudflare's draft-16 feature matrix exposes PUBLISH/PUBLISH_OK but not
+    // PUBLISH_NAMESPACE. The track's full namespace is already carried by
+    // PUBLISH, so sending the unsupported namespace request first can prevent
+    // a credential that is otherwise allowed to publish from ever reaching
+    // the supported request.
     const result = await client.publish(fullName, true, this.nextAlias++);
     if (result instanceof RequestError) {
-      throw new MoqTransportError(
-        "request_refused",
-        requestErrorMessage("track publication", result),
-      );
+      throw requestRefusal("track_publication", "track publication", result);
     }
     if (connectionGeneration !== this.connectionGeneration || client !== this.client) {
       controller.close();
@@ -445,10 +463,7 @@ export class MoqTransportAdapter {
         : {}),
     });
     if (result instanceof RequestError) {
-      throw new MoqTransportError(
-        "request_refused",
-        requestErrorMessage("track subscription", result),
-      );
+      throw requestRefusal("track_subscription", "track subscription", result);
     }
     this.subscriptions.set(trackKey(track), result.requestId);
     const adapter = this;
@@ -474,9 +489,10 @@ export class MoqTransportAdapter {
     const client = this.requireClient();
     const result = await client.subscribeNamespace(Tuple.fromUtf8Path(namespace));
     if (result.response instanceof RequestError) {
-      throw new MoqTransportError(
-        "request_refused",
-        requestErrorMessage(`namespace '${namespace}' subscription`, result.response),
+      throw requestRefusal(
+        "namespace_subscription",
+        `namespace '${namespace}' subscription`,
+        result.response,
       );
     }
     this.namespaceCancels.set(namespace, result.cancel);
@@ -523,6 +539,18 @@ function requestErrorMessage(operation: string, error: RequestError): string {
   return `The relay refused the ${operation} (code ${error.errorCode})${
     reason ? `: ${reason}` : "."
   }`;
+}
+
+function requestRefusal(
+  operation: MoqRequestOperation,
+  label: string,
+  error: RequestError,
+): MoqTransportError {
+  return new MoqTransportError("request_refused", requestErrorMessage(label, error), {
+    operation,
+    errorCode: error.errorCode,
+    reason: error.reasonPhrase.phrase.trim(),
+  });
 }
 
 function trackKey(track: TrackAddress): string {
