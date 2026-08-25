@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FailureCode } from "../../shared/failures";
 import { fetchHealth } from "../api";
+import { draftsFramedByClient } from "../transport/MoqTransportAdapter";
+import { notRunProbe, type ProbeResult, probeRelayReachability } from "../transport/NetworkProbe";
 
 export type CheckState =
   | "checking"
@@ -17,6 +19,8 @@ export interface CapabilityReport {
   microphone: CheckState;
   relay: CheckState;
   relayReason: string;
+  /** §11.2: HTTP/3 and QUIC reachability, run in the background. */
+  network: ProbeResult;
   /** H14: the specific §10 row, so the caller renders named copy not a generic error. */
   failure: FailureCode | null;
 }
@@ -28,6 +32,7 @@ const INITIAL: CapabilityReport = {
   microphone: "not_tested",
   relay: "checking",
   relayReason: "Checking the room service and draft gate.",
+  network: notRunProbe("The relay reachability probe has not started."),
   failure: null,
 };
 
@@ -47,15 +52,31 @@ export function useCapabilities() {
       let relay: CheckState = "unavailable";
       let relayReason = "The room service is unreachable.";
       let failure: FailureCode | null = null;
+      let relayEndpoint: string | null = null;
 
       try {
         const health = await fetchHealth();
-        relay = health.transportVerified ? "ready" : "unavailable";
-        relayReason = health.transportVerified
-          ? `MOQT draft ${health.draft} trace verified. Inbound routing is ${health.routingEnforcement}; discovery is ${health.discovery}.`
-          : `Room service ready; MOQT draft ${health.draft} has not passed a browser-to-relay trace.`;
-        // H14: name the §10 row rather than collapsing everything into "error".
-        if (!health.transportVerified) failure = "draft_endpoint_missing";
+        relayEndpoint = health.relayEndpoint;
+        const framed = draftsFramedByClient();
+        const endpoint = health.relayEndpointName ?? "no configured endpoint";
+
+        if (!health.relayEndpoint) {
+          // H14: no endpoint is a different fact from an endpoint that fails.
+          relay = "unavailable";
+          relayReason = `No relay endpoint is configured for MOQT draft ${health.draft}.`;
+          failure = "draft_endpoint_missing";
+        } else if (!framed.includes(health.draft as (typeof framed)[number])) {
+          relay = "unavailable";
+          relayReason = `This build frames MOQT draft ${framed.join(", ") || "no draft"}, but the room service is pinned to draft ${health.draft}.`;
+          failure = "draft_mismatch";
+        } else {
+          // Configured and frameable: a live session will be attempted. Gate 1
+          // verification is reported separately, never implied by "ready".
+          relay = "ready";
+          relayReason = health.transportVerified
+            ? `MOQT draft ${health.draft} on ${endpoint} passed a browser-to-relay trace. Inbound routing is ${health.routingEnforcement}; discovery is ${health.discovery}.`
+            : `MOQT draft ${health.draft} on ${endpoint} is configured and will be attempted live. No Gate 1 trace has been recorded, so transport is not yet claimed as verified.`;
+        }
       } catch {
         relayReason = "The room service or relay probe could not be reached.";
         failure = "udp_blocked";
@@ -71,17 +92,34 @@ export function useCapabilities() {
         failure = "transport_unsupported";
       }
 
-      if (active) {
-        setReport((current) => ({
-          ...current,
-          secureContext,
-          webTransport,
-          opus,
-          relay,
-          relayReason,
-          failure,
-        }));
-      }
+      if (!active) return;
+      setReport((current) => ({
+        ...current,
+        secureContext,
+        webTransport,
+        opus,
+        relay,
+        relayReason,
+        failure,
+      }));
+
+      // §11.2 deliverable three: the probe runs in the background and never
+      // gates entry. Its result refines the failure only when nothing nearer
+      // has already claimed it.
+      setReport((current) => ({
+        ...current,
+        network: { ...current.network, state: "probing", detail: "Testing HTTP/3 and QUIC…" },
+      }));
+      const network = await probeRelayReachability({ relayEndpoint });
+      if (!active) return;
+      setReport((current) => ({
+        ...current,
+        network,
+        failure:
+          network.state === "udp_blocked" && current.failure === null
+            ? "udp_blocked"
+            : current.failure,
+      }));
     };
     void run();
     return () => {

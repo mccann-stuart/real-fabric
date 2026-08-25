@@ -94,7 +94,7 @@ const REGISTRY: Record<FailureCode, FailureState> = {
   },
   draft_endpoint_missing: {
     code: "draft_endpoint_missing",
-    title: "No draft-20 relay endpoint",
+    title: "No relay endpoint for the pinned draft",
     experience:
       "The pinned MOQT draft has no deployed relay endpoint, so live audio cannot start. This is reported at startup, not at join.",
     behaviour:

@@ -18,6 +18,10 @@ export type SessionEventKind =
   | "reconnect"
   | "degradation"
   | "drift"
+  /** §10.5: a concealed gap, counted and named rather than played as a hole. */
+  | "concealment"
+  /** §11.3: audio input devices appearing or disappearing. Counts, never labels. */
+  | "device"
   | "failure"
   | "simulation"
   | "close";

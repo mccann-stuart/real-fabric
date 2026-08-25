@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MAX_SIMULATED_PARTICIPANTS } from "../../shared/contracts";
+import { MAX_SIMULATED_PARTICIPANTS, PINNED_MOQT_DRAFT } from "../../shared/contracts";
 import { configurePresenter, createRoom, joinRoom, normaliseCode, storeSession } from "../api";
 import { Brand } from "../components/Brand";
 import { PinnedConfigBanner } from "../components/PinnedConfigBanner";
@@ -198,7 +198,7 @@ export function EntryPage({
           <b>WebTransport</b> — working draft
         </span>
         <span>
-          <b>MOQT</b> — draft 20 target
+          <b>MOQT</b> — draft {PINNED_MOQT_DRAFT} live target
         </span>
         <span>No media is stored.</span>
       </footer>

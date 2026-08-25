@@ -211,6 +211,25 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
         </p>
       ) : null}
 
+      {/* §11.3: listen-only is a named mode, not a microphone button that
+          silently does nothing. The retry is offered where the reason is given. */}
+      {state?.capture.name === "listen_only" ? (
+        <p className="degradation-banner" role="status">
+          <b>Listen-only:</b> {state.capture.reason} Listening and the inspector are unaffected.{" "}
+          <button type="button" onClick={() => void startPublishing()}>
+            Try the microphone again
+          </button>
+        </p>
+      ) : null}
+      {state?.capture.name === "listen_only_device_available" ? (
+        <p className="degradation-banner" role="status">
+          <b>Microphone available:</b> {state.capture.reason}{" "}
+          <button type="button" onClick={() => void startPublishing()}>
+            Start microphone
+          </button>
+        </p>
+      ) : null}
+
       {/* H14 */}
       <FailureList
         codes={state?.failures ?? []}
@@ -258,6 +277,8 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
             events={state.events}
             publishing={state.publishing}
             subscribedIds={subscribedIds}
+            negotiation={state.negotiation}
+            network={state.network}
             open={inspectorOpen}
             onClose={() => setInspectorOpen(false)}
           />

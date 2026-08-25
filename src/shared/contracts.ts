@@ -1,6 +1,26 @@
 import type { FailureCode } from "./failures";
 
-export const MOQT_DRAFT = "20" as const;
+/**
+ * §11.2: the drafts this build knows how to talk about. Which one it can
+ * actually frame is decided by `MoqTransportAdapter` alone — this list exists so
+ * configuration, the room service and the inspector can name a draft without
+ * importing the adapter's wire constants.
+ */
+export const MOQT_DRAFTS = ["14", "16", "18", "20"] as const;
+export type MoqDraft = (typeof MOQT_DRAFTS)[number];
+
+/**
+ * The Gate 1 target. Draft 20 has no deployed relay endpoint (§2.1), so the
+ * release plan pins the milestone at the operational Cloudflare draft-16
+ * endpoint instead. Moving to 20 is a configuration change and an adapter
+ * registry entry, not a room, UI or audio change.
+ */
+export const PINNED_MOQT_DRAFT: MoqDraft = "16";
+
+export function asMoqDraft(value: string): MoqDraft | null {
+  return (MOQT_DRAFTS as readonly string[]).includes(value) ? (value as MoqDraft) : null;
+}
+
 export const REJOIN_WINDOW_MS = 60_000;
 export const ROOM_LIFETIME_MS = 20 * 60_000;
 /** FR1: empty rooms expire well before the hard stop. */
@@ -77,8 +97,17 @@ export interface FloorState {
 
 export interface TransportStatus {
   availability: TransportAvailability;
-  draft: typeof MOQT_DRAFT;
+  draft: MoqDraft;
   endpoint: string;
+  /** Operator-facing relay name for the inspector and the Gate 1 record. */
+  endpointName: string;
+  /**
+   * H1 and Gate 1 exit: whether a browser-to-relay trace has been recorded for
+   * this endpoint. Deliberately separate from `availability`. An endpoint being
+   * configured is reason enough to attempt a real session; only a recorded
+   * trace is reason enough to claim one works.
+   */
+  traceVerified: boolean;
   /** §10 row in effect when availability is not `available`. */
   failure: FailureCode | null;
   reason: string;

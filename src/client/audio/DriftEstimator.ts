@@ -9,9 +9,19 @@ import { type Measurement, measured, notExposed } from "../../shared/measurement
  * skew exceeds the correction range is reported rather than fought.
  */
 
-/** Beyond this the resampler would be audible, so the track is rebuilt instead. */
-export const MAXIMUM_CORRECTION_RATIO = 1.02;
-export const MINIMUM_CORRECTION_RATIO = 0.98;
+/**
+ * §10.6: skew beyond 5% is `drift_uncorrectable` and the track is rebuilt
+ * instead of resampled, because a correction that large is audible.
+ */
+export const MAXIMUM_CORRECTION_RATIO = 1.05;
+export const MINIMUM_CORRECTION_RATIO = 0.95;
+/**
+ * Applied per correction step. The specification asks for continuous slow
+ * correction, so a large estimated skew is walked towards rather than jumped
+ * to, even while it stays inside the correctable range.
+ */
+export const MAXIMUM_STEP_RATIO = 1.02;
+export const MINIMUM_STEP_RATIO = 0.98;
 /** Ignore the first samples; a cold buffer's timing says nothing about drift. */
 const WARMUP_OBSERVATIONS = 25;
 /** Smoothing on the parts-per-million estimate. */
@@ -60,11 +70,17 @@ export class DriftEstimator {
     this.smoothedSkewPpm += (skewPpm - this.smoothedSkewPpm) / SMOOTHING;
   }
 
-  /** Ratio to hand the mixing worklet. 1 means no correction. */
+  /**
+   * Ratio to hand the mixing worklet. 1 means no correction.
+   *
+   * Clamped to the per-step bound, not the correctable range: a track that is
+   * 4% out is corrected 2% at a time so the resampling stays inaudible, and it
+   * converges over a few seconds rather than in one audible jump.
+   */
   correctionRatio(): number {
     if (this.observations < WARMUP_OBSERVATIONS) return 1;
     const raw = 1 + this.smoothedSkewPpm / 1_000_000;
-    return clamp(raw, MINIMUM_CORRECTION_RATIO, MAXIMUM_CORRECTION_RATIO);
+    return clamp(raw, MINIMUM_STEP_RATIO, MAXIMUM_STEP_RATIO);
   }
 
   health(): DriftHealth {
