@@ -1,0 +1,52 @@
+diff --git a/dist/client.cjs b/dist/client.cjs
+index 6c5336193179bb210c0a5aba80903c1167bab169..71e08cb083abc44c42326bf84e91897fcd626624 100644
+--- a/dist/client.cjs
++++ b/dist/client.cjs
+@@ -7848,7 +7848,7 @@ var MOQtailClient = class _MOQtailClient {
+         await handler(this, msg);
+       }
+     } catch (error) {
+-      this.disconnect();
++      await this.disconnect(error);
+       throw error;
+     }
+   }
+diff --git a/dist/client.js b/dist/client.js
+index 9577301c4bc7da09d5155af6f350c19bd2ef97c0..db0593a595f359b0b7030c52737f3ae7537248e1 100644
+--- a/dist/client.js
++++ b/dist/client.js
+@@ -7846,7 +7846,7 @@ var MOQtailClient = class _MOQtailClient {
+         await handler(this, msg);
+       }
+     } catch (error) {
+-      this.disconnect();
++      await this.disconnect(error);
+       throw error;
+     }
+   }
+diff --git a/dist/index.cjs b/dist/index.cjs
+index 0fc725784d739c96a1f4557893f117785fbc90af..6bdb0f42b4e15e045c58c215f92bcab0f7583080 100644
+--- a/dist/index.cjs
++++ b/dist/index.cjs
+@@ -8342,7 +8342,7 @@ var MOQtailClient = class _MOQtailClient {
+         await handler(this, msg);
+       }
+     } catch (error) {
+-      this.disconnect();
++      await this.disconnect(error);
+       throw error;
+     }
+   }
+diff --git a/dist/index.js b/dist/index.js
+index 478bb1395fb3c4b12559c8e05f99f2ac3c45450e..fe7b9d5bc4fabe1bf06837297ff821df5b8315fe 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -8340,7 +8340,7 @@ var MOQtailClient = class _MOQtailClient {
+         await handler(this, msg);
+       }
+     } catch (error) {
+-      this.disconnect();
++      await this.disconnect(error);
+       throw error;
+     }
+   }

@@ -31,13 +31,14 @@ If this file and the product specification otherwise conflict, preserve the hard
 
 As reconciled on 25 August 2026 with the current repository state:
 
-- The React/Vite client, SQLite Durable Object room service, control-plane WebSocket, presenter simulation, browser media components, inspector, telemetry and failure registry are implemented with 127 automated tests across nine files.
+- The React/Vite client, SQLite Durable Object room service, control-plane WebSocket, presenter simulation, browser media components, inspector, telemetry and failure registry are implemented with 133 automated tests across nine files.
 - `wrangler.jsonc` pins MOQT draft 16, configures the Cloudflare isolated relay URL, and deliberately keeps `MOQT_TRANSPORT_VERIFIED=false`, `MOQ_ROUTING_ENFORCEMENT=cooperative` and `MOQ_DISCOVERY=unknown`.
-- `moqtail@0.12.1` frames draft 16. `MoqTransportAdapter` attempts draft-16 transport with provisioned token in URL path, but live transport is not yet trace-verified (`MOQT_TRANSPORT_VERIFIED=false`).
+- `moqtail@0.12.1` frames draft 16. `MoqTransportAdapter` attempts draft-16 transport with provisioned token in URL path and uses the relay-supported `PUBLISH` request directly. A narrow pnpm patch preserves the caught MOQtail control-stream termination cause. Live transport is not yet trace-verified (`MOQT_TRANSPORT_VERIFIED=false`).
 - Provisioned relay-token handling is implemented. The room service returns the configured `MOQ_RELAY_TOKEN` at join; relay acceptance, enforcement and expiry remain unverified.
 - `NetworkProbe` implements a draft-free relay reachability check alongside `/api/health`.
 - Dynamic device tracking, packet-loss concealment, bounded recovery and silence-gated drift correction are implemented and unit-tested, but lack live acoustic acceptance.
-- Room entry starts microphone capture automatically, with permission denial or missing hardware falling back visibly to listen-only. Human clients subscribe to every other real human track automatically, and a late MOQT namespace announcement retriggers any subscription that was refused before publication existed.
+- Room entry starts microphone capture automatically, with permission denial or missing hardware falling back visibly to listen-only. Capture is shown separately from relay-accepted publication; `publishing`, the inspector uplink and the publish event begin only after `PUBLISH_OK`, and a refusal stops capture while retaining its exact code and reason across a same-tab reload.
+- Human clients default to subscribing to every other real human track and expose local subscribe/unsubscribe controls. Code-16 `Track not found` responses use a capped exponential retry sequence; a late MOQT namespace announcement retries immediately. Accepted subscriptions alone appear in the inspector graph.
 - A bounded `UniversalAudioCaptureAdapter` retains `MediaStreamTrackProcessor` as the preferred Chrome path and adds an exact-frame AudioWorklet path for future desktop evaluation. Path selection and framing are unit-tested, but the alternative path has not passed real-browser or acoustic parity, so it does not expand H3 support.
 - Presenter AI responses are scripted and labelled. There is no live recognition, model, synthesis or AI-worker transport pipeline.
 - H3 now requires a documented matrix of all supported browser, OS and major-version combinations. The current client recognises only provisional Chrome 141+ on macOS, so cross-browser support remains open.

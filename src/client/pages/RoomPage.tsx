@@ -49,6 +49,21 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
     [session],
   );
 
+  const changeSubscription = useCallback(
+    (participantId: string, enabled: boolean) => {
+      const participant = room?.participants.find((candidate) => candidate.id === participantId);
+      if (participant?.role === "ai") {
+        const row = room?.routing.find(
+          (candidate) => candidate.aiId === participantId && candidate.humanId === viewerId,
+        );
+        void session?.changeRouting(participantId, row?.hearsMe ?? false, enabled);
+        return;
+      }
+      void session?.setSubscription(participantId, enabled);
+    },
+    [room, session, viewerId],
+  );
+
   const demoContext = useCallback((): DemoContext => {
     const metrics = state?.metrics;
     const speaking = (room?.participants ?? []).filter(
@@ -121,6 +136,10 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
       connectedHumanIds={connectedHumanIds}
       level={participant.id === viewerId ? (state?.micLevel ?? 0) : 0}
       speaking={participant.id === viewerId ? (state?.speaking ?? false) : false}
+      subscription={state?.subscriptions.find(
+        (subscription) => subscription.participantId === participant.id,
+      )}
+      onSubscription={changeSubscription}
       onRouting={changeRouting}
       onAddressDown={(aiId) => void session?.address(aiId)}
       onAddressUp={(aiId) => void session?.endTurn(aiId)}
@@ -146,11 +165,17 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
         {state?.publishing ? null : (
           <button
             className="button button--compact button--primary"
-            disabled={state?.capture.name === "starting"}
+            disabled={
+              state?.capture.name === "starting" || state?.capture.name === "opening_publication"
+            }
             type="button"
             onClick={() => void startPublishing()}
           >
-            {state?.capture.name === "starting" ? "Starting microphone…" : "Start microphone"}
+            {state?.capture.name === "starting"
+              ? "Starting microphone…"
+              : state?.capture.name === "opening_publication"
+                ? "Opening publication…"
+                : "Start microphone"}
           </button>
         )}
         <button

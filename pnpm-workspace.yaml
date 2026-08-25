@@ -12,3 +12,6 @@ onlyBuiltDependencies:
   - "@biomejs/biome"
   - "esbuild"
   - "workerd"
+
+patchedDependencies:
+  moqtail@0.12.1: patches/moqtail@0.12.1.patch
