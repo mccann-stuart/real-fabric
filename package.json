@@ -5,17 +5,17 @@
   "type": "module",
   "packageManager": "pnpm@11.22.0",
   "scripts": {
-    "build": "pnpm typecheck && vite build",
+    "build": "pnpm typecheck && vite build --configLoader runner",
     "cf-typegen": "wrangler types",
     "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm deploy:dry-run",
-    "deploy": "pnpm build && wrangler deploy",
-    "deploy:dry-run": "wrangler deploy --dry-run",
-    "dev": "vite",
+    "deploy": "pnpm build && wrangler deploy --env=\"\"",
+    "deploy:dry-run": "wrangler deploy --dry-run --env=\"\"",
+    "dev": "vite --configLoader runner",
     "dev:worker": "pnpm build && wrangler dev",
     "format": "biome format --write .",
     "lint": "biome check .",
-    "preview": "vite preview",
-    "test": "vitest run",
+    "preview": "vite preview --configLoader runner",
+    "test": "vitest run --configLoader runner",
     "typecheck": "tsc -b"
   },
   "dependencies": {

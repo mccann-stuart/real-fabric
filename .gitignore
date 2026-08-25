@@ -10,5 +10,6 @@ dist/
 .DS_Store
 *.log
 coverage/
+.cache/
 playwright-report/
 test-results/

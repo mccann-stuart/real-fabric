@@ -1,7 +1,14 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.5.10/schema.json",
   "files": {
-    "includes": ["**", "!!dist", "!!node_modules", "!!.wrangler", "!!worker-configuration.d.ts"]
+    "includes": [
+      "**",
+      "!!dist",
+      "!!node_modules",
+      "!!.cache",
+      "!!.wrangler",
+      "!!worker-configuration.d.ts"
+    ]
   },
   "formatter": {
     "enabled": true,
@@ -19,7 +26,7 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true,
+      "preset": "recommended",
       "correctness": {
         "noUnusedVariables": "error"
       }
