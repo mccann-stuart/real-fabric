@@ -1163,17 +1163,11 @@ input::placeholder {
   color: var(--muted);
   font-size: 12px;
 }
-.failure-catalogue {
-  margin: 0 26px 26px;
-}
-.failure-catalogue table,
 .latency-view table {
   width: 100%;
   border-collapse: collapse;
   font-size: 12px;
 }
-.failure-catalogue th,
-.failure-catalogue td,
 .latency-view th,
 .latency-view td {
   padding: 9px 10px;
@@ -1181,22 +1175,10 @@ input::placeholder {
   text-align: left;
   vertical-align: top;
 }
-.failure-catalogue thead th,
 .latency-view thead th {
   font: 10px var(--mono);
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--muted);
-}
-.failure-catalogue tbody th small {
-  display: block;
-  margin-top: 3px;
-  color: var(--muted);
-  font-weight: 400;
-  text-transform: uppercase;
-  font-size: 10px;
-}
-.failure-catalogue td {
   color: var(--muted);
 }
 
