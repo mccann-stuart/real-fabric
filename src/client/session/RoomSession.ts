@@ -122,6 +122,11 @@ export interface RoomSessionOptions {
 const LADDER_INTERVAL_MS = 2_000;
 const DRAIN_INTERVAL_MS = 20;
 
+/** Only an indeterminate relay outage benefits from the bounded retry policy. */
+export function isRetryableTransportFailure(failure: FailureCode): boolean {
+  return failure === "relay_failed";
+}
+
 export class RoomSession {
   readonly director = new AiDirector();
   readonly scripted = new ScriptedResponder();
@@ -257,11 +262,11 @@ export class RoomSession {
     this.setPhase({ name: "connecting_transport" });
     const credential = this.relayCredential;
     if (!credential) {
-      this.raise("draft_endpoint_missing");
-      this.setPhase({ name: "blocked", failure: "draft_endpoint_missing" });
+      this.raise("relay_auth_unavailable");
+      this.setPhase({ name: "blocked", failure: "relay_auth_unavailable" });
       this.log.record(
         "failure",
-        "The room service minted no relay credential, so no MOQT session was attempted.",
+        "The room service supplied no provisioned relay credential, so no MOQT session was attempted.",
       );
       return;
     }
@@ -316,17 +321,13 @@ export class RoomSession {
     this.raise(failure);
     this.log.record("failure", error instanceof Error ? error.message : "Transport failed.");
 
-    // A blocked network is not a relay that will come back, so it is terminal
-    // rather than retried into the 30-second deadline. The remedy is a
-    // different network, which no amount of backoff produces.
-    if (failure === "udp_blocked") {
+    // A deterministic configuration, capability or protocol refusal does not
+    // improve with backoff. Only an indeterminate relay outage is retryable.
+    if (!isRetryableTransportFailure(failure)) {
       this.setPhase({ name: "blocked", failure });
-      this.log.record("failure", this.network.remediation ?? "Switch to the documented hotspot.");
-      return;
-    }
-    if (failure === "draft_mismatch" || failure === "transport_unsupported") {
-      // Neither is retryable: retrying re-runs an identical refusal.
-      this.setPhase({ name: "blocked", failure });
+      if (failure === "udp_blocked") {
+        this.log.record("failure", this.network.remediation ?? "Switch to the documented hotspot.");
+      }
       return;
     }
 
@@ -366,8 +367,10 @@ export class RoomSession {
         return "draft_mismatch";
       case "draft_unavailable":
         return "transport_unsupported";
+      case "relay_configuration":
+        return "relay_auth_unavailable";
       case "protocol_error":
-        return "relay_failed";
+        return "relay_protocol_error";
       default:
         return this.network.state === "udp_blocked" ? "udp_blocked" : "relay_failed";
     }

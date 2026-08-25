@@ -1,5 +1,4 @@
 import {
-  AuthorizationToken,
   ClientSetup,
   FilterType,
   FullTrackName,
@@ -23,9 +22,12 @@ import type { MoqDraft } from "../../shared/contracts";
  * The MOQT boundary (AGENTS.md). Every draft constant, wire version, ALPN
  * identifier and setup-parameter decision in the build lives in this file. The
  * room service, UI, telemetry and audio pipeline depend on the interface below
- * and never on `moqtail` directly. Draft 20 is the product target; until the
- * pinned library can frame it and an endpoint exists, the adapter refuses it by
- * name and never downgrades to draft 16.
+ * and never on `moqtail` directly, so moving from draft 16 to draft 20 is an
+ * entry in `DRAFT_REGISTRY` plus a configuration change.
+ *
+ * §11.2 milestone 1: the pinned client library frames draft 16, which is what
+ * the operational Cloudflare isolated relays serve. A draft the library cannot
+ * frame is refused by name — never downgraded to one it can.
  */
 
 export interface TrackAddress {
@@ -39,15 +41,10 @@ export interface MediaObject {
   payload: Uint8Array;
 }
 
-/** How a draft identifies itself on the wire and in the ALPN/protocol offer. */
+/** How a draft identifies itself on the wire. */
 interface DraftProfile {
   /** The MOQT version token the relay must agree to. */
   wireVersion: string;
-  /**
-   * Offered as WebTransport subprotocols, which is where a browser expresses
-   * the ALPN preference it is not allowed to set directly.
-   */
-  alpn: string[];
   /** Named in the mismatch error so the operator sees both sides. */
   note: string;
 }
@@ -55,22 +52,18 @@ interface DraftProfile {
 const DRAFT_REGISTRY: Record<MoqDraft, DraftProfile> = {
   "14": {
     wireVersion: "moqt-14",
-    alpn: ["moqt-14"],
     note: "Cloudflare isolated relays still serve draft 14 alongside draft 16.",
   },
   "16": {
     wireVersion: "moqt-16",
-    alpn: ["moqt-16", "moq-00"],
-    note: "Available for adapter interoperability research only; not a permitted live-audio fallback.",
+    note: "Gate 1 target: operational on Cloudflare isolated relays and on moq-rs.",
   },
   "18": {
     wireVersion: "moqt-18",
-    alpn: ["moqt-18"],
     note: "Served by moq-rs. The pinned client library does not frame it.",
   },
   "20": {
     wireVersion: "moqt-20",
-    alpn: ["moqt-20"],
     note: "No deployed relay endpoint (§2.1). Add the library version that frames it, then repoint configuration.",
   },
 };
@@ -84,9 +77,6 @@ const FRAMED_WIRE_VERSIONS: readonly string[] = SUPPORTED_VERSIONS;
 
 /** Advertised in CLIENT_SETUP. Bounds how many requests the relay must track. */
 const CLIENT_MAX_REQUEST_ID = 1024;
-const CLIENT_MAX_AUTH_TOKEN_CACHE = 4096;
-/** Private-use token type: this build's credentials are opaque bearer strings. */
-const CREDENTIAL_TOKEN_TYPE = 0;
 
 export function draftsFramedByClient(): MoqDraft[] {
   return (Object.keys(DRAFT_REGISTRY) as MoqDraft[]).filter((draft) =>
@@ -132,7 +122,12 @@ export interface MoqSessionStats {
 
 export class MoqTransportError extends Error {
   constructor(
-    readonly code: "draft_mismatch" | "draft_unavailable" | "relay_unavailable" | "protocol_error",
+    readonly code:
+      | "draft_mismatch"
+      | "draft_unavailable"
+      | "relay_configuration"
+      | "relay_unavailable"
+      | "protocol_error",
     message: string,
   ) {
     super(message);
@@ -178,6 +173,16 @@ export class MoqTransportAdapter {
         `The pinned MOQT client frames ${FRAMED_WIRE_VERSIONS.join(", ") || "no draft"}, and cannot frame draft ${draft} (${profile.wireVersion}). ${profile.note} No downgrade was attempted.`,
       );
     }
+    // MOQtail 0.12.1 appends every supported version to WebTransport's
+    // `protocols` option. Refuse a future multi-version library until the
+    // adapter can select exactly one version; otherwise the relay could choose
+    // a draft the room did not request.
+    if (FRAMED_WIRE_VERSIONS.length !== 1 || FRAMED_WIRE_VERSIONS[0] !== profile.wireVersion) {
+      throw new MoqTransportError(
+        "draft_mismatch",
+        `The pinned MOQT client would offer ${FRAMED_WIRE_VERSIONS.join(", ") || "no draft"}; this session requires exactly ${profile.wireVersion}. No downgrade was attempted.`,
+      );
+    }
     if (!("WebTransport" in globalThis)) {
       throw new MoqTransportError(
         "draft_unavailable",
@@ -186,8 +191,8 @@ export class MoqTransportAdapter {
     }
     if (!credential) {
       throw new MoqTransportError(
-        "relay_unavailable",
-        `The room service minted no relay credential for draft ${draft}. No connection was attempted.`,
+        "relay_configuration",
+        `The room service supplied no relay credential for draft ${draft}. No connection was attempted.`,
       );
     }
 
@@ -207,19 +212,14 @@ export class MoqTransportAdapter {
 
     try {
       this.client = await MOQtailClient.new({
-        url: endpoint,
-        transportOptions: { protocols: [...profile.alpn] },
-        // §8: the credential travels as a MOQT setup parameter, never in the
-        // URL, so it cannot survive in a share link, a referrer or history.
-        setupParameters: new SetupParameters()
-          .addMaxRequestId(CLIENT_MAX_REQUEST_ID)
-          .addMaxAuthTokenCacheSize(CLIENT_MAX_AUTH_TOKEN_CACHE)
-          .addAuthorizationToken(
-            AuthorizationToken.newUseValue(
-              CREDENTIAL_TOKEN_TYPE,
-              new TextEncoder().encode(credential),
-            ),
-          ),
+        // Cloudflare's draft-16 relay authenticates the WebTransport session
+        // with a provisioned token in the URL path. The URL exists only for
+        // this constructor call and every error is redacted below.
+        url: credentialUrl(endpoint, credential),
+        // MOQtail appends its pinned SUPPORTED_VERSIONS itself. Supplying the
+        // same version here produced ["moqt-16", "moqt-16"], which Chrome
+        // rejects before a WebTransport handshake.
+        setupParameters: new SetupParameters().addMaxRequestId(CLIENT_MAX_REQUEST_ID),
         enableDatagrams: false,
         callbacks: {
           onMessageSent: (message) => {
@@ -309,7 +309,7 @@ export class MoqTransportAdapter {
       // connected session is on the requested draft by construction.
       negotiatedDraft: input.draft,
       wireVersion: input.profile.wireVersion,
-      alpnOffered: [...input.profile.alpn],
+      alpnOffered: [...FRAMED_WIRE_VERSIONS],
       endpointName: input.endpointName,
       clientSetup: describeParameters(input.clientSetup ?? [], input.credential),
       serverSetup: describeParameters(serverSetup.setupParameters, input.credential),
@@ -438,6 +438,16 @@ export class MoqTransportAdapter {
 
 function trackKey(track: TrackAddress): string {
   return `${track.namespace}/${track.name}`;
+}
+
+/**
+ * Cloudflare draft-16 authentication is carried in the WebTransport URL path.
+ * This URL is never returned to the UI, retained in state or written to logs.
+ */
+function credentialUrl(endpoint: string, credential: string): string {
+  const url = new URL(endpoint);
+  url.pathname = `${url.pathname.replace(/\/$/, "")}/${encodeURIComponent(credential)}`;
+  return url.toString();
 }
 
 /** The relay's operator-facing name, for the inspector and the Gate 1 record. */

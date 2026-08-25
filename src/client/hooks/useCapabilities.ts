@@ -65,6 +65,10 @@ export function useCapabilities() {
           relay = "unavailable";
           relayReason = `No relay endpoint is configured for MOQT draft ${health.draft}.`;
           failure = "draft_endpoint_missing";
+        } else if (!health.relayCredentialConfigured) {
+          relay = "unavailable";
+          relayReason = `No provisioned relay credential is configured for ${endpoint}.`;
+          failure = "relay_auth_unavailable";
         } else if (!framed.includes(health.draft as (typeof framed)[number])) {
           relay = "unavailable";
           relayReason = `This build frames MOQT draft ${framed.join(", ") || "no draft"}, but the room service is pinned to draft ${health.draft}.`;

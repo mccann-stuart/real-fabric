@@ -214,7 +214,9 @@ function Signal({
           <dd>
             {room.transport.traceVerified
               ? "Recorded — a browser-to-relay trace has verified this endpoint"
-              : "Not recorded — transport is attempted live but not yet claimed as verified"}
+              : room.transport.availability === "available"
+                ? "Not recorded — transport is attempted live but not yet claimed as verified"
+                : "Not recorded — transport is blocked before a live attempt"}
           </dd>
         </div>
         <div>

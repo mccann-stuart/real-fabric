@@ -16,11 +16,11 @@
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }],
   "vars": {
     "APP_ENV": "production",
-    // The product target remains draft 20. No compatible endpoint is deployed,
-    // so the empty URL produces the explicit draft-unavailable state instead
-    // of silently reaching a relay through an earlier draft.
-    "MOQT_DRAFT": "20",
-    "MOQ_RELAY_URL": "",
+    // §11.2 milestone 1: the pinned client frames draft 16, which the
+    // operational Cloudflare isolated relays serve. Draft 20 moves here, and
+    // into the adapter's draft registry, once an endpoint deploys.
+    "MOQT_DRAFT": "16",
+    "MOQ_RELAY_URL": "https://draft-16.cloudflare.mediaoverquic.com",
     // Gate 1 outputs. Each stays at its unproven value until a browser-to-relay
     // trace records otherwise; the UI reads these rather than assuming success.
     // This one gates the *claim*, never the attempt: a configured endpoint is
@@ -39,8 +39,8 @@
       "name": "real-fabric-staging",
       "vars": {
         "APP_ENV": "staging",
-        "MOQT_DRAFT": "20",
-        "MOQ_RELAY_URL": "",
+        "MOQT_DRAFT": "16",
+        "MOQ_RELAY_URL": "https://draft-16.cloudflare.mediaoverquic.com",
         "MOQT_TRANSPORT_VERIFIED": "false",
         "MOQ_ROUTING_ENFORCEMENT": "cooperative",
         "MOQ_DISCOVERY": "unknown"

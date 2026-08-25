@@ -6,9 +6,8 @@ import type {
   RoomSnapshot,
 } from "../shared/contracts";
 import { MAX_SIMULATED_PARTICIPANTS } from "../shared/contracts";
-import { audioTrack, roomNamespace, trackKey } from "../shared/tracks";
 import { configFlag, configValue } from "./env";
-import { credentialLifetimeMs, mintRelayCredential } from "./relayCredential";
+import { configuredRelayCredential } from "./relayCredential";
 import type { ParticipantCredential } from "./room";
 import { Room } from "./room";
 import { decodeRoomError } from "./roomError";
@@ -88,6 +87,7 @@ async function route(request: Request, env: Env, correlationId: string): Promise
       draft: env.MOQT_DRAFT,
       relayEndpoint: configValue(env.MOQ_RELAY_URL) || null,
       relayEndpointName: endpointName(configValue(env.MOQ_RELAY_URL)),
+      relayCredentialConfigured: configuredRelayCredential(env.MOQ_RELAY_TOKEN) !== null,
       transportVerified: configFlag(env.MOQT_TRANSPORT_VERIFIED),
       routingEnforcement:
         configValue(env.MOQ_ROUTING_ENFORCEMENT) === "enforced" ? "enforced" : "cooperative",
@@ -107,12 +107,7 @@ async function route(request: Request, env: Env, correlationId: string): Promise
     return json<CreateRoomResponse>(
       {
         ...joined,
-        relayCredential: await mintCredential(
-          env,
-          code,
-          joined.participant.id,
-          joined.room.expiresAt,
-        ),
+        relayCredential: relayCredential(env),
         correlationId,
       },
       201,
@@ -143,12 +138,7 @@ async function route(request: Request, env: Env, correlationId: string): Promise
       logRoomEvent("participant_joined", correlationId, code, joined.participant.id);
       return json<JoinRoomResponse>({
         ...joined,
-        relayCredential: await mintCredential(
-          env,
-          code,
-          joined.participant.id,
-          joined.room.expiresAt,
-        ),
+        relayCredential: relayCredential(env),
         correlationId,
       });
     }
@@ -297,39 +287,20 @@ async function route(request: Request, env: Env, correlationId: string): Promise
 }
 
 /**
- * §8: short-lived, least-privilege relay credentials are minted server-side.
+ * Cloudflare draft-16 accepts tokens provisioned against the isolated relay.
  *
- * A credential is minted whenever an endpoint is configured for the pinned
- * draft — that is what makes §11.2's live transport attempt real. It is not
- * gated on `MOQT_TRANSPORT_VERIFIED`, because that flag records whether a trace
- * has *proved* transport, not whether one may be *attempted*. Conflating the
- * two would mean never attempting the connection that produces the trace.
+ * The Worker returns the configured token only when an endpoint is also set.
+ * It is not gated on `MOQT_TRANSPORT_VERIFIED`: that flag records whether a
+ * trace has proved transport, not whether one may be attempted.
  *
- * Null only where no endpoint is configured. The client then reports the
- * specific §10 "no relay endpoint" row rather than downgrading to reach a
- * relay that happens to exist.
+ * This token grants publish and subscribe access at the relay, so routing stays
+ * labelled cooperative. The current Cloudflare token API cannot mint the
+ * room- and track-scoped credentials the long-term design calls for.
  */
-async function mintCredential(
-  env: Env,
-  code: string,
-  participantId: string,
-  roomExpiresAt: number,
-): Promise<string | null> {
+function relayCredential(env: Env): string | null {
   const endpoint = configValue(env.MOQ_RELAY_URL);
   if (!endpoint) return null;
-  const now = Date.now();
-  const lifetimeMs = credentialLifetimeMs(roomExpiresAt, now);
-  if (lifetimeMs <= 0) return null;
-  return mintRelayCredential(
-    {
-      room: roomNamespace(code),
-      participant: participantId,
-      publish: trackKey(audioTrack(code, participantId)),
-      subscribe: roomNamespace(code),
-      expiresAt: now + lifetimeMs,
-    },
-    env.MOQ_RELAY_SECRET,
-  );
+  return configuredRelayCredential(env.MOQ_RELAY_TOKEN);
 }
 
 function readCredential(body: Record<string, unknown>): ParticipantCredential {

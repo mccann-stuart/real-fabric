@@ -1,12 +1,10 @@
 # Optional local overrides. Never commit real credentials.
 #
-# The relay endpoint the room service mints credentials against. Leave this
-# unset until a draft-20 endpoint is available and has passed Gate 1. Do not
-# point it at an earlier draft as a live-audio fallback.
-# MOQ_RELAY_URL=https://draft-20.example.invalid
+# The isolated Cloudflare relay endpoint. Milestone 1 targets draft 16.
+# MOQ_RELAY_URL=https://draft-16.cloudflare.mediaoverquic.com
 #
-# Signs the short-lived, room-scoped relay credential (§8). Set it in production
-# with `wrangler secret put MOQ_RELAY_SECRET`. Without it the credential is
-# still scoped and still expires, but it is marked unsigned rather than
-# presented as something a relay could trust.
-# MOQ_RELAY_SECRET=replace-with-a-long-random-string
+# A Cloudflare-provisioned token with publish and subscribe operations. Create
+# it with a short expiry for the demo, then store it only as a Worker secret:
+# `wrangler secret put MOQ_RELAY_TOKEN`. Without it the application reports a
+# blocking relay-credential state and does not attempt WebTransport.
+# MOQ_RELAY_TOKEN=replace-with-the-provisioned-token

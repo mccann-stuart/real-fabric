@@ -20,7 +20,7 @@ export function configFlag(value: string): boolean {
  */
 declare global {
   interface Env {
-    /** §8: signs short-lived, room-scoped relay credentials. */
-    MOQ_RELAY_SECRET?: string;
+    /** Provisioned Cloudflare MoQ publish+subscribe token; never put in vars. */
+    MOQ_RELAY_TOKEN?: string;
   }
 }
