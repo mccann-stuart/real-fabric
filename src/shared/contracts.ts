@@ -10,12 +10,11 @@ export const MOQT_DRAFTS = ["14", "16", "18", "20"] as const;
 export type MoqDraft = (typeof MOQT_DRAFTS)[number];
 
 /**
- * The Gate 1 target. Draft 20 has no deployed relay endpoint (§2.1), so the
- * release plan pins the milestone at the operational Cloudflare draft-16
- * endpoint instead. Moving to 20 is a configuration change and an adapter
- * registry entry, not a room, UI or audio change.
+ * The only live-audio target. Draft 20 currently has no deployed endpoint and
+ * the pinned client cannot frame it, so transport remains explicitly
+ * unavailable rather than downgrading to a draft-16 relay that exists.
  */
-export const PINNED_MOQT_DRAFT: MoqDraft = "16";
+export const PINNED_MOQT_DRAFT: MoqDraft = "20";
 
 export function asMoqDraft(value: string): MoqDraft | null {
   return (MOQT_DRAFTS as readonly string[]).includes(value) ? (value as MoqDraft) : null;

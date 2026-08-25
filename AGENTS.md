@@ -27,6 +27,22 @@ The product specification is binding except for this explicit override:
 
 If this file and the product specification otherwise conflict, preserve the hard product requirements and ask only when the choice would materially change user-visible behaviour, security or data handling.
 
+## Current implementation truth
+
+As reconciled on 25 August 2026 with the current repository state:
+
+- The React/Vite client, SQLite Durable Object room service, control-plane WebSocket, presenter simulation, browser media components, inspector, telemetry and failure registry are implemented with 111 automated tests across eight files.
+- `wrangler.jsonc` pins MOQT draft 20, leaves the relay URL unset and deliberately keeps `MOQT_TRANSPORT_VERIFIED=false`, `MOQ_ROUTING_ENFORCEMENT=cooperative` and `MOQ_DISCOVERY=unknown`.
+- `moqtail@0.12.1` frames draft 16 but not draft 20. `MoqTransportAdapter` refuses the draft-20 target without downgrading, so live transport remains unavailable.
+- Short-lived, room-scoped relay-credential minting is implemented, with optional signing. The room service returns no credential while no compatible endpoint is configured; relay acceptance, enforcement and expiry remain unverified.
+- `NetworkProbe` implements a draft-free relay reachability check alongside `/api/health`, but returns `not_run` while the relay endpoint is unset. No live UDP/HTTP-3 probe result exists.
+- Dynamic device tracking, packet-loss concealment, bounded recovery and silence-gated drift correction are implemented and unit-tested, but lack live acoustic acceptance.
+- Presenter AI responses are scripted and labelled. There is no live recognition, model, synthesis or AI-worker transport pipeline.
+- H3 now requires a documented matrix of all supported browser, OS and major-version combinations. The current client recognises only provisional Chrome 141+ on macOS, so cross-browser support remains open.
+- Unit tests do not satisfy the live draft-20 trace, acoustic latency, measured-capacity, audible ten-minute or two-clean-run acceptance gates.
+
+Keep this snapshot current when implementation status changes. Never convert an implemented component or a passing unit test into a claim that a live acceptance boundary has passed.
+
 ## Product invariants
 
 - Live audio uses MOQT objects over WebTransport, HTTP/3 and QUIC through a real MoQ relay. There is no WebRTC or WebSocket audio fallback.
@@ -149,7 +165,7 @@ Preserve these entry strings unless the product specification changes:
 
 ### OneDrive dependency storage
 
-This checkout is stored in OneDrive, so `node_modules` must remain physically outside both the repository and OneDrive.
+The canonical checkout and Git metadata are stored in OneDrive, and linked Codex worktrees may live elsewhere. For every checkout or worktree, `node_modules` must remain physically outside both the repository and OneDrive.
 
 - The only approved physical dependency directory for this checkout is `/Users/mccannstuart/.node_modules`.
 - The repository path `node_modules` must be a symbolic link to that directory. Never replace it with a physical directory.
@@ -213,6 +229,8 @@ Also verify in a real browser:
 - microphone permission denial and no-input-device states;
 - desktop and narrow read-only layouts;
 - no WebRTC or WebSocket audio path in code or network traffic.
+
+The current `/preflight` page verifies browser APIs and the room-service health gate only. Do not record the relay/UDP check as passed until an active UDP/HTTP-3 probe exists and runs successfully.
 
 When a live draft-20 relay exists, the release gate additionally requires a reproducible trace proving MOQT over WebTransport and HTTP/3/QUIC, plus the product specification’s ten-minute reference-composition run and complete demo script twice.
 

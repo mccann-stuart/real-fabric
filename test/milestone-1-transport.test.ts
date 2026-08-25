@@ -7,6 +7,7 @@ import {
 } from "../src/client/transport/MoqTransportAdapter";
 import { HOTSPOT_REMEDIATION, probeRelayReachability } from "../src/client/transport/NetworkProbe";
 import { asMoqDraft, MOQT_DRAFTS, PINNED_MOQT_DRAFT } from "../src/shared/contracts";
+import { credentialLifetimeMs, mintRelayCredential } from "../src/worker/relayCredential";
 
 /**
  * §11.2 milestone 1: live transport unblocking and relay interoperability.
@@ -19,8 +20,9 @@ describe("M1 — draft registry and relay interoperability", () => {
     expect(draftsFramedByClient()).toEqual(["16"]);
   });
 
-  it("pins the milestone to a draft it can actually frame", () => {
-    expect(draftsFramedByClient()).toContain(PINNED_MOQT_DRAFT);
+  it("pins the product to draft 20 even while the client cannot frame it", () => {
+    expect(PINNED_MOQT_DRAFT).toBe("20");
+    expect(draftsFramedByClient()).not.toContain(PINNED_MOQT_DRAFT);
   });
 
   it("recognises every draft in the registry and refuses invented ones", () => {
@@ -63,7 +65,7 @@ describe("M1 — draft registry and relay interoperability", () => {
     expect("WebTransport" in globalThis).toBe(false);
     const adapter = new MoqTransportAdapter();
     await expect(
-      adapter.connect("https://draft-16.example.invalid", "", PINNED_MOQT_DRAFT),
+      adapter.connect("https://draft-16.example.invalid", "", "16"),
     ).rejects.toMatchObject({ code: "draft_unavailable" });
     expect(adapter.sessionStats().negotiation).toBeNull();
   });
@@ -78,7 +80,7 @@ describe("M1 — draft registry and relay interoperability", () => {
     try {
       const adapter = new MoqTransportAdapter();
       await expect(
-        adapter.connect("https://draft-16.example.invalid", "", PINNED_MOQT_DRAFT),
+        adapter.connect("https://draft-16.example.invalid", "", "16"),
       ).rejects.toMatchObject({ code: "relay_unavailable" });
       expect(adapter.sessionStats().negotiation).toBeNull();
       expect(adapter.sessionStats().state).not.toBe("connected");
@@ -90,6 +92,23 @@ describe("M1 — draft registry and relay interoperability", () => {
   it("reports Not exposed for round-trip time rather than zero", () => {
     // H15: a browser that reports nothing must never read as a perfect link.
     expect(new MoqTransportAdapter().sessionStats().transportRttMs).toBe("Not exposed");
+  });
+
+  it("mints a scoped, expiring credential without requiring a live endpoint", async () => {
+    const now = Date.now();
+    const expiresAt = now + 60_000;
+    const credential = await mintRelayCredential(
+      {
+        room: "demo/ROOM",
+        participant: "participant",
+        publish: "demo/ROOM/audio/participant",
+        subscribe: "demo/ROOM",
+        expiresAt,
+      },
+      undefined,
+    );
+    expect(credential).toMatch(/^v1\.unsigned\./);
+    expect(credentialLifetimeMs(expiresAt, now)).toBe(60_000);
   });
 });
 

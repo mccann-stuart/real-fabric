@@ -7,11 +7,9 @@
  * AUTHORIZATION_TOKEN setup parameter — never in a URL, so it cannot survive in
  * a share link, a referrer header or browser history.
  *
- * The operational draft-16 relays do not enforce token scope, which is why
- * `MOQ_ROUTING_ENFORCEMENT` stays `cooperative` (FR8). Minting the scoped form
- * anyway means the relay-enforced case is a configuration change rather than a
- * credential redesign, and the room service is already telling the truth about
- * who may publish what.
+ * `MOQ_ROUTING_ENFORCEMENT` stays `cooperative` until the eventual draft-20
+ * relay proves that it enforces token scope. Minting the scoped form means that
+ * proof can remain a configuration change rather than a credential redesign.
  */
 
 /** Never outlives the room's 20-minute hard stop (§8). */

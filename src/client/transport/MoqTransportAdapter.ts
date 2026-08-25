@@ -23,12 +23,9 @@ import type { MoqDraft } from "../../shared/contracts";
  * The MOQT boundary (AGENTS.md). Every draft constant, wire version, ALPN
  * identifier and setup-parameter decision in the build lives in this file. The
  * room service, UI, telemetry and audio pipeline depend on the interface below
- * and never on `moqtail` directly, so moving from draft 16 to draft 20 is an
- * entry in `DRAFT_REGISTRY` plus a configuration change.
- *
- * §11.2 milestone 1: the pinned client library frames draft 16, which is what
- * the operational Cloudflare isolated relays serve. A draft the library cannot
- * frame is refused by name — never downgraded to one it can.
+ * and never on `moqtail` directly. Draft 20 is the product target; until the
+ * pinned library can frame it and an endpoint exists, the adapter refuses it by
+ * name and never downgrades to draft 16.
  */
 
 export interface TrackAddress {
@@ -64,7 +61,7 @@ const DRAFT_REGISTRY: Record<MoqDraft, DraftProfile> = {
   "16": {
     wireVersion: "moqt-16",
     alpn: ["moqt-16", "moq-00"],
-    note: "Gate 1 target: operational on Cloudflare isolated relays and on moq-rs.",
+    note: "Available for adapter interoperability research only; not a permitted live-audio fallback.",
   },
   "18": {
     wireVersion: "moqt-18",

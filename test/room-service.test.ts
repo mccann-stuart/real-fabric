@@ -56,37 +56,19 @@ async function addAi(created: CreateRoomResponse, displayName: string): Promise<
 }
 
 describe("H1 — transport is never claimed before it is traced", () => {
-  it("attempts the configured draft without claiming it has been traced", async () => {
+  it("reports draft 20 unavailable without downgrading", async () => {
     const created = await createRoom();
-    // §11.2: configured, so a real session is attempted on the pinned draft.
-    expect(created.room.transport.availability).toBe("available");
-    expect(created.room.transport.failure).toBeNull();
-    expect(created.room.transport.draft).toBe("16");
-    expect(created.room.transport.endpointName).toBe("draft-16.example.invalid");
-    // Gate 1 has not run, and the reason says so in as many words rather than
-    // presenting a configured endpoint as a verified one.
+    expect(created.room.transport.availability).toBe("draft_unavailable");
+    expect(created.room.transport.failure).toBe("draft_endpoint_missing");
+    expect(created.room.transport.draft).toBe("20");
+    expect(created.room.transport.endpointName).toBe("no configured endpoint");
     expect(created.room.transport.traceVerified).toBe(false);
-    expect(created.room.transport.reason).toMatch(/not.*claimed as verified/i);
+    expect(created.room.transport.reason).toMatch(/no relay endpoint.*draft 20/i);
   });
 
-  it("mints a scoped, expiring relay credential that never reaches the snapshot", async () => {
+  it("returns no relay credential while no draft-20 endpoint is configured", async () => {
     const created = await createRoom();
-    // §8: minted server-side, returned once at join, and least-privilege.
-    expect(created.relayCredential).toBeTruthy();
-    const credential = created.relayCredential as string;
-    const [, , body] = credential.split(".");
-    const claims = JSON.parse(atob((body as string).replaceAll("-", "+").replaceAll("_", "/"))) as {
-      publish: string;
-      subscribe: string;
-      expiresAt: number;
-    };
-    expect(claims.publish).toBe(`demo/${created.room.code}/audio/${created.participant.id}`);
-    expect(claims.subscribe).toBe(`demo/${created.room.code}`);
-    expect(claims.expiresAt).toBeLessThanOrEqual(created.room.expiresAt);
-
-    // It must never be readable from the shareable snapshot (§8 link separation).
-    const snapshot = await SELF.fetch(`https://real-fabric.test/api/rooms/${created.room.code}`);
-    expect(JSON.stringify(await snapshot.json())).not.toContain(credential);
+    expect(created.relayCredential).toBeNull();
   });
 
   it("states which discovery mechanism and routing enforcement are in effect", async () => {

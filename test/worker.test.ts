@@ -9,9 +9,9 @@ describe("Real Fabric Worker", () => {
     expect(await response.json()).toEqual({
       ok: true,
       service: "real-fabric",
-      draft: "16",
-      relayEndpoint: "https://draft-16.example.invalid",
-      relayEndpointName: "draft-16.example.invalid",
+      draft: "20",
+      relayEndpoint: null,
+      relayEndpointName: null,
       // Gate 1 has not run. Naming the endpoint is not claiming it works.
       transportVerified: false,
       routingEnforcement: "cooperative",
@@ -28,10 +28,8 @@ describe("Real Fabric Worker", () => {
     expect(createdResponse.status).toBe(201);
     const created = (await createdResponse.json()) as CreateRoomResponse;
     expect(created.room.code).toMatch(/^[A-Z0-9]{20}$/);
-    // §11.2: an endpoint is configured, so a live session is attempted...
-    expect(created.room.transport.availability).toBe("available");
-    // ...and separately, no Gate 1 trace has been recorded, so nothing claims
-    // that transport works.
+    expect(created.room.transport.availability).toBe("draft_unavailable");
+    expect(created.room.transport.failure).toBe("draft_endpoint_missing");
     expect(created.room.transport.traceVerified).toBe(false);
     expect(created.participant.displayName).toBe("Ada");
 

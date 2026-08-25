@@ -1,9 +1,9 @@
 # Optional local overrides. Never commit real credentials.
 #
-# The relay endpoint the room service mints credentials against. Milestone 1
-# targets the operational Cloudflare isolated relay on draft 16; the exact path
-# is a Gate 1 confirmation item.
-# MOQ_RELAY_URL=https://draft-16.cloudflare.mediaoverquic.com
+# The relay endpoint the room service mints credentials against. Leave this
+# unset until a draft-20 endpoint is available and has passed Gate 1. Do not
+# point it at an earlier draft as a live-audio fallback.
+# MOQ_RELAY_URL=https://draft-20.example.invalid
 #
 # Signs the short-lived, room-scoped relay credential (§8). Set it in production
 # with `wrangler secret put MOQ_RELAY_SECRET`. Without it the credential is
