@@ -108,6 +108,12 @@ pnpm check
 
 That is `pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm deploy:dry-run`.
 
+Cloudflare Workers Builds sets `WORKERS_CI=1` during dependency installation.
+The guarded `postinstall` hook builds `dist/` in that environment because Workers
+Builds does not run Wrangler custom-build configuration before its default
+`npx wrangler deploy` command. The hook exits without building during local
+dependency installs.
+
 ## What is not verified
 
 Automated checks cover the requirements marked above. They do not cover, and this repository does not claim:
