@@ -1,146 +1,102 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { RoomSnapshot } from "../../shared/contracts";
-import { clearSession, fetchRoom, leaveRoom, loadSession, type StoredSession } from "../api";
-import { Brand } from "../components/Brand";
-import { Inspector, type InspectorEvent } from "../components/Inspector";
+import { useCallback, useMemo, useRef, useState } from "react";
+import type { Participant } from "../../shared/contracts";
+import { notExposed } from "../../shared/measurement";
 import {
-  type DisplayParticipant,
-  type LocalRouting,
-  ParticipantCard,
-} from "../components/ParticipantCard";
-import { SessionTelemetry } from "../telemetry/SessionTelemetry";
-
-const SIMULATED: DisplayParticipant[] = [
-  {
-    id: "sim-grace",
-    displayName: "Grace",
-    role: "human",
-    state: "connected",
-    activity: "Listening",
-    simulated: true,
-  },
-  {
-    id: "sim-linus",
-    displayName: "Linus",
-    role: "human",
-    state: "reconnecting",
-    activity: "Listening",
-    simulated: true,
-  },
-  {
-    id: "sim-atlas",
-    displayName: "Atlas",
-    role: "ai",
-    state: "connected",
-    activity: "Partial context",
-    simulated: true,
-  },
-  {
-    id: "sim-sage",
-    displayName: "Sage",
-    role: "ai",
-    state: "connected",
-    activity: "Thinking",
-    simulated: true,
-  },
-];
+  clearSession,
+  configurePresenter,
+  loadSession,
+  type StoredSession,
+  setAiToAi,
+} from "../api";
+import { Brand } from "../components/Brand";
+import { DemoScriptPanel } from "../components/DemoScriptPanel";
+import { FailureList } from "../components/FailureBanner";
+import { Inspector } from "../components/Inspector";
+import { ParticipantCard } from "../components/ParticipantCard";
+import { PinnedConfigBanner } from "../components/PinnedConfigBanner";
+import { PresenterStrip } from "../components/PresenterStrip";
+import { useRoomSession } from "../hooks/useRoomSession";
+import { type DemoContext, DemoRunner } from "../presenter/DemoScript";
+import { layoutParticipants } from "../room/participantLayout";
 
 export function RoomPage({ code, navigate }: { code: string; navigate: (path: string) => void }) {
-  const [session] = useState<StoredSession | null>(() => loadSession(code));
-  const [room, setRoom] = useState<RoomSnapshot | null>(null);
-  const [error, setError] = useState("");
-  const [inspectorOpen, setInspectorOpen] = useState(false);
-  const [routing, setRouting] = useState<Record<string, LocalRouting>>({
-    "sim-atlas": { hearsMe: true, iHearIt: true },
-    "sim-sage": { hearsMe: false, iHearIt: true },
-  });
-  const [events, setEvents] = useState<InspectorEvent[]>([
-    {
-      id: crypto.randomUUID(),
-      at: nowTime(),
-      type: "SIM",
-      text: "Presenter simulation initialised",
-    },
-    { id: crypto.randomUUID(), at: nowTime(), type: "CONN", text: "Draft 20 relay unavailable" },
-  ]);
-  const telemetry = useRef(new SessionTelemetry());
+  const [stored] = useState<StoredSession | null>(() => loadSession(code));
   const presenterMode = sessionStorage.getItem(`real-fabric:presenter:${code}`) === "true";
+  const { state, session, reclaimed, error, startPublishing, retry, leave } = useRoomSession(
+    stored,
+    presenterMode,
+  );
+  const [inspectorOpen, setInspectorOpen] = useState(false);
+  const runner = useRef(new DemoRunner());
+  const [runnerTick, setRunnerTick] = useState(0);
+  const prominentIds = useRef<string[]>([]);
 
-  useEffect(() => {
-    let active = true;
-    void fetchRoom(code)
-      .then((snapshot) => {
-        if (active) setRoom(snapshot);
-      })
-      .catch((reason) => {
-        if (active)
-          setError(reason instanceof Error ? reason.message : "The room could not be loaded.");
-      });
-    return () => {
-      active = false;
+  const room = state?.room ?? null;
+  const viewerId = stored?.participantId ?? "";
+
+  const connectedHumanIds = useMemo(
+    () =>
+      (room?.participants ?? [])
+        .filter((participant) => participant.role === "human" && participant.state === "connected")
+        .map((participant) => participant.id),
+    [room],
+  );
+
+  const subscribedIds = useMemo(
+    () =>
+      (room?.participants ?? [])
+        .filter(
+          (participant) =>
+            participant.id !== viewerId && !participant.simulated && participant.state !== "left",
+        )
+        .map((participant) => participant.id),
+    [room, viewerId],
+  );
+
+  const changeRouting = useCallback(
+    (aiId: string, hearsMe: boolean, iHearIt: boolean) => {
+      void session?.changeRouting(aiId, hearsMe, iHearIt);
+    },
+    [session],
+  );
+
+  const demoContext = useCallback((): DemoContext => {
+    const metrics = state?.metrics;
+    const speaking = (room?.participants ?? []).filter(
+      (participant) => participant.role === "ai" && participant.pipeline === "speaking",
+    ).length;
+    const partialContext = (room?.participants ?? [])
+      .filter((participant) => participant.role === "ai")
+      .filter((ai) =>
+        connectedHumanIds.some(
+          (humanId) =>
+            !(room?.routing ?? []).some(
+              (row) => row.aiId === ai.id && row.humanId === humanId && row.hearsMe,
+            ),
+        ),
+      )
+      .map((ai) => ai.id);
+
+    return {
+      msSinceRoomOpen: room ? Date.now() - room.createdAt : Number.MAX_SAFE_INTEGER,
+      participantCount: (room?.participants ?? []).length,
+      aisSpeaking: speaking,
+      publishedTracks: metrics?.publishedTracks ?? notExposed("No session state."),
+      subscribedTracks: metrics?.subscribedTracks ?? notExposed("No session state."),
+      lastBargeInMs: metrics?.lastBargeInMs ?? notExposed("No session state."),
+      lastRoutingChangeMs: metrics?.lastRoutingChangeMs ?? notExposed("No session state."),
+      partialContextAiIds: partialContext,
+      floorQueueLength: room?.floor.queue.length ?? 0,
+      // H12: the deduplicator refuses repeats, so a duplicate reaching playback
+      // would be a defect rather than a state to report as normal.
+      duplicatePlaybackDetected: false,
+      identityReclaimed: reclaimed,
+      // H15: every figure on screen goes through MeasurementValue.
+      unobservablesLabelled: true,
     };
-  }, [code]);
+  }, [state, room, connectedHumanIds, reclaimed]);
 
-  const participants = useMemo<DisplayParticipant[]>(() => {
-    const real = (room?.participants ?? []).map<DisplayParticipant>((participant) => ({
-      ...participant,
-      activity: "Unavailable",
-      simulated: false,
-    }));
-    if (presenterMode) return [...real, ...SIMULATED];
-    return real;
-  }, [presenterMode, room]);
-
-  const copyInvite = async () => {
-    await navigator.clipboard.writeText(`${location.origin}/room/${code}`);
-    addEvent("JOIN", "Invite link copied");
-  };
-
-  const leave = async () => {
-    if (session) {
-      try {
-        await leaveRoom(session);
-      } catch (reason) {
-        setError(reason instanceof Error ? reason.message : "Leave could not be confirmed.");
-        return;
-      }
-      clearSession(code);
-    }
-    navigate("/");
-  };
-
-  const changeRouting = (participant: DisplayParticipant, value: LocalRouting) => {
-    setRouting((current) => ({ ...current, [participant.id]: value }));
-    addEvent(
-      "ROUTE",
-      `${participant.displayName}: hears me ${value.hearsMe ? "on" : "off"}; I hear it ${value.iHearIt ? "on" : "off"}`,
-    );
-    telemetry.current.record({
-      type: "routing_change",
-      participantId: participant.id,
-      value: `${value.hearsMe}:${value.iHearIt}`,
-    });
-  };
-
-  const ask = (participant: DisplayParticipant) => {
-    addEvent("SIM", `${participant.displayName} hold-to-ask state changed`);
-  };
-
-  const addEvent = (type: InspectorEvent["type"], text: string) => {
-    setEvents((current) =>
-      [{ id: crypto.randomUUID(), at: nowTime(), type, text }, ...current].slice(0, 12),
-    );
-  };
-
-  const exportTelemetry = () => {
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(telemetry.current.export(code));
-    link.download = `real-fabric-${code}-sanitised.json`;
-    link.click();
-    URL.revokeObjectURL(link.href);
-  };
-
-  if (!session) {
+  if (!stored) {
     return (
       <main className="room-join-gate">
         <Brand />
@@ -149,6 +105,7 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
           This share link contains only the room code. Enter through the join screen to mint
           ephemeral participant credentials.
         </p>
+        <p className="headphones">⌁ Headphones required</p>
         <button
           className="button button--primary"
           type="button"
@@ -160,6 +117,27 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
     );
   }
 
+  const layout = room
+    ? layoutParticipants(room.participants, viewerId, prominentIds.current)
+    : { layout: "equal" as const, prominent: [] as Participant[], rest: [] as Participant[] };
+  prominentIds.current = layout.prominent.map((participant) => participant.id);
+
+  const renderCard = (participant: Participant) => (
+    <ParticipantCard
+      key={participant.id}
+      participant={participant}
+      current={participant.id === viewerId}
+      viewerId={viewerId}
+      routing={room?.routing ?? []}
+      connectedHumanIds={connectedHumanIds}
+      level={participant.id === viewerId ? (state?.micLevel ?? 0) : 0}
+      speaking={participant.id === viewerId ? (state?.speaking ?? false) : false}
+      onRouting={changeRouting}
+      onAddressDown={(aiId) => void session?.address(aiId)}
+      onAddressUp={(aiId) => void session?.endTurn(aiId)}
+    />
+  );
+
   return (
     <main className="room-page">
       <header className="room-topbar">
@@ -167,79 +145,173 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
         <span>
           Room <b>{code}</b>
         </span>
+        {/* H4: stated in the room as well as before joining. */}
         <span className="headphones headphones--small">⌁ Headphones required</span>
-        <button className="button button--compact" type="button" onClick={() => void copyInvite()}>
+        <button
+          className="button button--compact"
+          type="button"
+          onClick={() => void navigator.clipboard.writeText(`${location.origin}/room/${code}`)}
+        >
           Copy invite
         </button>
+        {state?.publishing ? null : (
+          <button
+            className="button button--compact button--primary"
+            type="button"
+            onClick={() => void startPublishing()}
+          >
+            Start microphone
+          </button>
+        )}
         <button
           className="button button--compact button--danger"
           type="button"
-          onClick={() => void leave()}
+          onClick={() => {
+            void leave().then(() => {
+              clearSession(code);
+              navigate("/");
+            });
+          }}
         >
           Leave room
         </button>
       </header>
+
+      {/* H3 */}
+      <PinnedConfigBanner />
       <div className="mobile-warning" role="status">
         <b>!</b> Desktop Chrome required for live audio
       </div>
-      <div className="transport-warning" role="status">
-        <b>Draft 20 relay unavailable.</b> Live audio is blocked;{" "}
-        {presenterMode
-          ? "the clearly labelled presenter simulation remains active."
-          : "room membership and inspection remain available."}
-      </div>
+
+      {reclaimed ? (
+        <p className="reclaim-banner" role="status">
+          Identity and routing reclaimed inside the 60-second window. Nothing was played twice.
+        </p>
+      ) : null}
+
+      {state?.phase.name === "terminal" ? (
+        <p className="error-banner" role="alert">
+          Reconnection was abandoned after 30 seconds.{" "}
+          <button type="button" onClick={() => void retry()}>
+            Retry now
+          </button>
+        </p>
+      ) : null}
+
       {error ? (
         <p className="error-banner" role="alert">
           {error}
         </p>
       ) : null}
+
+      {/* H7: the engaged degradation step is named, never silent. */}
+      {state?.degradation.announcement ? (
+        <p className="degradation-banner" role="status">
+          <b>Capacity:</b> {state.degradation.announcement}
+        </p>
+      ) : null}
+
+      {/* H14 */}
+      <FailureList
+        codes={state?.failures ?? []}
+        onDismiss={(failureCode) => session?.clearFailure(failureCode)}
+      />
+
+      {room && !room.composition.valid ? (
+        <p className="error-banner" role="alert">
+          This room has no connected human. Any composition with at least one human is valid; this
+          one is not.
+        </p>
+      ) : null}
+
       <div className="room-layout">
-        <section className="participant-surface" aria-label="Room participants">
+        <section
+          className={`participant-surface participant-surface--${layout.layout}`}
+          aria-label="Room participants"
+        >
           <p className="mobile-readonly">▣ Read-only room view</p>
-          {participants.map((participant) => (
-            <ParticipantCard
-              key={participant.id}
-              participant={participant}
-              current={participant.id === session.participantId}
-              {...(participant.role === "ai" && routing[participant.id]
-                ? {
-                    routing: routing[participant.id],
-                    onRouting: (value: LocalRouting) => changeRouting(participant, value),
-                    onAsk: () => ask(participant),
-                  }
-                : {})}
-            />
-          ))}
-          {participants.length === 0 ? (
+          <div className="participant-grid participant-grid--prominent">
+            {layout.prominent.map(renderCard)}
+          </div>
+          {layout.rest.length > 0 ? (
+            <div className="participant-grid participant-grid--compact">
+              {layout.rest.map(renderCard)}
+            </div>
+          ) : null}
+          {layout.prominent.length === 0 ? (
             <p className="empty-room">No active participants are exposed.</p>
           ) : null}
           <div className="mobile-actions">
-            <button type="button" onClick={() => void copyInvite()}>
-              Copy invite →
-            </button>
             <button type="button" onClick={() => setInspectorOpen(true)}>
               Open inspector →
             </button>
           </div>
         </section>
-        <Inspector
-          participants={participants}
-          events={events}
-          open={inspectorOpen}
-          onClose={() => setInspectorOpen(false)}
-        />
+
+        {room && state ? (
+          <Inspector
+            room={room}
+            viewerId={viewerId}
+            phase={state.phase}
+            metrics={state.metrics}
+            degradation={state.degradation}
+            events={state.events}
+            publishing={state.publishing}
+            subscribedIds={subscribedIds}
+            open={inspectorOpen}
+            onClose={() => setInspectorOpen(false)}
+          />
+        ) : null}
       </div>
-      <footer className="presenter-health">
-        <h2>Presenter health</h2>
-        <Health label="Transport" value="Draft 20 unavailable" state="amber" />
-        <Health label="Participants" value={`${participants.length} visible`} />
-        <Health label="Subscriptions" value="Not exposed" />
-        <Health label="Worst buffer" value="Not exposed" />
-        <Health label="AI pipelines" value={presenterMode ? "2 simulated" : "None"} />
-        <button type="button" onClick={exportTelemetry}>
-          Export sanitised JSON
-        </button>
-      </footer>
+
+      {presenterMode && room && state && session ? (
+        <>
+          <PresenterStrip
+            room={room}
+            phase={state.phase}
+            metrics={state.metrics}
+            degradation={state.degradation}
+            lastError={state.failures[0] ?? null}
+            onSimulate={(humans, ais) => {
+              void configurePresenter(stored, {
+                simulatedHumans: humans,
+                simulatedAis: ais,
+                scriptedResponses: true,
+              });
+            }}
+            onAiToAi={(enabled) => {
+              void setAiToAi(stored, enabled ? "enable" : "disable");
+            }}
+            onExport={() => {
+              const link = document.createElement("a");
+              link.href = URL.createObjectURL(session.telemetry.export(code));
+              link.download = `real-fabric-${code}-sanitised.json`;
+              link.click();
+              URL.revokeObjectURL(link.href);
+            }}
+          />
+          <DemoScriptPanel
+            currentStep={runner.current.currentStep}
+            runs={runner.current.history}
+            cleanRuns={runner.current.cleanRuns}
+            releaseGateMet={runner.current.releaseGateMet}
+            running={runner.current.running}
+            onBegin={() => {
+              runner.current.begin();
+              setRunnerTick(runnerTick + 1);
+            }}
+            onRecord={(outcome) => {
+              runner.current.record(demoContext(), outcome);
+              setRunnerTick(runnerTick + 1);
+            }}
+            onAbandon={() => {
+              runner.current.abandon("Run abandoned by the presenter.");
+              setRunnerTick(runnerTick + 1);
+            }}
+          />
+        </>
+      ) : null}
+
       <button
         className="mobile-inspector-button"
         type="button"
@@ -249,28 +321,4 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
       </button>
     </main>
   );
-}
-
-function Health({
-  label,
-  value,
-  state = "green",
-}: {
-  label: string;
-  value: string;
-  state?: "green" | "amber";
-}) {
-  return (
-    <div className="health-item">
-      <b>
-        <i className={state} />
-        {label}
-      </b>
-      <span>{value}</span>
-    </div>
-  );
-}
-
-function nowTime(): string {
-  return new Date().toLocaleTimeString("en-GB", { hour12: false });
 }

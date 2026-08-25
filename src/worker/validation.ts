@@ -70,3 +70,36 @@ export function requiredBoolean(body: Record<string, unknown>, field: string): b
   }
   return value;
 }
+
+export function requiredInteger(
+  body: Record<string, unknown>,
+  field: string,
+  minimum: number,
+  maximum: number,
+): number {
+  const value = body[field];
+  if (typeof value !== "number" || !Number.isInteger(value) || value < minimum || value > maximum) {
+    throw new HttpError(
+      400,
+      "invalid_request",
+      `Field '${field}' must be an integer between ${minimum} and ${maximum}.`,
+    );
+  }
+  return value;
+}
+
+export function requiredEnum<T extends string>(
+  body: Record<string, unknown>,
+  field: string,
+  allowed: readonly T[],
+): T {
+  const value = body[field];
+  if (typeof value !== "string" || !allowed.includes(value as T)) {
+    throw new HttpError(
+      400,
+      "invalid_request",
+      `Field '${field}' must be one of: ${allowed.join(", ")}.`,
+    );
+  }
+  return value as T;
+}

@@ -11,6 +11,8 @@ describe("Real Fabric Worker", () => {
       service: "real-fabric",
       draft: "20",
       transportVerified: false,
+      routingEnforcement: "cooperative",
+      discovery: "unknown",
     });
   });
 

@@ -661,65 +661,71 @@ input::placeholder {
   color: var(--line-strong);
 }
 .graph-view {
-  position: relative;
-  min-height: 300px;
-  overflow: hidden;
+  padding: 14px 18px 18px;
 }
-.relay-node,
-.graph-node {
-  position: absolute;
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--cyan);
-  background: #0b1012;
-  font-family: var(--mono);
-  text-align: center;
-}
-.relay-node {
-  width: 78px;
-  height: 58px;
-  left: calc(50% - 39px);
-  top: 115px;
-}
-.graph-node {
-  width: 45px;
-  height: 45px;
-  border-radius: 50%;
-}
-.graph-node small {
+.graph-view svg {
   display: block;
-  color: var(--muted);
-  font-size: 7px;
-}
-.graph-node--0 {
-  left: calc(50% - 22px);
-  top: 35px;
-  border-color: var(--coral);
-}
-.graph-node--1 {
-  left: 14%;
-  top: 95px;
-}
-.graph-node--2 {
-  right: 14%;
-  top: 95px;
-}
-.graph-node--3 {
-  left: 21%;
-  top: 215px;
-}
-.graph-node--4 {
-  right: 21%;
-  top: 215px;
-}
-.graph-view p {
-  position: absolute;
-  bottom: 5px;
-  left: 0;
   width: 100%;
-  text-align: center;
-  color: var(--muted);
+  max-width: 340px;
+  margin: 0 auto;
+}
+.graph-edge {
+  stroke-width: 1;
+}
+.graph-edge--publication {
+  stroke: var(--coral);
+}
+.graph-edge--subscription {
+  stroke: var(--cyan);
+}
+.graph-edge--ai_inbound {
+  stroke: var(--green);
+}
+.graph-edge--dormant {
+  stroke: var(--line);
+  stroke-dasharray: 3 3;
+}
+.graph-relay {
+  fill: #0b1012;
+  stroke: var(--cyan);
+}
+.graph-relay-label,
+.graph-node-label {
+  fill: #f3f4f2;
+  font: 9px var(--mono);
+}
+.graph-node {
+  fill: #0b1012;
+  stroke: var(--line-strong);
+}
+.graph-node--ai {
+  stroke: var(--green);
+}
+.graph-node--human {
+  stroke: var(--coral);
+}
+.graph-node--simulated {
+  stroke-dasharray: 2 2;
+}
+.graph-key {
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
   font: 10px var(--mono);
+  color: var(--muted);
+}
+.graph-key li::before {
+  content: "—";
+  margin-right: 6px;
+}
+.graph-key--publication::before {
+  color: var(--coral);
+}
+.graph-key--subscription::before {
+  color: var(--cyan);
+}
+.graph-key--ai::before {
+  color: var(--green);
 }
 .object-list {
   margin: 0;
@@ -1028,4 +1034,516 @@ input::placeholder {
     transition-duration: 0.01ms;
     animation-duration: 0.01ms;
   }
+}
+
+/* ---------------------------------------------------------------------------
+   H1-H16 surfaces: measurements, failure states, pinned configuration,
+   degradation, presenter controls and the demo script.
+   --------------------------------------------------------------------------- */
+
+/* H15: an unobservable figure must never look like a measured one. */
+.measurement {
+  font-family: var(--mono);
+}
+.measurement small {
+  margin-left: 4px;
+  color: var(--muted);
+}
+.measurement--not-exposed {
+  color: var(--muted);
+  font-style: italic;
+  border-bottom: 1px dotted var(--line-strong);
+  cursor: help;
+}
+.measurement-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--line);
+}
+.measurement-row dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+.measurement-row dd {
+  margin: 0;
+  text-align: right;
+}
+
+/* H3 */
+.pin-banner {
+  margin: 0 26px 12px;
+  padding: 11px 14px;
+  border-left: 2px solid var(--amber);
+  background: #16130c;
+  font-size: 13px;
+}
+.pin-banner small {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.pin-summary dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+  margin: 0 0 10px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.pin-summary dt {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.pin-summary dd {
+  margin: 4px 0 0;
+}
+.pin-summary--untested dd:last-child {
+  color: var(--amber);
+}
+.pin-summary small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* H14 */
+.failure-list {
+  display: grid;
+  gap: 10px;
+  margin: 0 26px 14px;
+}
+.failure-banner {
+  padding: 12px 15px;
+  border-left: 2px solid var(--line-strong);
+  background: var(--panel);
+  font-size: 13px;
+}
+.failure-banner--blocking {
+  border-left-color: var(--coral);
+  background: #170e0d;
+}
+.failure-banner--degraded {
+  border-left-color: var(--amber);
+  background: #16130c;
+}
+.failure-banner--transient {
+  border-left-color: var(--cyan);
+  background: #0b1416;
+}
+.failure-banner__head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.failure-banner__head b {
+  flex: 1;
+}
+.failure-banner__severity {
+  font: 10px var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.failure-banner__head button {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 16px;
+  cursor: pointer;
+}
+.failure-banner p {
+  margin: 6px 0 0;
+}
+.failure-banner__behaviour,
+.failure-banner__recovery {
+  color: var(--muted);
+  font-size: 12px;
+}
+.failure-catalogue {
+  margin: 0 26px 26px;
+}
+.failure-catalogue table,
+.latency-view table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.failure-catalogue th,
+.failure-catalogue td,
+.latency-view th,
+.latency-view td {
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+.failure-catalogue thead th,
+.latency-view thead th {
+  font: 10px var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.failure-catalogue tbody th small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-weight: 400;
+  text-transform: uppercase;
+  font-size: 10px;
+}
+.failure-catalogue td {
+  color: var(--muted);
+}
+
+/* H7 */
+.degradation-banner,
+.reclaim-banner {
+  margin: 0 26px 12px;
+  padding: 10px 14px;
+  border-left: 2px solid var(--amber);
+  background: #16130c;
+  font-size: 13px;
+}
+.reclaim-banner {
+  border-left-color: var(--green);
+  background: #0c1610;
+}
+
+/* H9 */
+.enforcement {
+  display: block;
+  margin-top: 7px;
+  font: 10px var(--mono);
+  line-height: 1.5;
+  color: var(--muted);
+}
+.enforcement--enforced {
+  color: var(--green);
+}
+.enforcement--cooperative {
+  color: var(--amber);
+}
+.participant-card__labels .label {
+  font: 10px var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.participant-card__labels .label--ai {
+  color: var(--green);
+}
+.participant-card__labels .label--simulated {
+  color: var(--amber);
+}
+.participant-card__labels code {
+  font: 10px var(--mono);
+  color: var(--muted);
+}
+.participant-card--partial-context .participant-card__state,
+.participant-card--not-listening-to-you .participant-card__state {
+  color: var(--amber);
+}
+.participant-card--interrupted .participant-card__state {
+  color: var(--coral);
+}
+.waveform__level {
+  display: block;
+  height: 3px;
+  background: var(--coral);
+  transform-origin: left center;
+  transition: transform 60ms linear;
+}
+.waveform__unavailable {
+  font: 10px var(--mono);
+  font-style: italic;
+  color: var(--muted);
+}
+
+/* §4.2 layout scaling */
+.participant-grid {
+  display: grid;
+  gap: 14px;
+}
+.participant-surface--equal .participant-grid--prominent {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+.participant-surface--compact .participant-grid--prominent {
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+}
+.participant-grid--compact {
+  margin-top: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+  gap: 8px;
+}
+.participant-grid--compact .participant-card {
+  padding: 10px 12px;
+}
+/*
+ * §4.2: every participant stays reachable regardless of count. The waveform is
+ * decoration and can go, but the routing toggles and the hold-to-ask control
+ * are H5 and H9 — hiding them in the compact grid would remove the demo's
+ * central controls at exactly the membership the demo is about.
+ */
+.participant-grid--compact .waveform {
+  display: none;
+}
+.participant-grid--compact .routing-controls {
+  margin-top: 8px;
+}
+.participant-grid--compact .enforcement {
+  font-size: 9px;
+}
+
+/* Inspector additions */
+.inspector-signal ol {
+  margin: 0;
+  padding: 0 0 4px;
+  list-style: none;
+}
+.inspector-signal li {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+.inspector-signal li i {
+  width: 7px;
+  height: 7px;
+  background: var(--line-strong);
+}
+.inspector-signal li.live i {
+  background: var(--green);
+}
+.inspector-signal li i.coral {
+  background: var(--coral);
+}
+.inspector-signal li small {
+  margin-left: auto;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px;
+  text-align: right;
+}
+.inspector-facts {
+  margin: 14px 0 0;
+  font-size: 12px;
+}
+.inspector-facts > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+}
+.inspector-facts dt {
+  color: var(--muted);
+}
+.inspector-facts dd {
+  margin: 0;
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.inspector-facts code {
+  font-size: 10px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.latency-view {
+  padding: 14px 18px 18px;
+}
+.latency-total th,
+.latency-total td {
+  font-weight: 600;
+}
+.latency-note {
+  margin: 12px 0 16px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.event-stream li.event--simulated {
+  color: var(--amber);
+}
+.event-stream li em {
+  margin-left: auto;
+  font: 9px var(--mono);
+  text-transform: uppercase;
+  color: var(--amber);
+}
+.event-stream li.empty {
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* Presenter surfaces */
+.presenter-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--line);
+  margin-top: 4px;
+}
+.presenter-controls label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font: 11px var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.presenter-controls input[type="number"] {
+  width: 58px;
+  padding: 5px 7px;
+  border: 1px solid var(--line);
+  background: #0a0d0f;
+  color: inherit;
+  font-family: var(--mono);
+}
+.turn-counter {
+  font: 11px var(--mono);
+  color: var(--muted);
+}
+.turn-counter--capped {
+  color: var(--coral);
+}
+.simulation-config {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  margin: 18px 0 0;
+  padding: 13px 15px;
+  border: 1px solid var(--line);
+}
+.simulation-config legend {
+  padding: 0 6px;
+  font: 10px var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.simulation-config label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font: 11px var(--mono);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.simulation-config input {
+  width: 58px;
+  padding: 5px 7px;
+  border: 1px solid var(--line);
+  background: #0a0d0f;
+  color: inherit;
+  font-family: var(--mono);
+}
+.simulation-config p {
+  flex: 1 1 100%;
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* H16 */
+.demo-script {
+  margin: 0 26px 26px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+}
+.demo-script .gate {
+  font: 11px var(--mono);
+  color: var(--muted);
+}
+.demo-script .gate--met {
+  color: var(--green);
+}
+.demo-script__current {
+  margin: 12px 0;
+  padding: 12px 14px;
+  border-left: 2px solid var(--cyan);
+  background: #0b1416;
+}
+.demo-script__current p {
+  margin: 6px 0 0;
+  font-size: 13px;
+}
+.demo-script__verification {
+  color: var(--muted);
+  font-size: 11px;
+}
+.demo-script__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin-top: 12px;
+}
+.demo-script__actions button {
+  padding: 7px 13px;
+  border: 1px solid var(--line-strong);
+  background: none;
+  color: inherit;
+  font: 11px var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+.demo-script__steps {
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.demo-step {
+  display: flex;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+.demo-step time {
+  min-width: 42px;
+  font-family: var(--mono);
+  color: var(--muted);
+}
+.demo-step span {
+  flex: 1;
+}
+.demo-step__outcome {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-style: normal;
+  color: var(--muted);
+  text-align: right;
+}
+.demo-step--passed .demo-step__outcome {
+  color: var(--green);
+}
+.demo-step--failed .demo-step__outcome {
+  color: var(--coral);
+}
+.demo-step--skipped .demo-step__outcome {
+  color: var(--amber);
+}
+
+/*
+ * §4.2 asks for the presenter strip to be excluded from screen capture. CSS
+ * cannot do that; the exclusion has to happen on the capturing side, by using
+ * Region Capture to crop the shared stream to the room surface. The marker
+ * attribute is the hook for that, and until it is wired the strip is visible
+ * in a naive full-screen share — recorded here rather than implied away.
+ */
+[data-exclude-from-capture="true"] {
+  -webkit-user-select: none;
+  user-select: none;
 }
