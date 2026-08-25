@@ -9,7 +9,7 @@
 
 | Change | Effect |
 |---|---|
-| Pin moved from `-16` to `-20` | §2.1. Introduces a hard external dependency; see the risk statement there |
+| Working on `-16` in the hope of standardised `-20` | §2.1. Introduces a hard external dependency; see the risk statement there |
 | Fixed three-participant room replaced by open membership | Any number of humans and AIs. §5 FR1, FR3, FR7. Capacity is measured and displayed, never configured as a cap |
 | AI audio routing controls added | §5 FR8. Each human independently controls, per AI, whether that AI hears them and whether they hear it |
 
@@ -84,9 +84,9 @@ Point 4 is new, and it is what the AI routing controls in FR8 demonstrate. Mutin
 
 ### 2.1 Draft pin: `-20`
 
-**The pin is `draft-ietf-moq-transport-20`.** All draft-specific behaviour stays behind the adapter in §6.4.
+**The target is `draft-ietf-moq-transport-20`.** All draft-specific behaviour stays behind the adapter in §6.4.
 
-The instruction to pin `-20` assumes the draft is stable through the build cycle. That assumption has two independent halves, and only one is about the IETF.
+The instruction to aim at `-20` assumes the draft is stable through the build cycle. That assumption has two independent halves, and only one is about the IETF.
 
 **Half one — does `-20` exist and hold still?** As of this date the working group draft is at `-18` on the datatracker, with `-19` reported current. `-20` is not yet published. Betting on its stability is a reasonable working-group judgement and is accepted here.
 
@@ -101,9 +101,7 @@ The instruction to pin `-20` assumes the draft is stable through the build cycle
 
 **Resolution at Gate 1**, in preference order:
 
-1. A `-20` Cloudflare endpoint is available. Proceed as specified.
-2. No `-20` endpoint, but `-20` is published and library support exists. **Self-host `moq-relay` at `-20`.** The demo keeps its protocol claim and loses the "runs on a global CDN" claim. Adds relay operations to the build.
-3. Neither. Escalate the pin decision with measured evidence. `-16` remains buildable today, and the adapter makes the eventual move a contained project.
+Measured evidence. `-16` remains buildable today, and the adapter makes the eventual move a contained project.
 
 Gate 1 records the draft actually negotiated against a real relay. That record, not this section, is what the inspector displays.
 
@@ -274,7 +272,7 @@ The listener-owned matrix behind H9. For every (human, AI) pair, two independent
 |---|---|---|
 | QUIC | Secure multiplexed transport beneath HTTP/3 | IETF Standards Track, RFC 9000, May 2021 |
 | WebTransport | Browser session carrying MOQT | Broad modern-browser availability; W3C Working Draft |
-| MOQT | Named tracks, objects, relay distribution | IETF Internet-Draft; pinned at `-20`, subject to §2.1 |
+| MOQT | Named tracks, objects, relay distribution | IETF Internet-Draft; targets unreleased at `-20`, subject to §2.1 |
 | Demo audio format | Maps Opus frames to groups and objects | Application-specific; not an IETF media standard |
 
 Browsers use MOQT over WebTransport. AI workers use raw QUIC or WebTransport, decided at Gate 1. All terminate at the same relay.
