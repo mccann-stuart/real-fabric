@@ -1,0 +1,39 @@
+{
+  "name": "real-fabric",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.22.0",
+  "scripts": {
+    "build": "pnpm typecheck && vite build",
+    "cf-typegen": "wrangler types",
+    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm deploy:dry-run",
+    "deploy": "pnpm build && wrangler deploy",
+    "deploy:dry-run": "wrangler deploy --dry-run",
+    "dev": "vite",
+    "dev:worker": "pnpm build && wrangler dev",
+    "format": "biome format --write .",
+    "lint": "biome check .",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "moqtail": "0.12.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.10",
+    "@cloudflare/vitest-pool-workers": "0.22.0",
+    "@cloudflare/workers-types": "5.20260825.1",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "6.1.0",
+    "typescript": "7.0.2",
+    "vite": "8.2.2",
+    "vitest": "4.1.11",
+    "wrangler": "4.125.0"
+  }
+}

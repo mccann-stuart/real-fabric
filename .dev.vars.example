@@ -1,0 +1,2 @@
+# Optional local overrides. Never commit real credentials.
+# MOQ_RELAY_URL=https://draft-20.cloudflare.mediaoverquic.com/<short-lived-token>
