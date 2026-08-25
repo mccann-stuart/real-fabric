@@ -27,7 +27,7 @@ Every hard requirement H1–H16 in [PRODUCT_SPEC_v1-demo_1.md](PRODUCT_SPEC_v1-d
 | H11 — presenter mode runs solo | Configurable simulated counts, reconciled server-side, labelled everywhere | `test/room-service.test.ts` |
 | H12 — 60-second reclaim, no duplicate playback | [`useRoomSession`](src/client/hooks/useRoomSession.ts) spends the token on mount; [`PlaybackDeduplicator`](src/client/audio/PlaybackDeduplicator.ts) refuses repeats | `test/invariants.test.ts`, `test/room-service.test.ts` |
 | H13 — ten minutes, no drift artefact, no unbounded buffers | [`DriftEstimator`](src/client/audio/DriftEstimator.ts), bounded jitter buffer | `test/invariants.test.ts` runs 30,000 frames. **The live ten-minute run is outstanding.** |
-| H14 — every §10 failure distinct and non-silent | [`failures.ts`](src/shared/failures.ts) registry, [`FailureBanner`](src/client/components/FailureBanner.tsx), catalogue on the pre-flight page | `test/invariants.test.ts` |
+| H14 — every §10 failure distinct and non-silent | [`failures.ts`](src/shared/failures.ts) registry and [`FailureBanner`](src/client/components/FailureBanner.tsx) | `test/invariants.test.ts` |
 | H15 — unobservable reads **Not exposed** | [`Measurement<T>`](src/shared/measurement.ts) and [`MeasurementValue`](src/client/components/MeasurementValue.tsx); no figure bypasses it | `test/invariants.test.ts` |
 | H16 — §12 script twice clean | [`DemoScript`](src/client/presenter/DemoScript.ts) runner with per-cue pass/fail and a two-clean-run gate | `test/invariants.test.ts`. **The venue-network runs are outstanding.** |
 
