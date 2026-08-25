@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FailureCode } from "../../shared/failures";
 import { fetchHealth } from "../api";
+import { inspectCaptureSupport } from "../audio/UniversalAudioCaptureAdapter";
 import { draftsFramedByClient } from "../transport/MoqTransportAdapter";
 import { notRunProbe, type ProbeResult, probeRelayReachability } from "../transport/NetworkProbe";
 
@@ -16,6 +17,8 @@ export interface CapabilityReport {
   secureContext: CheckState;
   webTransport: CheckState;
   opus: CheckState;
+  capture: CheckState;
+  captureReason: string;
   microphone: CheckState;
   relay: CheckState;
   relayReason: string;
@@ -29,6 +32,8 @@ const INITIAL: CapabilityReport = {
   secureContext: "checking",
   webTransport: "checking",
   opus: "checking",
+  capture: "checking",
+  captureReason: "Checking browser microphone framing APIs.",
   microphone: "not_tested",
   relay: "checking",
   relayReason: "Checking the room service and draft gate.",
@@ -49,6 +54,8 @@ export function useCapabilities() {
       const opus = await checkOpus();
       const secureContext: CheckState = globalThis.isSecureContext ? "ready" : "unavailable";
       const webTransport: CheckState = "WebTransport" in globalThis ? "ready" : "unavailable";
+      const captureSupport = inspectCaptureSupport();
+      const capture: CheckState = captureSupport.available ? "ready" : "unavailable";
       let relay: CheckState = "unavailable";
       let relayReason = "The room service is unreachable.";
       let failure: FailureCode | null = null;
@@ -91,7 +98,8 @@ export function useCapabilities() {
       if (
         secureContext === "unavailable" ||
         webTransport === "unavailable" ||
-        opus === "unavailable"
+        opus === "unavailable" ||
+        capture === "unavailable"
       ) {
         failure = "transport_unsupported";
       }
@@ -102,6 +110,8 @@ export function useCapabilities() {
         secureContext,
         webTransport,
         opus,
+        capture,
+        captureReason: captureSupport.reason,
         relay,
         relayReason,
         failure,

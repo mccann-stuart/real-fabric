@@ -26,8 +26,9 @@ This section records implementation state; it does not weaken the acceptance cri
 - Presenter responses are scripted and visibly labelled. There is no live recognition, model, synthesis or AI-worker transport pipeline.
 - `NetworkProbe` can compare a configured relay's WebTransport reachability with the room-service health gate. With no endpoint configured it returns `not_run`, so there is no live UDP/HTTP-3 result.
 - Dynamic device tracking, packet-loss concealment, bounded recovery and silence-gated drift correction are implemented and unit-tested; they have not passed acoustic or live-relay acceptance.
+- A bounded capture adapter retains `MediaStreamTrackProcessor` as the preferred Chrome path and adds an exact-frame AudioWorklet path for future desktop evaluation. Selection and framing are unit-tested; real-browser and acoustic parity remain open.
 - Concurrent-room limits, relay credential rate-limiting and the per-room AI cost ceiling remain product requirements rather than implemented controls.
-- The automated suite contains 111 passing tests across eight files, but Gate 1 interoperability, cross-browser acceptance, measured capacity, the audible ten-minute run and two clean venue-network script runs remain open.
+- The automated suite contains 118 passing tests across nine files, but Gate 1 interoperability, cross-browser acceptance, measured capacity, the audible ten-minute run and two clean venue-network script runs remain open.
 
 ---
 

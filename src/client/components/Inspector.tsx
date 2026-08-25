@@ -271,6 +271,13 @@ function Objects({ metrics, degradation }: { metrics: SessionMetrics; degradatio
         measurement={metrics.dtxEnabled}
         format={(value) => (value ? "Enabled" : "Not supported by this encoder")}
       />
+      <MeasurementRow
+        label="Capture path"
+        measurement={metrics.capturePath}
+        format={(value) =>
+          value === "track_processor" ? "MediaStreamTrackProcessor" : "AudioWorklet adapter"
+        }
+      />
       <div className="measurement-row">
         <dt>Capacity state</dt>
         <dd>
