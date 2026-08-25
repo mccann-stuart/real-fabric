@@ -79,7 +79,16 @@ export interface SessionMetrics {
   reconnects: Measurement<number>;
   dtxEnabled: Measurement<boolean>;
   capturePath: Measurement<CapturePath>;
+  /** MOQT object totals observed by the adapter in this browser session. */
+  publishedObjects: Measurement<number>;
+  subscribedObjects: Measurement<number>;
   objectsPerSecond: Measurement<number>;
+  /** Mean complete demo audio object size, including the application header. */
+  meanObjectBytes: Measurement<number>;
+  lateDropRate: Measurement<number>;
+  aggregateBufferMs: Measurement<number>;
+  worstDriftPpm: Measurement<number>;
+  activeDecoders: Measurement<number>;
   /** §11.3: audio inputs seen, and how many times they changed. */
   audioInputs: Measurement<number>;
   deviceChanges: Measurement<number>;
@@ -1329,10 +1338,26 @@ export class RoomSession {
       (sum, entry) => sum + (entry.objects.exposed ? entry.objects.value : 0),
       0,
     );
+    const objectBytes = objectStats.reduce(
+      (sum, entry) =>
+        sum +
+        (entry.objects.exposed && entry.meanBytes.exposed
+          ? entry.objects.value * entry.meanBytes.value
+          : 0),
+      0,
+    );
+    const bufferDepths = objectStats.flatMap((entry) =>
+      entry.depthMs.exposed ? [entry.depthMs.value] : [],
+    );
+    const driftEstimates = objectStats.flatMap((entry) =>
+      entry.skewPpm.exposed ? [Math.abs(entry.skewPpm.value)] : [],
+    );
     const liveFor =
       this.transportReadyAt === null ? 0 : (this.now() - this.transportReadyAt) / 1000;
 
     const unavailable = "Live transport has not been established, so this is not observable.";
+    const noObjects = "No subscribed audio object has arrived yet.";
+    const transportEstablished = this.transportReadyAt !== null;
     return {
       transportReadyMs:
         this.transportReadyAt === null
@@ -1347,7 +1372,8 @@ export class RoomSession {
         : notExposed("This participant is not publishing."),
       subscribedTracks:
         this.phase.name === "live" ? measured(counts.subscribedTracks) : notExposed(unavailable),
-      worstBufferMs: this.mixer.worstBufferMs(),
+      worstBufferMs:
+        bufferDepths.length === 0 ? notExposed(noObjects) : measured(Math.max(...bufferDepths)),
       outputLatencyMs: this.mixer.outputLatencyMs(),
       transportRttMs:
         typeof stats.transportRttMs === "number"
@@ -1372,10 +1398,29 @@ export class RoomSession {
       capturePath: this.publishing
         ? this.capture.capturePath()
         : notExposed("This participant is not publishing."),
+      publishedObjects: transportEstablished
+        ? measured(stats.publishedObjects)
+        : notExposed(unavailable),
+      subscribedObjects: transportEstablished
+        ? measured(stats.subscribedObjects)
+        : notExposed(unavailable),
       objectsPerSecond:
         liveFor < 1
           ? notExposed("Too little live time to compute an object rate.")
           : measured(objects / liveFor),
+      meanObjectBytes: objects === 0 ? notExposed(noObjects) : measured(objectBytes / objects),
+      lateDropRate: objects === 0 ? notExposed(noObjects) : measured(lateDrops / objects),
+      aggregateBufferMs:
+        bufferDepths.length === 0
+          ? notExposed(noObjects)
+          : measured(bufferDepths.reduce((sum, depth) => sum + depth, 0)),
+      worstDriftPpm:
+        driftEstimates.length === 0
+          ? notExposed("No subscribed track has enough arrivals for a drift estimate.")
+          : measured(Math.max(...driftEstimates)),
+      activeDecoders: transportEstablished
+        ? measured(players.filter((player) => !player.released).length)
+        : notExposed(unavailable),
       audioInputs: this.devices.inputCount(),
       deviceChanges: this.devices.deviceChanges(),
     };

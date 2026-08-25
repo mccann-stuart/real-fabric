@@ -1,5 +1,6 @@
 export const AUDIO_FORMAT_VERSION = 1;
 export const AUDIO_FRAME_DURATION_MS = 20;
+export const AUDIO_OBJECT_HEADER_BYTES = 22;
 
 export interface AudioFrameMetadata {
   participantHash: number;
@@ -10,7 +11,7 @@ export interface AudioFrameMetadata {
 }
 
 export function encodeAudioObject(metadata: AudioFrameMetadata, opusFrame: Uint8Array): Uint8Array {
-  const header = new ArrayBuffer(22);
+  const header = new ArrayBuffer(AUDIO_OBJECT_HEADER_BYTES);
   const view = new DataView(header);
   view.setUint8(0, AUDIO_FORMAT_VERSION);
   view.setUint8(1, (metadata.endOfTurn ? 1 : 0) | (metadata.cancelled ? 2 : 0));
@@ -29,13 +30,17 @@ export function decodeAudioObject(value: Uint8Array): {
   metadata: AudioFrameMetadata;
   opusFrame: Uint8Array;
 } {
-  if (value.byteLength < 22) throw new Error("Audio object is shorter than the 22-byte v1 header.");
+  if (value.byteLength < AUDIO_OBJECT_HEADER_BYTES) {
+    throw new Error(
+      `Audio object is shorter than the ${AUDIO_OBJECT_HEADER_BYTES}-byte v1 header.`,
+    );
+  }
   const view = new DataView(value.buffer, value.byteOffset, value.byteLength);
   const version = view.getUint8(0);
   if (version !== AUDIO_FORMAT_VERSION)
     throw new Error(`Unsupported audio format version '${version}'.`);
   const payloadLength = view.getUint16(20);
-  if (value.byteLength !== 22 + payloadLength)
+  if (value.byteLength !== AUDIO_OBJECT_HEADER_BYTES + payloadLength)
     throw new Error("Audio object payload length does not match its header.");
   const flags = view.getUint8(1);
   return {
@@ -46,6 +51,6 @@ export function decodeAudioObject(value: Uint8Array): {
       ...(flags & 1 ? { endOfTurn: true } : {}),
       ...(flags & 2 ? { cancelled: true } : {}),
     },
-    opusFrame: value.slice(22),
+    opusFrame: value.slice(AUDIO_OBJECT_HEADER_BYTES),
   };
 }

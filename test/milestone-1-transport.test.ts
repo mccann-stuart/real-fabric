@@ -21,6 +21,7 @@ import {
   PINNED_MOQT_DRAFT,
   type RoomSnapshot,
 } from "../src/shared/contracts";
+import { type Measurement, measured } from "../src/shared/measurement";
 import { configuredRelayCredential } from "../src/worker/relayCredential";
 
 /**
@@ -216,6 +217,102 @@ describe("M1 — pre-flight HTTP/3 and QUIC probe", () => {
 });
 
 describe("M1 — bounded session recovery", () => {
+  it("reports observed object delivery and capacity measurements without inventing gates", () => {
+    const session = new RoomSession({
+      session: {
+        code: "AAAAAAAAAAAAAAAAAAAA",
+        participantId: "participant-1",
+        rejoinToken: "rejoin-token",
+        displayName: "Test participant",
+        storedAt: 0,
+      },
+      presenterMode: false,
+      now: () => 3_000,
+    });
+    const internal = session as unknown as {
+      phase: SessionPhase;
+      startedAt: number;
+      transportReadyAt: number;
+      publishing: boolean;
+      players: Map<
+        string,
+        {
+          participantId: string;
+          released: boolean;
+          objectStats: () => {
+            objects: Measurement<number>;
+            meanBytes: Measurement<number>;
+            lateDrops: Measurement<number>;
+            cancelledDrops: Measurement<number>;
+            concealedFrames: Measurement<number>;
+            comfortNoiseFrames: Measurement<number>;
+            depthMs: Measurement<number>;
+            skewPpm: Measurement<number>;
+          };
+        }
+      >;
+      transport: {
+        sessionStats: () => {
+          publishedObjects: number;
+          subscribedObjects: number;
+          transportRttMs: number;
+        };
+      };
+      mixer: { outputLatencyMs: () => Measurement<number> };
+      devices: {
+        inputCount: () => Measurement<number>;
+        deviceChanges: () => Measurement<number>;
+      };
+      metrics: () => import("../src/client/session/RoomSession").SessionMetrics;
+    };
+    internal.phase = { name: "live" };
+    internal.startedAt = 0;
+    internal.transportReadyAt = 1_000;
+    internal.publishing = false;
+    internal.players = new Map([
+      [
+        "participant-2",
+        {
+          participantId: "participant-2",
+          released: false,
+          objectStats: () => ({
+            objects: measured(100),
+            meanBytes: measured(102),
+            lateDrops: measured(5),
+            cancelledDrops: measured(2),
+            concealedFrames: measured(3),
+            comfortNoiseFrames: measured(1),
+            depthMs: measured(80),
+            skewPpm: measured(-400),
+          }),
+        },
+      ],
+    ]);
+    internal.transport = {
+      sessionStats: () => ({
+        publishedObjects: 40,
+        subscribedObjects: 100,
+        transportRttMs: 30,
+      }),
+    };
+    internal.mixer = { outputLatencyMs: () => measured(8) };
+    internal.devices = {
+      inputCount: () => measured(1),
+      deviceChanges: () => measured(0),
+    };
+
+    const metrics = internal.metrics();
+    expect(metrics.publishedObjects).toEqual(measured(40));
+    expect(metrics.subscribedObjects).toEqual(measured(100));
+    expect(metrics.objectsPerSecond).toEqual(measured(50));
+    expect(metrics.meanObjectBytes).toEqual(measured(102));
+    expect(metrics.lateDropRate).toEqual(measured(0.05));
+    expect(metrics.worstBufferMs).toEqual(measured(80));
+    expect(metrics.aggregateBufferMs).toEqual(measured(80));
+    expect(metrics.worstDriftPpm).toEqual(measured(400));
+    expect(metrics.activeDecoders).toEqual(measured(1));
+  });
+
   it("starts microphone capture automatically while transport opens independently", async () => {
     const session = new RoomSession({
       session: {

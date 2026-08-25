@@ -1190,23 +1190,72 @@ input::placeholder {
   color: var(--muted);
   font-size: 12px;
 }
-.latency-view table {
+.comparison-view {
+  padding: 14px 18px 18px;
+}
+.comparison-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 12px;
 }
-.latency-view th,
-.latency-view td {
+.comparison-table + .comparison-table {
+  margin-top: 22px;
+}
+.comparison-table caption {
+  padding: 0 0 8px;
+  color: #fff;
+  font: 11px var(--mono);
+  text-align: left;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.comparison-table th,
+.comparison-table td {
   padding: 9px 10px;
   border-bottom: 1px solid var(--line);
   text-align: left;
   vertical-align: top;
 }
-.latency-view thead th {
+.comparison-table th:first-child {
+  width: 42%;
+}
+.comparison-table th:nth-child(2),
+.comparison-table td:nth-child(2) {
+  width: 30%;
+  color: var(--muted);
+  font: 10px / 1.4 var(--mono);
+}
+.comparison-table th:last-child,
+.comparison-table td:last-child {
+  width: 28%;
+}
+.comparison-table thead th {
   font: 10px var(--mono);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--muted);
+}
+.comparison-row--emphasised th,
+.comparison-row--emphasised td {
+  font-weight: 600;
+}
+.comparison-outcome {
+  display: block;
+  margin-top: 4px;
+  font: 9px var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.comparison-outcome--within {
+  color: var(--green);
+}
+.comparison-outcome--over {
+  color: var(--amber);
+}
+.comparison-note {
+  margin: 14px 10px 0;
+  color: var(--amber);
+  font: 10px / 1.5 var(--mono);
 }
 
 /* H7 */

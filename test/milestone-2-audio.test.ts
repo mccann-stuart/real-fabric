@@ -7,7 +7,7 @@ import {
   MINIMUM_CORRECTION_RATIO,
 } from "../src/client/audio/DriftEstimator";
 import { AUDIO_FRAME_DURATION_MS, encodeAudioObject } from "../src/client/audio/frame";
-import type { MixerGraph } from "../src/client/audio/MixerGraph";
+import { MixerGraph } from "../src/client/audio/MixerGraph";
 import {
   COMFORT_NOISE_AFTER_FRAMES,
   estimatePitchPeriod,
@@ -183,6 +183,19 @@ describe("M2 — the drift rebuild waits for a pause", () => {
     // Drained at the moment of the final arrival: not silent by any measure.
     player.drain(arrival);
     expect(player.rebuildPending).toBe(false);
+  });
+});
+
+describe("M2 — truthful browser latency reporting", () => {
+  it("treats a zero AudioContext output latency as Not exposed", () => {
+    const mixer = new MixerGraph();
+    const internal = mixer as unknown as { context: { outputLatency: number } };
+
+    internal.context = { outputLatency: 0 };
+    expect(mixer.outputLatencyMs().exposed).toBe(false);
+
+    internal.context = { outputLatency: 0.008 };
+    expect(mixer.outputLatencyMs()).toEqual({ exposed: true, value: 8 });
   });
 });
 
