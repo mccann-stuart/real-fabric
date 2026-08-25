@@ -450,17 +450,23 @@ export class MoqTransportAdapter {
     if (!controller) {
       throw new MoqTransportError("protocol_error", "The publication stream did not initialise.");
     }
+    // MOQtail otherwise assigns the registered track a random alias, while
+    // publish() advertises the caller-supplied alias. PublishPublication uses
+    // the registered alias in subgroup headers, so both values must be the
+    // same or the relay will stop every media stream after accepting PUBLISH.
+    const trackAlias = this.nextAlias++;
     client.addOrUpdateTrack({
       fullTrackName: fullName,
       trackSource: { live: new LiveTrackSource(stream) },
       publisherPriority: 0,
+      trackAlias,
     });
     // Cloudflare's draft-16 feature matrix exposes PUBLISH/PUBLISH_OK but not
     // PUBLISH_NAMESPACE. The track's full namespace is already carried by
     // PUBLISH, so sending the unsupported namespace request first can prevent
     // a credential that is otherwise allowed to publish from ever reaching
     // the supported request.
-    const result = await client.publish(fullName, true, this.nextAlias++);
+    const result = await client.publish(fullName, true, trackAlias);
     if (result instanceof RequestError) {
       throw requestRefusal("track_publication", "track publication", result);
     }

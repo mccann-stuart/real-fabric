@@ -682,12 +682,16 @@ describe("M1 — bounded session recovery", () => {
       releasePublish = resolve;
     });
     const calls = { addTrack: 0, publish: 0 };
+    let registeredAlias: bigint | undefined;
+    let publishedAlias: bigint | undefined;
     const client = {
-      addOrUpdateTrack: () => {
+      addOrUpdateTrack: (track: { trackAlias?: bigint }) => {
         calls.addTrack += 1;
+        registeredAlias = track.trackAlias;
       },
-      publish: async () => {
+      publish: async (_fullName: unknown, _forward: boolean, trackAlias: bigint) => {
         calls.publish += 1;
+        publishedAlias = trackAlias;
         await publishReady;
         return { requestId: 0n, trackAlias: 1n };
       },
@@ -708,6 +712,8 @@ describe("M1 — bounded session recovery", () => {
     });
 
     expect(calls).toEqual({ addTrack: 1, publish: 1 });
+    expect(registeredAlias).toBe(1n);
+    expect(publishedAlias).toBe(registeredAlias);
     releasePublish?.();
     await Promise.all([first, second]);
 
