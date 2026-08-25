@@ -195,175 +195,328 @@ export interface AudioCodecEngine {
 
 ## 5. Test Coverage Expansion Roadmap
 
-To transition Real Fabric from a stage demo with 76 focused invariant tests into a resilient, production-ready calling platform, automated test coverage must expand across four concrete testing tiers.
+To transition Real Fabric from an initial stage demo with 76 focused invariant tests into a resilient, production-ready multi-party calling platform, automated test coverage must expand systematically across four concrete testing tiers.
+
+Because Real Fabric bridges protocol standardisation, multi-party media routing, and evolving browser capabilities, code coverage enforcement must respect **two interrelated milestone dimensions**:
+1. **v1 Stage-Demo Delivery Milestones & Acceptance Gates (Milestones 1–4, Gates 1–4, H1–H16)** from [`PRODUCT_SPEC_v1-demo_1.md`](PRODUCT_SPEC_v1-demo_1.md).
+2. **Platform Standards & Universal Browser Evolution Phases (Phases 1–4)** defined in §6.
+3. **Future MOQT Draft-20 Standard Gate** unblocking native draft-20 relay interoperability.
 
 ```mermaid
-flowchart LR
-    subgraph T1["Tier 1: Unit & Simulation"]
-        U1["Capability Permutations"]
-        U2["Worklet Capture Bridge"]
-        U3["Wasm Codec Parity"]
-        U4["Mobile Lifecycle Events"]
+flowchart TD
+    subgraph GATES["Milestone & Protocol Dependency Gates"]
+        G1["Milestone 1 (Gate 1): Live Transport & Relay Interop (Draft-16)"]
+        G2["Milestone 2 (Gate 2): Hardware Resilience & Audio Pipeline"]
+        G3["Milestone 3 (Gate 3): Multi-Agent AI & Floor Control"]
+        G4["Milestone 4 (Gate 4): Discovery, Rejoin & Capacity Scaling"]
+        P1["Phase 1: Universal Ingestion & Codec Abstraction"]
+        P2["Phase 2: Mobile Web & OS Lifecycle Hardening"]
+        P3["Phase 3: Automated Multi-Browser CI Matrix"]
+        P4["Phase 4: Acoustic Latency & Real-Device Validation"]
     end
 
-    subgraph T2["Tier 2: Headless Matrix (CI)"]
-        M1["Chromium Matrix"]
-        M2["WebKit Matrix (Safari)"]
-        M3["Gecko Matrix (Firefox)"]
-        M4["Virtual MoQ Relay"]
+    subgraph T1["Tier 1: Unit & Subsystem Simulation (Fast In-Memory)"]
+        U1["1.1 Capability Diagnostic Matrix<br><i>[Status: Active / Immediate]</i>"]
+        U2["1.2 AudioWorklet Capture Pipeline<br><i>[Await: Phase 1]</i>"]
+        U3["1.3 Codec Parity (WebCodecs vs Wasm)<br><i>[Await: Phase 1]</i>"]
+        U4["1.4 Mobile Lifecycle State Machine<br><i>[Await: Phase 2]</i>"]
+        U5["1.5 Invariant & Contract Safety<br><i>[Status: Active / Immediate]</i>"]
     end
 
-    subgraph T3["Tier 3: Acoustic & Media Pipeline"]
-        A1["Acoustic Loopback (p50/p95)"]
-        A2["Drift Skew (±1000 ppm)"]
-        A3["Sub-300ms Barge-In"]
-        A4["Degradation Ladder Stress"]
+    subgraph T2["Tier 2: Headless Cross-Browser Matrix (Playwright CI)"]
+        M1["2.1 Chromium Headless Matrix<br><i>[Await: Gate 1]</i>"]
+        M2["2.2 WebKit Headless Matrix (Safari)<br><i>[Await: Phase 1 & Phase 3]</i>"]
+        M3["2.3 Gecko Headless Matrix (Firefox)<br><i>[Await: Phase 1 & Phase 3]</i>"]
+        M4["2.4 Virtual MoQ Relay Harness<br><i>[Await: Gate 1]</i>"]
+        M5["2.5 Automated Pre-Flight & Failure Registry<br><i>[Await: Gate 1 & Gate 4]</i>"]
     end
 
-    subgraph T4["Tier 4: Real-Device & Network Resil."]
-        D1["Real iOS / Android Cloud"]
-        D2["Cellular / Hotspot Handover"]
-        D3["QUIC Connection Migration"]
-        D4["10-Min Stability (H13)"]
+    subgraph T3["Tier 3: Acoustic, Media Pipeline & Loopback"]
+        A1["3.1 Acoustic Loopback Latency (p50/p95)<br><i>[Await: Gate 2 & Phase 4]</i>"]
+        A2["3.2 Drift Skew Resampling & Rebuild<br><i>[Await: Gate 2]</i>"]
+        A3["3.3 Sub-300ms Barge-In Cancellation<br><i>[Await: Gate 3]</i>"]
+        A4["3.4 Multi-Agent Floor & Turn Caps<br><i>[Await: Gate 3]</i>"]
+        A5["3.5 3-Tier Degradation Ladder Stress<br><i>[Await: Gate 4]</i>"]
     end
 
-    T1 --> T2 --> T3 --> T4
+    subgraph T4["Tier 4: Real-Device & Network Resilience"]
+        D1["4.1 Real-Device Cloud Fleet (iOS/Android)<br><i>[Await: Phase 4 & Gate 4]</i>"]
+        D2["4.2 Cellular Loss, Jitter & UDP Blocking<br><i>[Await: Gate 1]</i>"]
+        D3["4.3 QUIC Connection Migration (Wi-Fi ↔ 5G)<br><i>[Await: Phase 4]</i>"]
+        D4["4.4 10-Minute Reference Composition Run<br><i>[Await: Gate 2 & Gate 4]</i>"]
+    end
+
+    G1 -.-> M1 & M4 & D2
+    G2 -.-> A1 & A2 & D4
+    G3 -.-> A3 & A4
+    G4 -.-> M5 & A5 & D1 & D4
+    P1 -.-> U2 & U3 & M2 & M3
+    P2 -.-> U4
+    P3 -.-> M2 & M3
+    P4 -.-> A1 & D1 & D3
 ```
 
 ---
 
 ### 5.1 Tier 1: Unit & Subsystem Capability Simulation Tests
 
-*Target: Fast in-memory unit tests simulating all browser and platform variations.*
+*Target: Ultra-fast, in-memory unit tests validating capability detection, sample chunking, codec state machines, and protocol invariants without network dependencies.*
 
-1. **User Agent & Capability Matrix Testing:**
-   - Construct comprehensive fixtures in [`test/invariants.test.ts`](test/invariants.test.ts) covering:
-     - iOS Safari (missing `MediaStreamTrackProcessor`, locked `AudioContext`).
-     - macOS Safari (missing `MediaStreamTrackProcessor`, native `AudioDecoder`).
-     - Desktop Firefox (missing `MediaStreamTrackProcessor`, missing `AudioEncoder`).
-     - Android Chrome (mobile brands, audio focus events).
-     - Windows Edge & Chrome (Chromium brands on Windows).
-   - Assert that [`matchConfiguration`](src/shared/pinnedConfiguration.ts) and [`useCapabilities`](src/client/hooks/useCapabilities.ts) emit truthful, non-fatal reports without silent failures.
+#### Suite 1.1: User Agent & Platform Diagnostic Permutations
+- **Execution Mode:** `Active / Immediate` (In-memory execution in [`test/invariants.test.ts`](test/invariants.test.ts)).
+- **Milestones to Await:** **None (Immediate execution).**
+- **Why / Rationale:** Synthesised user-agent strings, `navigator.userAgentData.brands` arrays, and platform capabilities can be asserted in Node.js/Vitest without external browser drivers.
+- **Coverage Target:** $100\%$ branch coverage of [`matchConfiguration`](src/shared/pinnedConfiguration.ts), [`useCapabilities`](src/client/hooks/useCapabilities.ts), and diagnostic classification.
+- **Scope & Assertions:**
+  - Pinned desktop Chrome on macOS resolves as tested (`tested: true`).
+  - Edge, Firefox, Safari, Windows Chrome, iOS Safari, and Android Chrome emit truthful warning classifications (*"Not the tested configuration"*, *"Platform is Windows"*, *"Read-only on mobile"*) rather than silent errors.
+  - Missing WebTransport or WebCodecs reports precise failure codes ([`failures.ts`](src/shared/failures.ts)) instead of generic exceptions.
 
-2. **Universal AudioWorklet Capture Pipeline Unit Tests:**
-   - Mock `AudioWorkletProcessor` sample collection.
-   - Verify that streaming $128\text{-sample}$ Web Audio quantum slices correctly assemble into exact $20\text{ ms}$ ($960\text{ sample}$) frames with continuous timestamps and no phase discontinuity.
+#### Suite 1.2: Universal AudioWorklet Capture Pipeline Unit Tests
+- **Execution Mode:** `Blocked / Awaiting Implementation`.
+- **Milestones to Await:** **Standards Phase 1: Universal Ingestion & Codec Abstraction** ([`UniversalAudioCaptureAdapter.ts`](src/client/audio/UniversalAudioCaptureAdapter.ts) & `capture-worklet.js`).
+- **Why Await:** Attempting to enforce unit test coverage on audio capture before the `AudioWorklet` capture bridge is implemented would falsely restrict testing to Chromium's `MediaStreamTrackProcessor`.
+- **Coverage Target:** $>90\%$ line and branch coverage across [`CaptureController.ts`](src/client/audio/CaptureController.ts) and capture worklet bridging.
+- **Scope & Assertions:**
+  - Mock `AudioWorkletProcessor` quantum delivery ($128\text{ samples}$ per `process()` call).
+  - Assert that ring-buffer accumulation correctly outputs discrete $20\text{ ms}$ ($960\text{ sample}$ at $48\text{ kHz}$) Float32 frames.
+  - Verify continuous, strictly monotonically increasing microsecond timestamps without phase clicks or sample loss.
 
-3. **Codec Parity & Fallback Verification:**
-   - Execute side-by-side encode/decode loops comparing native WebCodecs with Wasm Libopus.
-   - Validate that both pipelines produce conformant Opus packets, handle DTX comfort noise transitions, and synthesize PLC frames on simulated missing objects.
+#### Suite 1.3: Codec Parity & Fallback Verification (WebCodecs vs Wasm Libopus)
+- **Execution Mode:** `Blocked / Awaiting Implementation`.
+- **Milestones to Await:** **Standards Phase 1: Universal Ingestion & Codec Abstraction** (`AudioCodecEngine` interface and Wasm Libopus worker).
+- **Why Await:** Side-by-side codec validation requires compiling and bundling the WebAssembly Libopus SIMD module.
+- **Coverage Target:** $>85\%$ line coverage across both native WebCodecs and Wasm Libopus codec implementations.
+- **Scope & Assertions:**
+  - Run identical PCM synthetic speech buffers through both native `AudioEncoder` and Wasm Libopus.
+  - Verify that both encoders output valid RFC 6716 Opus frames at $32\text{ kbit/s}$ mono.
+  - Verify DTX comfort-noise frame generation during simulated speech pauses and PLC packet synthesis on missing sequence numbers.
 
-4. **Mobile Lifecycle State Machine Tests:**
-   - Unit test `ReconnectionPolicy` and `RoomSession` against simulated `visibilitychange`, `freeze`, and `resume` DOM events.
-   - Verify that backgrounding cleanly schedules track suspension and restores identity within the $60\text{-second}$ window.
+#### Suite 1.4: Mobile Lifecycle State Machine & Rejoin Simulation
+- **Execution Mode:** `Blocked / Awaiting Implementation`.
+- **Milestones to Await:** **Standards Phase 2: Mobile Web & OS Lifecycle Hardening** ([`ReconnectionPolicy.ts`](src/client/session/ReconnectionPolicy.ts) mobile visibility hooks).
+- **Why Await:** Background suspension and page visibility state transitions require the mobile reconnection state machine to be implemented in [`RoomSession.ts`](src/client/session/RoomSession.ts).
+- **Coverage Target:** $>90\%$ branch coverage of mobile lifecycle event handlers and reconnect scheduling.
+- **Scope & Assertions:**
+  - Simulate `document.visibilitychange` (`hidden` $\rightarrow$ `visible`), `freeze`, and `resume` lifecycle events.
+  - Assert that on `hidden`, the client dispatches an explicit MOQT track pause signal.
+  - Assert that on `visible`, the client executes atomic session recovery using the $60\text{-second}$ rejoin token without duplicate audio object subscriptions.
+
+#### Suite 1.5: Invariant & Protocol Contract Safety
+- **Execution Mode:** `Active / Immediate` (Covered in [`test/invariants.test.ts`](test/invariants.test.ts) and [`test/validation.test.ts`](test/validation.test.ts)).
+- **Milestones to Await:** **None (Immediate execution).**
+- **Why / Rationale:** Validates core protocol contracts ([`contracts.ts`](src/shared/contracts.ts), [`tracks.ts`](src/shared/tracks.ts)) including H2 (opaque track names), H5 (AI silence when unaddressed), H7 (open composition), H9 (per-AI routing structures), and H15 (truthful unobservable metrics).
+- **Coverage Target:** $100\%$ contract invariant coverage.
 
 ---
 
 ### 5.2 Tier 2: Headless Cross-Browser Matrix Integration Tests (Playwright / WebDriver BiDi)
 
-*Target: Automated multi-browser continuous integration testing.*
+*Target: Automated multi-browser CI runs validating connection setup, pre-flight checks, failure states, and live inspector graph updates.*
 
-1. **Multi-Engine CI Matrix:**
-   - Configure Playwright to execute test suites against:
-     - **Chromium** (Desktop macOS/Windows & Mobile Android Emulation).
-     - **WebKit** (macOS Safari & Mobile iOS Emulation).
-     - **Firefox** (Gecko Desktop).
-2. **Headless Virtual MoQ Relay:**
-   - Implement an in-memory, lightweight MOQT relay running inside the test runner or a local process.
-   - Establish live WebTransport sessions over HTTP/3 in headless Chromium and Firefox.
-   - Verify publisher-subscriber handshakes, `SUBSCRIBE_NAMESPACE` discovery, and real-time edge mutations on the inspector graph.
-3. **Automated Pre-Flight Validation:**
-   - Run the pre-flight verification suite (`/preflight`) across all browser targets.
-   - Assert that unsupported features render the exact failure code from the §10 Failure State Registry (`transport_unsupported`, `microphone_no_device`, `draft_endpoint_missing`) with relevant user recovery copy.
+#### Suite 2.1: Chromium Headless Matrix (macOS, Windows, Android Emulation)
+- **Execution Mode:** `Blocked / Awaiting Transport Proof`.
+- **Milestones to Await:** **v1 Milestone 1 (Gate 1: Live Transport & Relay Interop on Draft-16)**.
+- **Why Await:** Headless Chromium end-to-end testing requires a functional MOQT wire framing implementation ([`MoqTransportAdapter.ts`](src/client/transport/MoqTransportAdapter.ts)) communicating over real or virtual WebTransport HTTP/3 sessions.
+- **Coverage Target:** $>80\%$ E2E scenario coverage in Chromium.
+- **Scope & Assertions:**
+  - Launch Chromium with WebTransport flags enabled (`--enable-experimental-web-platform-features`, `--origin-to-force-quic-on`).
+  - Execute full room creation, join flow, local microphone capture, and publication.
+  - Verify that the protocol inspector renders live transport stats (round-trip time, active streams, published tracks).
+
+#### Suite 2.2: WebKit Headless Matrix (Safari macOS & Mobile iOS Emulation)
+- **Execution Mode:** `Blocked / Awaiting Platform Bridge & CI Setup`.
+- **Milestones to Await:** **Standards Phase 1 (Universal Ingestion)** and **Standards Phase 3 (Automated Multi-Browser CI Matrix)**.
+- **Why Await:** Executing WebKit/Safari tests before implementing the Phase 1 `AudioWorklet` capture bridge triggers immediate `MediaStreamTrackProcessor` missing exceptions, preventing meaningful integration testing.
+- **Coverage Target:** $100\%$ pre-flight diagnostic coverage; $>80\%$ listen-and-publish call flow coverage in WebKit.
+- **Scope & Assertions:**
+  - Verify user gesture gating for `AudioContext.resume()` on iOS viewport emulation.
+  - Verify that WebKit successfully establishes WebTransport connections and streams voice via the `AudioWorklet` capture bridge.
+
+#### Suite 2.3: Gecko Headless Matrix (Firefox Desktop & Android Emulation)
+- **Execution Mode:** `Blocked / Awaiting Platform Bridge & CI Setup`.
+- **Milestones to Await:** **Standards Phase 1 (Universal Ingestion & Wasm Codec)** and **Standards Phase 3 (Automated Multi-Browser CI Matrix)**.
+- **Why Await:** Firefox lacks native `MediaStreamTrackProcessor` and has partial WebCodecs support; it requires both the Phase 1 Worklet capture bridge and the Wasm Libopus fallback codec.
+- **Coverage Target:** $>80\%$ E2E call flow coverage in Gecko.
+- **Scope & Assertions:**
+  - Verify WebTransport over HTTP/3 connectivity in Firefox Nightly / stable.
+  - Verify seamless audio capture and decoding using the Wasm Libopus engine.
+
+#### Suite 2.4: Headless Virtual MoQ Relay Harness & Dynamic Edge Mutations
+- **Execution Mode:** `Blocked / Awaiting Transport & AI Milestones`.
+- **Milestones to Await:** **v1 Milestone 1 (Gate 1)** for wire framing and **v1 Milestone 3 (Gate 3)** for AI routing mutations.
+- **Why Await:** Testing multi-participant track fan-out and real-time subscription mutations (**Hears me** / **I hear it**) requires the in-memory virtual relay and multi-agent routing engines to be operational.
+- **Coverage Target:** $>90\%$ coverage of [`MoqTransportAdapter.ts`](src/client/transport/MoqTransportAdapter.ts) wire messaging and [`SubscriptionGraph.tsx`](src/client/components/SubscriptionGraph.tsx) edge state reconciliation.
+- **Scope & Assertions:**
+  - Spin up an in-process virtual MOQT relay in the Playwright test environment.
+  - Connect 3 virtual browser clients and 2 AI workers.
+  - Toggle human-to-AI routing controls and assert that MOQT `SUBSCRIBE` and `UNSUBSCRIBE` control messages fire within $500\text{ ms}$, immediately updating the inspector graph edges.
+
+#### Suite 2.5: Automated Pre-Flight & Failure Registry Gating (§10 Failure States)
+- **Execution Mode:** `Blocked / Awaiting Milestone 1 & Milestone 4`.
+- **Milestones to Await:** **v1 Milestone 1 (Gate 1)** (transport failures) and **v1 Milestone 4 (Gate 4)** (system-wide failure modes).
+- **Why Await:** Automated assertions across all 16 failure codes ([`failures.ts`](src/shared/failures.ts)) require end-to-end error propagation across transport, audio, AI, and room service.
+- **Coverage Target:** $100\%$ test coverage across all 16 §10 failure codes (e.g. `transport_unsupported`, `udp_blocked`, `microphone_denied`, `draft_mismatch`, `beyond_measured_capacity`).
 
 ---
 
 ### 5.3 Tier 3: Media Pipeline, Drift, Barge-In & Acoustic Loopback Tests
 
-*Target: Rigorous media-plane validation meeting §9.3 latency and §9.4 acoustic loopback requirements.*
+*Target: Rigorous verification of media-plane performance, adaptive jitter buffering, clock drift correction, sub-300ms barge-in, and degradation ladder mechanics.*
 
-1. **Automated Acoustic Loopback Harness (§9.4):**
-   - Inject a deterministic synthetic click train into the publisher's audio capture.
-   - Capture decoded PCM from the subscriber's `MixerGraph` output.
-   - Perform automated cross-correlation to measure one-way latency.
-   - Assert acceptance gates: $\text{p50} < 250\text{ ms}$ and $\text{p95} < 500\text{ ms}$ under nominal network conditions.
+#### Suite 3.1: Automated Acoustic Loopback Test Harness (§9.4)
+- **Execution Mode:** `Blocked / Awaiting Audio Pipeline Hardening`.
+- **Milestones to Await:** **v1 Milestone 2 (Gate 2: Hardware Resilience & Audio Pipeline Hardening)** and **Standards Phase 4**.
+- **Why Await:** Precise measurement of one-way acoustic latency ($\text{p50} < 250\text{ ms}$, $\text{p95} < 500\text{ ms}$) requires the unified `AudioWorklet` summing graph, calibrated output clocking, and deterministic Opus frame processing.
+- **Coverage Target:** $100\%$ validation of acoustic loopback cross-correlation routines and latency gates.
+- **Scope & Assertions:**
+  - Inject synthetic click trains into the publisher capture stream.
+  - Record decoded PCM at the subscriber's [`MixerGraph.ts`](src/client/audio/MixerGraph.ts) output.
+  - Calculate cross-correlation delay; assert $\text{p50} < 250\text{ ms}$ and $\text{p95} < 500\text{ ms}$ under nominal network conditions.
 
-2. **Clock Drift Simulation & Stress Testing:**
-   - Inject synthetic sender clock skews from $-1000\text{ ppm}$ to $+1000\text{ ppm}$ across 50,000 continuous frames.
-   - Verify that [`DriftEstimator`](src/client/audio/DriftEstimator.ts) dynamically adjusts the resampling ratio without audible pitch artefacts.
-   - Trigger severe drift ($>5\%$) and confirm that `TrackPlayer` executes graceful jitter-buffer rebuilding at detected speech pauses (`drift_uncorrectable`).
+#### Suite 3.2: Clock Drift Simulation & Dynamic Resampling ($\pm 1000\text{ ppm}$)
+- **Execution Mode:** `Partially Active / Full Integration Awaits Milestone 2`.
+- **Milestones to Await:** **v1 Milestone 2 (Gate 2: Audio Pipeline Hardening)**.
+- **Why Await:** While basic skew calculation is unit-tested in [`test/milestone-2-audio.test.ts`](test/milestone-2-audio.test.ts), continuous 50,000-frame stress testing with dynamic fractional resampling and silence rebuilding (`drift_uncorrectable`) requires the integrated [`TrackPlayer.ts`](src/client/audio/TrackPlayer.ts) and `MixerGraph`.
+- **Coverage Target:** $>95\%$ branch coverage across [`DriftEstimator.ts`](src/client/audio/DriftEstimator.ts), [`PacketLossConcealer.ts`](src/client/audio/PacketLossConcealer.ts), and [`AdaptiveJitterBuffer.ts`](src/client/audio/AdaptiveJitterBuffer.ts).
+- **Scope & Assertions:**
+  - Inject continuous sender clock skew from $-1000\text{ ppm}$ to $+1000\text{ ppm}$.
+  - Verify that fractional resampling adjusts buffer playout rate smoothly without audible pitch distortion.
+  - Inject severe skew ($>5\%$) and verify graceful buffer rebuilding during detected speech pauses.
 
-3. **Sub-300ms Barge-In Stress Verification (H6):**
-   - Stream high-volume AI speech packets into the receiver.
-   - Fire a human speech onset event from `VoiceActivityDetector`.
-   - Measure elapsed time until the subscriber's `MixerGraph` flushes and drops remaining group objects.
-   - Assert that playout halts within $\le 300\text{ ms}$ across 100 consecutive trials.
+#### Suite 3.3: Sub-300ms Barge-In Stress Verification (H6)
+- **Execution Mode:** `Blocked / Awaiting AI Multi-Agent Milestone`.
+- **Milestones to Await:** **v1 Milestone 3 (Gate 3: Multi-Agent AI & Floor Control)**.
+- **Why Await:** Validating that an addressed AI is audibly silenced within $\le 300\text{ ms}$ of human onset requires the MOQT group cancellation wire marker and receiver object purging in [`TrackPlayer.ts`](src/client/audio/TrackPlayer.ts).
+- **Coverage Target:** $100\%$ pass rate across 100 consecutive automated interruption trials.
+- **Scope & Assertions:**
+  - Flood the receiver with continuous AI speech objects ($50\text{ objects/s}$).
+  - Trigger human voice onset event from `VoiceActivityDetector`.
+  - Measure elapsed time until receiver AudioWorklet drops queued objects and silences playback; assert latency $\le 300\text{ ms}$.
 
-4. **Degradation Ladder Automated Load Test (H7):**
-   - Simulate an open room scaling from 1 to 50 concurrent active tracks.
-   - Monitor simulated CPU decoding time and jitter buffer depth.
-   - Assert that the client systematically engages:
-     - *Step 1:* Nominal buffer expansion ($60\text{ ms} \rightarrow 120\text{ ms}$).
-     - *Step 2:* Decoder release for tracks silent $>30\text{ s}$.
-     - *Step 3:* Unsubscribing least-recently-active speakers with active UI notification.
+#### Suite 3.4: Multi-Agent AI Floor Control & Turn Budget Enforcement (H5, H10)
+- **Execution Mode:** `Blocked / Awaiting AI Multi-Agent Milestone`.
+- **Milestones to Await:** **v1 Milestone 3 (Gate 3: Multi-Agent AI & Floor Control)**.
+- **Why Await:** Testing serialised queueing in [`AiDirector.ts`](src/client/ai/AiDirector.ts), AI-to-AI turn caps (`AI_TO_AI_TURN_CAP = 4`, `ai_loop_capped`), and upstream synthesis circuit-breakers requires the multi-agent AI pipeline.
+- **Coverage Target:** $>90\%$ coverage of [`AiDirector.ts`](src/client/ai/AiDirector.ts) and [`ScriptedResponder.ts`](src/client/ai/ScriptedResponder.ts).
+- **Scope & Assertions:**
+  - Address two AI agents simultaneously; verify that Agent 2 enters *"Thinking (Queued)"* state without overlapping speech.
+  - Simulate unprompted AI speech; assert that the AI remains completely silent (H5).
+  - Verify that consecutive AI-to-AI turns hard-cap at 4 until reset by a human utterance.
+
+#### Suite 3.5: 3-Tier Degradation Ladder Load Stress Test (H7)
+- **Execution Mode:** `Partially Active / Full Integration Awaits Milestone 4`.
+- **Milestones to Await:** **v1 Milestone 4 (Gate 4: Capacity Scaling)**.
+- **Why Await:** Validating degradation steps under extreme subscriber scale requires room load simulation up to 50 active tracks.
+- **Coverage Target:** $100\%$ branch coverage in [`DegradationLadder.ts`](src/client/audio/DegradationLadder.ts).
+- **Scope & Assertions:**
+  - Scale simulated active tracks from 1 to 50.
+  - Step 1: Nominal buffer expands ($60\text{ ms} \rightarrow 120\text{ ms}$).
+  - Step 2: Decoders for tracks silent $>30\text{ s}$ are released.
+  - Step 3: Least-recently-active tracks are unsubscribed and display *"audio paused for N participants — beyond measured capacity"*.
 
 ---
 
 ### 5.4 Tier 4: Real-Device Mobile & Network Resilience Testing
 
-*Target: Verification under real-world network and device conditions.*
+*Target: Verification under real-world physical hardware, cellular networks, UDP impairment, and long-duration stability.*
 
-1. **Real Device Cloud Testing Grid:**
-   - Execute automated smoke tests on real physical devices via device cloud providers:
-     - **iOS:** iPhone 14/15/16 running iOS 17 & iOS 18 (Safari & Chrome).
-     - **Android:** Google Pixel 8/9 & Samsung Galaxy S23/S24 running Android 14 & 15.
-     - **Windows:** Surface Pro / Windows 11 on Edge & Chrome.
-     - **macOS:** Apple Silicon on Chrome, Safari, and Firefox.
-2. **Network Impairment & UDP Filtering Tests:**
-   - Validate application behaviour under simulated cellular constraints using network shaping tools:
-     - $5\%$ to $15\%$ random packet loss (verifying Opus PLC and jitter adaptation).
-     - Out-of-order packet delivery (verifying sequence reordering in `AdaptiveJitterBuffer`).
-     - Hard UDP blocking (verifying immediate, truthful `udp_blocked` failure banner and mobile hotspot guidance).
-3. **QUIC Connection Migration & Wi-Fi to 5G Handover:**
-   - Test client migration between Wi-Fi and mobile data interfaces.
-   - Verify that the underlying QUIC transport migrates the connection without terminating the MOQT session or dropping active voice tracks.
-4. **Continuous 10-Minute Stability Run (H13):**
-   - Execute the 10-minute reference composition ($6\text{ humans} + 2\text{ AIs}$) continuously on mobile and desktop devices.
-   - Verify zero memory leaks, constant heap bounds, stable jitter buffer depth ($40\text{--}200\text{ ms}$), and zero uncorrected audio drift.
+#### Suite 4.1: Real-Device Cloud Fleet Testing (iOS, Android, Windows, macOS)
+- **Execution Mode:** `Blocked / Awaiting Standards Phase 4 & Gate 4`.
+- **Milestones to Await:** **Standards Phase 4: Acoustic Latency & Real-Device Validation** and **v1 Milestone 4 (Gate 4 / Release Gate)**.
+- **Why Await:** Automated cloud execution on real physical devices (iPhone 14–16, Google Pixel 8–9, Samsung Galaxy S23–24, Surface Pro) requires Phases 1–3 cross-browser implementations to be completed.
+- **Coverage Target:** Automated smoke and full call-flow pass across the real device matrix.
+- **Scope & Assertions:**
+  - Verify audio capture permissions and physical microphone input on mobile OSs.
+  - Assert zero audio dropouts during peripheral switching (e.g. plugging/unplugging wired headsets or connecting Bluetooth earbuds).
+
+#### Suite 4.2: Network Impairment, Loss, Jitter & UDP Filtering
+- **Execution Mode:** `Blocked / Awaiting Transport Milestone`.
+- **Milestones to Await:** **v1 Milestone 1 (Gate 1: Live Transport)**.
+- **Why Await:** Validating packet loss concealment (PLC), jitter adaptation, and UDP filtering advice requires live WebTransport HTTP/3 traffic.
+- **Coverage Target:** $100\%$ coverage of [`NetworkProbe.ts`](src/client/transport/NetworkProbe.ts) and network failure states.
+- **Scope & Assertions:**
+  - Inject $5\%\text{--}15\%$ packet loss; verify Opus PLC synthesis and audio intelligibility.
+  - Inject out-of-order delivery; assert sequence reordering in `AdaptiveJitterBuffer`.
+  - Simulate UDP blocking; assert immediate `udp_blocked` banner with hotspot guidance (H14).
+
+#### Suite 4.3: QUIC Connection Migration (Wi-Fi ↔ 5G Handover)
+- **Execution Mode:** `Blocked / Awaiting Standards Phase 4`.
+- **Milestones to Await:** **Standards Phase 4: Acoustic Latency & Real-Device Validation**.
+- **Why Await:** Validating seamless connection migration without MOQT session termination requires multi-homed physical/virtual test devices.
+- **Coverage Target:** Successful connection migration verification in QUIC transport telemetry.
+- **Scope & Assertions:**
+  - Migrate client IP/interface from Wi-Fi to cellular data during active voice streaming.
+  - Assert that MOQT subscriptions and audio playback continue with zero track reconnections.
+
+#### Suite 4.4: Continuous 10-Minute Reference Composition Stability Run (H13)
+- **Execution Mode:** `Blocked / Awaiting Gate 2 & Gate 4`.
+- **Milestones to Await:** **v1 Milestone 2 (Gate 2 Exit)** and **v1 Milestone 4 (Release Gate)**.
+- **Why Await:** Proving continuous 10-minute stability ($6\text{ humans} + 2\text{ AIs}$) with bounded buffer depth ($40\text{--}200\text{ ms}$), zero uncorrected drift, and zero memory leaks requires the full integrated media and room stack.
+- **Coverage Target:** $100\%$ clean execution across 10-minute continuous soak runs.
+- **Scope & Assertions:**
+  - Execute the reference composition for 600 continuous seconds.
+  - Assert flat heap memory usage, zero unhandled errors, and stable jitter buffer depth throughout the run.
 
 ---
 
 ## 6. Delivery Milestones & Test Coverage Targets
 
-The table below outlines the sequential phases to deliver universal browser support and comprehensive test coverage.
+The implementation schedule below aligns the delivery milestones with the sequential unlocking of automated test coverage suites.
 
 ```mermaid
 gantt
-    title Standards & Test Coverage Implementation Plan
+    title Standards, Milestones & Test Coverage Roadmap
     dateFormat  YYYY-MM-DD
-    section Phase 1: Ingestion
-    Universal AudioWorklet Capture Bridge :p1_1, 2026-09-01, 14d
-    Wasm Libopus Fallback Encoder        :p1_2, after p1_1, 14d
-    Tier 1 Unit Simulation Suite         :p1_3, 2026-09-01, 28d
-    section Phase 2: Mobile
-    iOS Autoplay & AudioContext Handlers :p2_1, 2026-09-29, 14d
-    Android Focus & Bluetooth Routing   :p2_2, after p2_1, 14d
-    Mobile Lifecycle & Visibility Hooks :p2_3, after p2_1, 14d
-    section Phase 3: CI Matrix
-    Playwright Multi-Browser Matrix      :p3_1, 2026-10-27, 21d
-    Headless Virtual Relay Harness       :p3_2, after p3_1, 14d
-    section Phase 4: Media & Devices
-    Acoustic Loopback Latency Automation :p4_1, 2026-11-24, 14d
-    Real-Device Cloud Testing Fleet      :p4_2, after p4_1, 21d
-    10-Minute Reference Gate Runs (H13)  :p4_3, after p4_2, 14d
+    
+    section v1 Stage Demo (Milestones 1–4)
+    M1: Live Transport & Relay Interop (Draft-16) [Gate 1] :m1, 2026-08-25, 14d
+    M2: Hardware Resilience & Audio Pipeline [Gate 2]      :m2, after m1, 14d
+    M3: Multi-Agent AI & Floor Control [Gate 3]            :m3, after m2, 14d
+    M4: Discovery, Rejoin & Capacity Scaling [Gate 4]      :m4, after m3, 14d
+    Stage Demo Release Gate (H1–H16 Verification)         :m_gate, after m4, 7d
+
+    section Standards & Cross-Browser Evolution
+    Phase 1: Universal Ingestion & Codec Abstraction       :p1, 2026-09-01, 21d
+    Phase 2: Mobile Web & OS Lifecycle Hardening           :p2, after p1, 21d
+    Phase 3: Automated Multi-Browser CI Matrix             :p3, after p2, 14d
+    Phase 4: Acoustic Latency & Real-Device Validation     :p4, after p3, 21d
+    
+    section Future Protocol Standard
+    MOQT Draft-20 Relay Deployment & Standard Gate         :d20, 2026-11-15, 30d
 ```
 
-| Phase | Milestone Name | Key Technical Deliverables | Associated Test Coverage Deliverables | Target Coverage Gate |
-|---|---|---|---|:---:|
-| **Phase 1** | **Universal Ingestion & Codec Abstraction** | - `UniversalAudioCaptureAdapter` (Worklet capture fallback for Safari/Firefox/iOS).<br>- Wasm Libopus fallback for browsers lacking native WebCodecs Opus.<br>- Abstract `AudioCodecEngine` interface. | - Unit test matrix for all browser capture permutations.<br>- Wasm vs native WebCodecs encode/decode parity tests.<br>- Opus DTX & PLC synthesis test suite. | $>85\%$ Audio Engine Unit Coverage |
-| **Phase 2** | **Mobile Web & OS Lifecycle Hardening** | - iOS `AudioContext` gesture unlock & `AVAudioSession` interruption handlers.<br>- Android audio focus management and Bluetooth SCO routing.<br>- Page visibility & background suspension hooks with atomic $60\text{s}$ rejoin. | - Mobile lifecycle simulation tests (`visibilitychange`, `freeze`, `interrupted`).<br>- Touch gesture unlock assertion tests.<br>- Peripheral hot-plugging (`ondevicechange`) tests. | $>90\%$ Session & Lifecycle Coverage |
-| **Phase 3** | **Automated Multi-Browser CI Matrix** | - Playwright integration test suite across Chromium, WebKit, and Gecko.<br>- Headless virtual MoQ relay for deterministic CI runs.<br>- Cross-browser pre-flight suite automation. | - Automated E2E verification across Chrome, Safari, Edge, Firefox, and mobile viewports.<br>- §10 failure mode trigger tests in all engines. | $100\%$ Pre-flight & Failure Mode E2E Coverage |
-| **Phase 4** | **Acoustic Latency & Real-Device Validation** | - Automated §9.4 single-machine acoustic loopback test harness.<br>- QUIC connection migration validation (Wi-Fi $\leftrightarrow$ 5G).<br>- Real-device cloud execution (iOS & Android). | - Automated p50/p95 latency validation ($\text{p50} < 250\text{ ms}$, $\text{p95} < 500\text{ ms}$).<br>- Sub-300ms barge-in latency verification.<br>- 10-minute continuous reference composition run (H13). | Full Release Gate & H1–H16 Verification |
+### Integrated Milestone-to-Coverage Gating Matrix
+
+The table below maps each project milestone to the specific code coverage suites it unlocks, the target source code paths, and the required exit coverage threshold:
+
+| Milestone / Gate | Technical Focus & Key Deliverables | Unlocked Test Coverage Suites | Gated Source Code Paths | Target Coverage Gate | Verification & Unblock Method |
+|---|---|---|---|:---:|---|
+| **Immediate Baseline** *(Current Codebase)* | Invariant contracts, diagnostic classification, and deterministic layout logic. | - Suite 1.1: Capability Diagnostics.<br>- Suite 1.5: Protocol Contracts. | - [`src/shared/contracts.ts`](src/shared/contracts.ts)<br>- [`src/shared/failures.ts`](src/shared/failures.ts)<br>- [`src/shared/pinnedConfiguration.ts`](src/shared/pinnedConfiguration.ts)<br>- [`src/shared/tracks.ts`](src/shared/tracks.ts) | $100\%$ Invariant & Contract Coverage | In-memory Vitest runner ([`test/invariants.test.ts`](test/invariants.test.ts)). |
+| **Milestone 1 (Gate 1)** | Live MOQT over WebTransport/QUIC (`draft-16` / `draft-14`), wire framing, relay authentication, network UDP probe. | - Suite 2.1: Chromium Headless Matrix.<br>- Suite 2.4: Virtual Relay Harness.<br>- Suite 4.2: Network Impairment & UDP Probe. | - [`src/client/transport/MoqTransportAdapter.ts`](src/client/transport/MoqTransportAdapter.ts)<br>- [`src/client/transport/NetworkProbe.ts`](src/client/transport/NetworkProbe.ts)<br>- [`src/worker/relayCredential.ts`](src/worker/relayCredential.ts) | $>85\%$ Transport Layer Coverage | Reproducible WebTransport HTTP/3 trace against Cloudflare isolated relay; [`test/milestone-1-transport.test.ts`](test/milestone-1-transport.test.ts). |
+| **Milestone 2 (Gate 2)** | Hardware fallback (listen-only), dynamic device change, adaptive jitter buffer ($40\text{--}200\text{ ms}$), PLC, drift resampling. | - Suite 3.1: Acoustic Loopback Harness.<br>- Suite 3.2: Clock Drift Resampling.<br>- Suite 4.4: 10-Minute Continuous Playback. | - [`src/client/audio/AdaptiveJitterBuffer.ts`](src/client/audio/AdaptiveJitterBuffer.ts)<br>- [`src/client/audio/DeviceWatcher.ts`](src/client/audio/DeviceWatcher.ts)<br>- [`src/client/audio/DriftEstimator.ts`](src/client/audio/DriftEstimator.ts)<br>- [`src/client/audio/PacketLossConcealer.ts`](src/client/audio/PacketLossConcealer.ts)<br>- [`src/client/audio/TrackPlayer.ts`](src/client/audio/TrackPlayer.ts) | $>90\%$ Audio Pipeline Unit & Timing Coverage | Acoustic loopback confirms $\text{p50} < 250\text{ ms}$, $\text{p95} < 500\text{ ms}$; [`test/milestone-2-audio.test.ts`](test/milestone-2-audio.test.ts). |
+| **Milestone 3 (Gate 3)** | Multi-agent AI floor control, sub-300ms barge-in cancellation, turn cap (`AI_TO_AI_TURN_CAP = 4`), per-AI routing controls. | - Suite 2.4: Subscription Edge Mutations.<br>- Suite 3.3: Sub-300ms Barge-In.<br>- Suite 3.4: Multi-Agent Floor Control. | - [`src/client/ai/AiDirector.ts`](src/client/ai/AiDirector.ts)<br>- [`src/client/ai/ScriptedResponder.ts`](src/client/ai/ScriptedResponder.ts)<br>- [`src/client/components/SubscriptionGraph.tsx`](src/client/components/SubscriptionGraph.tsx) | $>90\%$ AI Orchestration & Floor Coverage | 10 consecutive barge-in interruptions halt audio in $\le 300\text{ ms}$; routing toggles update inspector graph within $500\text{ ms}$. |
+| **Milestone 4 (Gate 4 / Launch)** | Hybrid discovery (`SUBSCRIBE_NAMESPACE` fallback), 60s atomic rejoin with SQLite storage, 3-tier degradation ladder. | - Suite 2.5: §10 Failure State Registry.<br>- Suite 3.5: Degradation Ladder Stress.<br>- Suite 4.4: Full 10-Minute Demo Script (H16). | - [`src/client/audio/DegradationLadder.ts`](src/client/audio/DegradationLadder.ts)<br>- [`src/client/audio/PlaybackDeduplicator.ts`](src/client/audio/PlaybackDeduplicator.ts)<br>- [`src/client/session/RoomSession.ts`](src/client/session/RoomSession.ts)<br>- [`src/worker/RoomDurableObject.ts`](src/worker/RoomDurableObject.ts) | $100\%$ Failure State & Rejoin E2E Coverage | All 16 acceptance criteria pass; demo script (§12) runs twice clean on live network / mobile hotspot. |
+| **Standards Phase 1** | `UniversalAudioCaptureAdapter` (`AudioWorklet` capture fallback) and Wasm Libopus SIMD fallback encoder/decoder. | - Suite 1.2: AudioWorklet Capture.<br>- Suite 1.3: Codec Parity (WebCodecs vs Wasm). | - [`src/client/audio/CaptureController.ts`](src/client/audio/CaptureController.ts)<br>- `src/client/audio/UniversalAudioCaptureAdapter.ts`<br>- `src/client/audio/WasmOpusCodec.ts` | $>85\%$ Universal Ingestion Coverage | Automated sample parity tests between native WebCodecs and Wasm Libopus; zero phase clicks in worklet chunking. |
+| **Standards Phase 2** | iOS `AudioContext` gesture unlock, `AVAudioSession` interruption handlers, Android audio focus, background visibility hooks. | - Suite 1.4: Mobile Lifecycle State Machine.<br>- Suite 4.1: Mobile Platform Smoke Tests. | - [`src/client/audio/MixerGraph.ts`](src/client/audio/MixerGraph.ts)<br>- [`src/client/session/ReconnectionPolicy.ts`](src/client/session/ReconnectionPolicy.ts)<br>- [`src/client/session/RoomSession.ts`](src/client/session/RoomSession.ts) | $>90\%$ Mobile Session & Lifecycle Coverage | Simulated and physical touch unlock tests; background tab suspension restores audio cleanly within $60\text{ seconds}$. |
+| **Standards Phase 3** | Automated multi-browser Playwright matrix (Chromium, WebKit, Gecko) and headless virtual MoQ relay harness. | - Suite 2.2: WebKit Headless Matrix.<br>- Suite 2.3: Gecko Headless Matrix.<br>- Suite 2.5: Pre-Flight Cross-Browser Matrix. | - `test/e2e/playwright.config.ts`<br>- `test/e2e/preflight.spec.ts`<br>- `test/harness/VirtualMoqRelay.ts` | $100\%$ Pre-flight & Multi-Browser E2E Coverage | Green CI build across Chromium, WebKit, and Gecko runners in headless matrix. |
+| **Standards Phase 4** | Automated acoustic loopback latency harness, QUIC connection migration, real-device cloud matrix (iOS/Android). | - Suite 3.1: Cross-Correlation Latency.<br>- Suite 4.1: Real-Device Cloud Fleet.<br>- Suite 4.3: QUIC Connection Migration. | - `test/harness/AcousticLoopback.ts`<br>- `test/device-cloud/matrix.config.ts` | Full Real-Device & Acoustic Gate Verification | Automated p50/p95 latency verification; zero dropped tracks on Wi-Fi $\leftrightarrow$ 5G migration. |
+| **MOQT Draft-20 Gate** | Native MOQT `draft-20` wire framing, standard ALPN negotiation, and Cloudflare/moq-rs draft-20 endpoint deployment. | - Draft-20 Wire Conformance Suite.<br>- Standard ALPN Interoperability. | - [`src/client/transport/MoqTransportAdapter.ts`](src/client/transport/MoqTransportAdapter.ts) | $100\%$ Draft-20 Wire Framing Coverage | Live trace proving MOQT `draft-20` objects over WebTransport HTTP/3; seamless adapter swap with zero UI/room refactoring. |
+
+---
+
+### 6.1 Milestone Gating & CI Pipeline Enforcement Policy
+
+To ensure that the CI test suite remains fast, deterministic, and truthful without providing a false sense of security, the repository enforces the following testing discipline:
+
+1. **Immediate vs Gated Execution:**
+   - **Immediately Enforced:** All Tier 1 unit tests with in-memory fixtures (`invariants.test.ts`, `validation.test.ts`) must run and pass on every commit and pull request.
+   - **Gated by Milestone Exit:** As each milestone is completed and its acceptance gate verified, its corresponding test suite is converted from *advisory/pending* to *hard-blocking* in `pnpm test` and CI gates.
+2. **Zero False Mocking of Transport Invariants:**
+   - Tests covering live WebTransport and MOQT wire framing must not use trivial mock sockets that ignore QUIC connection setup or ALPN validation. They must run against the verified `MoqTransportAdapter` or the lightweight `VirtualMoqRelay`.
+3. **Strict Telemetry and Failure State Verification:**
+   - Any test validating metrics must assert **Not exposed** for unobservable values (§10 H15), never defaulting to zero or synthetic data.
+   - Every failure mode test must assert the exact title, experience, behaviour, and recovery copy registered in [`failures.ts`](src/shared/failures.ts).
 
 ---
 
