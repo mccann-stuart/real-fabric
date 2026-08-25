@@ -91,6 +91,8 @@ export interface SessionMetrics {
  */
 export type CaptureMode =
   | { name: "idle" }
+  /** The automatic permission and capture request is in flight. */
+  | { name: "starting" }
   | { name: "publishing" }
   /** Listening and inspecting continue; nothing is published from here. */
   | { name: "listen_only"; failure: FailureCode; reason: string }
@@ -105,6 +107,8 @@ export interface SessionState {
   degradation: LadderState;
   publishing: boolean;
   capture: CaptureMode;
+  /** Subscriptions the relay accepted, used by the live inspector graph. */
+  subscribedParticipantIds: string[];
   speaking: boolean;
   micLevel: number;
   metrics: SessionMetrics;
@@ -139,9 +143,15 @@ export class RoomSession {
   readonly telemetry = new SessionTelemetry();
 
   private readonly log = new SessionEventLog();
-  private readonly transport = new MoqTransportAdapter((error) =>
-    this.onTransportTerminated(error),
-  );
+  private readonly transport = new MoqTransportAdapter({
+    onUnexpectedTermination: (error) => this.onTransportTerminated(error),
+    onNamespacePublished: () => {
+      // A human may publish after our first SUBSCRIBE was refused. Reconcile
+      // on the protocol's publication announcement instead of waiting for an
+      // unrelated membership or routing event.
+      void this.reconcileSubscriptions();
+    },
+  });
   private readonly mixer = new MixerGraph();
   private readonly capture = new CaptureController();
   private readonly ladder = new DegradationLadder();
@@ -168,6 +178,7 @@ export class RoomSession {
     announcement: null,
   };
   private publishing = false;
+  private publishingStart: Promise<void> | null = null;
   private sequence = 0;
   private currentGroup = 0;
   private groupStartedAt = 0;
@@ -228,9 +239,10 @@ export class RoomSession {
   }
 
   /**
-   * Applies a room snapshot the caller already fetched, then opens the control
-   * channel and evaluates transport. Deliberately does not request the
-   * microphone: FR2 requires an explicit user action for that.
+   * Applies a room snapshot the caller already fetched, starts microphone
+   * capture, then opens the control channel and evaluates transport. Capture
+   * is independent from relay availability so a slow permission prompt never
+   * delays membership, discovery or the inspector.
    */
   async start(room: RoomSnapshot): Promise<void> {
     this.startedAt = this.now();
@@ -244,6 +256,9 @@ export class RoomSession {
     // before it, so it never delays the join, and its answer is ready when a
     // transport failure needs classifying.
     void this.runNetworkProbe(room);
+    // The room entry action expresses the user's intent to join live audio.
+    // Browser permission remains authoritative; denial becomes listen-only.
+    void this.startPublishing();
     await this.openTransport();
   }
 
@@ -431,11 +446,11 @@ export class RoomSession {
   }
 
   /**
-   * FR2 and §11.3 deliverable one: publication starts only on an explicit user
-   * action, and a microphone that is denied, missing or unsupported drops this
-   * browser into listen-only rather than throwing. Subscriptions, the mixer and
-   * the inspector are untouched — the person can still hear the room and see
-   * the protocol, which is most of what the demo is for.
+   * FR2 and §11.3 deliverable one: publication starts automatically as the
+   * room opens. A microphone that is denied, missing or unsupported drops this
+   * browser into listen-only rather than throwing. Subscriptions, the mixer
+   * and the inspector are untouched — the person can still hear the room and
+   * see the protocol, which is most of what the demo is for.
    *
    * This method does not throw. A caller that had to catch a hardware failure
    * would end up writing its own fallback, and the point is that there is
@@ -443,6 +458,21 @@ export class RoomSession {
    */
   async startPublishing(): Promise<void> {
     if (this.publishing) return;
+    if (this.publishingStart) return this.publishingStart;
+
+    this.captureMode = { name: "starting" };
+    this.emit();
+    const attempt = this.startPublishingOnce();
+    this.publishingStart = attempt;
+    try {
+      await attempt;
+    } finally {
+      if (this.publishingStart === attempt) this.publishingStart = null;
+    }
+  }
+
+  private async startPublishingOnce(): Promise<void> {
+    if (this.closed) return;
     try {
       // The mixer is started first and deliberately kept running: listen-only
       // still needs an output clock.
@@ -456,6 +486,8 @@ export class RoomSession {
       return;
     }
 
+    if (this.closed) return;
+
     try {
       await this.capture.start({
         onEncodedFrame: (frame) => this.publishFrame(frame),
@@ -466,6 +498,11 @@ export class RoomSession {
           this.log.record("failure", error.message);
         },
       });
+      if (this.closed) {
+        await this.capture.stop();
+        return;
+      }
+      this.mixer.resume();
       this.publishing = true;
       this.captureMode = { name: "publishing" };
       this.log.record("publish", `audio/${this.options.session.participantId}`);
@@ -1000,6 +1037,7 @@ export class RoomSession {
       degradation: this.degradation,
       publishing: this.publishing,
       capture: this.captureMode,
+      subscribedParticipantIds: [...this.players.keys()],
       speaking: this.capture.speaking,
       micLevel: this.capture.level,
       metrics: this.metrics(),

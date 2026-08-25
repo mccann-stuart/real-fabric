@@ -28,7 +28,7 @@ This section records implementation state; it does not weaken the acceptance cri
 - Dynamic device tracking, packet-loss concealment, bounded recovery and silence-gated drift correction are implemented and unit-tested; they have not passed acoustic or live-relay acceptance.
 - A bounded capture adapter retains `MediaStreamTrackProcessor` as the preferred Chrome path and adds an exact-frame AudioWorklet path for future desktop evaluation. Selection and framing are unit-tested; real-browser and acoustic parity remain open.
 - Concurrent-room limits, relay credential rate-limiting and the per-room AI cost ceiling remain product requirements rather than implemented controls.
-- The automated suite contains 125 passing tests across nine files, but Gate 1 interoperability, cross-browser acceptance, measured capacity, the audible ten-minute run and two clean venue-network script runs remain open.
+- The automated suite contains 127 passing tests across nine files, but Gate 1 interoperability, cross-browser acceptance, measured capacity, the audible ten-minute run and two clean venue-network script runs remain open.
 
 ---
 
@@ -129,7 +129,7 @@ The current repository therefore behaves as follows:
 
 Landing page: **"People and AIs speaking over Media over QUIC."** Directly beneath it, **"Headphones required"** (H4).
 
-The user enters a display name, tests the microphone, and chooses:
+The user enters a display name, may test the microphone, and chooses:
 
 - **Create demo room** — receives a share link.
 - **Join room** — joins via a valid link. No slot check; membership is open (H7).
@@ -203,9 +203,9 @@ Leaving closes local publications and subscriptions, stops capture and signals t
 ### FR2 — Capability and permissions
 
 - Require HTTPS, `WebTransport` and WebCodecs Opus encode.
-- Request microphone access only after an explicit user action.
+- Request microphone access automatically when room membership is established. Browser permission remains authoritative; denial enters the named listen-only state without affecting subscriptions or inspection.
 - Distinguish, with different copy and recovery advice: unsupported browser, missing codec, denied permission, no input device, relay unreachable, UDP blocked, draft mismatch, discovery unavailable.
-- Offer a microphone level test before publishing.
+- Offer an optional microphone level test before joining; once joined, publication starts automatically.
 - Serve the same checks standalone at the pre-flight URL.
 
 ### FR3 — Audio publication and playback
@@ -215,6 +215,7 @@ Leaving closes local publications and subscriptions, stops capture and signals t
 - **Enable Opus DTX.** A silent participant then costs almost nothing across the relay and at every subscriber. This is what makes open membership affordable, and it should be visible in the inspector's per-track object rate.
 - One independent track per participant. **No mixing at the relay or room service (H2).**
 - Subscriptions are the routing mechanism. No participant subscribes to itself.
+- Every human automatically subscribes to every other real human track. A track that is not published yet may refuse the first request; its later MOQT namespace announcement retriggers reconciliation without waiting for an unrelated membership event.
 - **Playback graph:** each subscribed track decodes into its own buffered source node; all are summed in a single `AudioWorklet` against one output clock. The worklet is the only place mixing happens, and it happens on the listener's machine.
 - **Clock drift:** estimate per-track skew between each sender's media clock and the local `AudioContext` clock. Correct continuously by slow resampling, or by inserting and dropping frames at detected silence. Log corrections and surface them in the inspector. Cost scales with active speakers, not with membership, because DTX means silent tracks produce nothing to correct.
 - Adaptive jitter buffer per track, nominal 60 ms, bounded 40–200 ms, adapting to observed inter-arrival jitter and underrun rate.
@@ -434,8 +435,8 @@ Every failure condition encountered in Real Fabric has a distinct, truthful, non
 |---|---|---|:---:|---|---|---|
 | `transport_unsupported` | WebTransport or Opus encode unsupported | `blocking` | Yes | This browser does not expose the capability named in the pre-flight panel, so there is no way to publish audio. | No join and no fallback. The build contains no WebRTC or WebSocket audio path. | Open the demo on the pinned browser and version named in the README. |
 | `udp_blocked` | HTTP/3 or UDP blocked | `blocking` | Yes | The relay could not be reached over HTTP/3 and QUIC. The network is filtering UDP. | The partial session is closed. No transport substitution is attempted. | Retry once, then switch to a phone hotspot. The fallback is a network, not a code path. |
-| `microphone_denied` | Microphone permission denied | `degraded` | Yes | Listening and inspection continue. Nothing is published from this browser. | Publication stays closed. Subscriptions and the inspector are unaffected. | Grant microphone access in the browser site settings, then run the microphone test again. |
-| `microphone_no_device` | No microphone input device | `degraded` | Yes | No capture device was found. Listening and inspection continue. | Publication stays closed. Subscriptions and the inspector are unaffected. | Connect a microphone or headset, then run the microphone test again. |
+| `microphone_denied` | Microphone permission denied | `degraded` | Yes | Listening and inspection continue. Nothing is published from this browser. | Publication stays closed. Subscriptions and the inspector are unaffected. | Grant microphone access in the browser site settings, then use the in-room retry action. |
+| `microphone_no_device` | No microphone input device | `degraded` | Yes | No capture device was found. Listening and inspection continue. | Publication stays closed. Subscriptions and the inspector are unaffected. | Connect a microphone or headset, then use the in-room retry action. |
 | `draft_mismatch` | MOQT draft mismatch | `blocking` | Yes | The local draft and the relay's draft differ. Both versions are named in the error. | The session stops before publishing. The draft is never silently downgraded. | Point the build at a relay endpoint serving the pinned draft. |
 | `draft_endpoint_missing` | No draft-20 relay endpoint | `blocking` | Yes | The pinned MOQT draft has no verified relay endpoint, so live audio cannot start. This is reported at startup, not at join. | Room membership, routing, inspection and presenter simulation stay available. The draft is never downgraded to reach a relay that exists. | Complete Gate 1 per §2.1. Presenter simulation demonstrates the room without claiming transport. |
 | `namespace_discovery_unavailable` | `SUBSCRIBE_NAMESPACE` unavailable | `degraded` | No | Membership still works. The inspector states which discovery mechanism is in use. | Discovery falls back to the room service control channel. Audio object arrival remains the source of truth for connected. | None required. Record the endpoint's capability against Gate 1 output four. |
@@ -497,14 +498,14 @@ Every failure condition encountered in Real Fabric has a distinct, truthful, non
    - *Severity:* `degraded` (blocks publication; subscriptions and inspection remain active).
    - *UX presentation:* Non-blocking warning banner: *"Listening and inspection continue. Nothing is published from this browser."*
    - *System behaviour:* Capture graph is not initialized. Outbound audio track is not announced. Downlink subscriptions, AudioWorklet mixer, and protocol inspector operate normally.
-   - *Recovery:* Grant microphone permissions in browser site settings and re-trigger microphone calibration.
+   - *Recovery:* Grant microphone permissions in browser site settings and use the in-room retry action.
 
 2. **`microphone_no_device` (No microphone input device)**
    - *Trigger:* `getUserMedia` rejects with `NotFoundError` or `DevicesNotFoundError`, or `enumerateDevices` returns zero audio input hardware.
    - *Severity:* `degraded` (blocks publication; downlink unaffected).
    - *UX presentation:* Informational banner: *"No capture device was found. Listening and inspection continue."*
    - *System behaviour:* Client operates in listen-only subscriber mode without throwing fatal exceptions.
-   - *Recovery:* Connect a physical microphone or USB/Bluetooth headset and click re-test.
+   - *Recovery:* Connect a physical microphone or USB/Bluetooth headset and use the in-room retry action.
 
 ---
 

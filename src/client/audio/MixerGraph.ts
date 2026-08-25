@@ -26,37 +26,70 @@ interface WorkletStatsMessage {
 export class MixerGraph {
   private context: AudioContext | null = null;
   private node: AudioWorkletNode | null = null;
+  private starting: Promise<void> | null = null;
+  private closed = false;
+  private removeUnlockListeners: (() => void) | null = null;
   private tracks = new Set<string>();
   private latest: TrackMixStats[] = [];
   private startedAt: number | null = null;
 
-  /**
-   * Requires a user gesture upstream: the AudioContext will not start
-   * otherwise, and a silent suspended context is exactly the kind of quiet
-   * failure H14 forbids.
-   */
   async start(): Promise<void> {
-    if (this.context) return;
+    if (this.closed) return;
+    if (this.context) {
+      this.requestResume();
+      return;
+    }
+    if (this.starting) return this.starting;
+
+    const attempt = this.startOnce();
+    this.starting = attempt;
+    try {
+      await attempt;
+    } finally {
+      if (this.starting === attempt) this.starting = null;
+    }
+  }
+
+  private async startOnce(): Promise<void> {
     const context = new AudioContext({
       sampleRate: MEDIA_SAMPLE_RATE,
       latencyHint: "interactive",
     });
-    await context.audioWorklet.addModule(WORKLET_URL);
-    const node = new AudioWorkletNode(context, PROCESSOR_NAME, {
-      numberOfInputs: 0,
-      numberOfOutputs: 1,
-      outputChannelCount: [1],
-    });
-    node.port.onmessage = (event: MessageEvent<WorkletStatsMessage>) => {
-      if (event.data?.type === "stats") this.latest = event.data.tracks;
-    };
-    node.connect(context.destination);
-    if (context.state === "suspended") await context.resume();
+    try {
+      await context.audioWorklet.addModule(WORKLET_URL);
+      if (this.closed) {
+        await context.close().catch(() => undefined);
+        return;
+      }
+      const node = new AudioWorkletNode(context, PROCESSOR_NAME, {
+        numberOfInputs: 0,
+        numberOfOutputs: 1,
+        outputChannelCount: [1],
+      });
+      node.port.onmessage = (event: MessageEvent<WorkletStatsMessage>) => {
+        if (event.data?.type === "stats") this.latest = event.data.tracks;
+      };
+      node.connect(context.destination);
 
-    this.context = context;
-    this.node = node;
-    this.startedAt = Date.now();
-    for (const trackId of this.tracks) this.post({ type: "add_track", trackId });
+      this.context = context;
+      this.node = node;
+      this.startedAt = Date.now();
+      for (const trackId of this.tracks) this.post({ type: "add_track", trackId });
+
+      // Chrome may suspend a new AudioContext after the asynchronous room
+      // join has consumed the entry click's activation. Do not let that block
+      // getUserMedia; retry immediately and on the next in-page interaction.
+      this.installUnlockListeners();
+      this.requestResume();
+    } catch (error) {
+      if (context.state !== "closed") await context.close().catch(() => undefined);
+      throw error;
+    }
+  }
+
+  /** Capture becoming active can make an immediate playback resume possible. */
+  resume(): void {
+    this.requestResume();
   }
 
   get running(): boolean {
@@ -133,6 +166,9 @@ export class MixerGraph {
 
   /** §4.4: leaving closes the worklet, the context and every track buffer. */
   async close(): Promise<void> {
+    this.closed = true;
+    this.removeUnlockListeners?.();
+    this.removeUnlockListeners = null;
     this.post({ type: "close" });
     this.node?.disconnect();
     this.node = null;
@@ -146,5 +182,29 @@ export class MixerGraph {
 
   private post(message: Record<string, unknown>, transfer: Transferable[] = []): void {
     this.node?.port.postMessage(message, transfer);
+  }
+
+  private requestResume(): void {
+    const context = this.context;
+    if (context?.state !== "suspended") return;
+    void context.resume().then(
+      () => {
+        if (context.state !== "running") return;
+        this.removeUnlockListeners?.();
+        this.removeUnlockListeners = null;
+      },
+      () => undefined,
+    );
+  }
+
+  private installUnlockListeners(): void {
+    if (this.removeUnlockListeners || typeof document === "undefined") return;
+    const unlock = () => this.requestResume();
+    document.addEventListener("pointerdown", unlock, true);
+    document.addEventListener("keydown", unlock, true);
+    this.removeUnlockListeners = () => {
+      document.removeEventListener("pointerdown", unlock, true);
+      document.removeEventListener("keydown", unlock, true);
+    };
   }
 }

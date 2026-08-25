@@ -72,7 +72,7 @@ The ladder is implemented and unit-tested, and it announces every step. Its curr
 
 | Deliverable | State |
 |---|---|
-| Graceful hardware fallback | Built. `startPublishing` does not throw; a denied, missing or unsupported microphone enters a named listen-only mode with subscriptions, mixer and inspector untouched, and offers a retry where it gives the reason. |
+| Graceful hardware fallback | Built. Room entry starts `startPublishing` automatically; a denied, missing or unsupported microphone enters a named listen-only mode with subscriptions, mixer and inspector untouched, and offers a retry where it gives the reason. |
 | Dynamic device tracking | Built, in [`DeviceWatcher`](src/client/audio/DeviceWatcher.ts). A headset plugged in after a listen-only join clears the failure and offers calibration. Device labels are never read, so they cannot reach telemetry (AC-14). |
 | Adaptive jitter buffer and Opus PLC | Built. The buffer was already bounded 40–200 ms; concealment was not. [`PacketLossConcealer`](src/client/audio/PacketLossConcealer.ts) fills a sequence gap by repeating the last pitch period with decay, and switches to comfort noise at the track's own noise floor once loss is sustained. Both are counted and shown. |
 | Drift estimation and silence rebuilding | Built. The threshold now matches §10.6 (5%, previously 2%), correction is applied at most 2% per step so it stays inaudible, and a rebuild waits for a pause instead of firing mid-word — bounded at 10 seconds so a continuous speaker cannot defer it forever. |
@@ -115,7 +115,7 @@ The production relay is `real-fabric-production` (`5266d64d9209fb9a8961f00974580
 - `src/client/components`, `src/client/pages` — entry, pre-flight, room, inspector and presenter surfaces.
 - `public/audio/mixer-worklet.js` — the single mixing point, served same-origin so it satisfies the existing `script-src 'self'` policy.
 - `src/worker` — API routing, security headers, redacted structured logs, provisioned relay credential handling and the SQLite Durable Object room service.
-- `test` — 125 automated tests across nine files covering the requirements above.
+- `test` — 127 automated tests across nine files covering the requirements above.
 
 ## Local setup
 

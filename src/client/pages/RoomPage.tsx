@@ -42,17 +42,6 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
     [room],
   );
 
-  const subscribedIds = useMemo(
-    () =>
-      (room?.participants ?? [])
-        .filter(
-          (participant) =>
-            participant.id !== viewerId && !participant.simulated && participant.state !== "left",
-        )
-        .map((participant) => participant.id),
-    [room, viewerId],
-  );
-
   const changeRouting = useCallback(
     (aiId: string, hearsMe: boolean, iHearIt: boolean) => {
       void session?.changeRouting(aiId, hearsMe, iHearIt);
@@ -157,10 +146,11 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
         {state?.publishing ? null : (
           <button
             className="button button--compact button--primary"
+            disabled={state?.capture.name === "starting"}
             type="button"
             onClick={() => void startPublishing()}
           >
-            Start microphone
+            {state?.capture.name === "starting" ? "Starting microphone…" : "Start microphone"}
           </button>
         )}
         <button
@@ -276,7 +266,7 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
             degradation={state.degradation}
             events={state.events}
             publishing={state.publishing}
-            subscribedIds={subscribedIds}
+            subscribedIds={state.subscribedParticipantIds}
             negotiation={state.negotiation}
             network={state.network}
             open={inspectorOpen}
