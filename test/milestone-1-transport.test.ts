@@ -1,6 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ReconnectionPolicy, TERMINAL_AFTER_MS } from "../src/client/session/ReconnectionPolicy";
-import { isRetryableTransportFailure } from "../src/client/session/RoomSession";
+import {
+  isRetryableTransportFailure,
+  RoomSession,
+  type SessionPhase,
+} from "../src/client/session/RoomSession";
+import { SessionEventLog } from "../src/client/session/SessionEventLog";
 import {
   draftsFramedByClient,
   MoqTransportAdapter,
@@ -202,6 +207,54 @@ describe("M1 — pre-flight HTTP/3 and QUIC probe", () => {
 });
 
 describe("M1 — bounded session recovery", () => {
+  it("moves a live room into bounded recovery when its MOQT session terminates", () => {
+    vi.useFakeTimers();
+    try {
+      const session = new RoomSession({
+        session: {
+          code: "AAAAAAAAAAAAAAAAAAAA",
+          participantId: "participant-1",
+          rejoinToken: "rejoin-token",
+          displayName: "Test participant",
+          storedAt: 0,
+        },
+        presenterMode: false,
+        now: () => 1_000,
+      });
+      const internal = session as unknown as {
+        phase: SessionPhase;
+        onTransportTerminated: (error: MoqTransportError) => void;
+      };
+      internal.phase = { name: "live" };
+
+      let phase: SessionPhase = { name: "idle" };
+      const unsubscribe = session.subscribe((state) => {
+        phase = state.phase;
+      });
+      internal.onTransportTerminated(
+        new MoqTransportError("relay_unavailable", "The established session ended."),
+      );
+
+      expect(phase).toMatchObject({ name: "reconnecting", attempt: 1 });
+      unsubscribe();
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
+  it("coalesces a frame-rate burst of the same transport failure", () => {
+    const log = new SessionEventLog();
+    log.record("failure", "The MOQT session is not connected.", { at: 1_000 });
+    log.record("failure", "The MOQT session is not connected.", { at: 1_020 });
+    log.record("failure", "The MOQT session is not connected.", { at: 1_040 });
+
+    expect(log.list()).toHaveLength(1);
+
+    log.record("failure", "The MOQT session is not connected.", { at: 2_000 });
+    expect(log.list()).toHaveLength(2);
+  });
+
   it("draws delays across the whole backoff window, not just its top half", () => {
     // §11.2 asks for full jitter. Equal jitter would floor every draw at half
     // the window, which is what re-synchronises a room full of clients.
