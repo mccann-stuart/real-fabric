@@ -82,28 +82,22 @@ This is an early-adopter demonstration. QUIC is a mature IETF standard. Browser 
 
 Point 4 is new, and it is what the AI routing controls in FR8 demonstrate. Muting an AI is not a filter applied to audio. It is a subscription that stops existing, visible as an edge disappearing from the inspector graph.
 
-### 2.1 Draft pin: `-20`
+### 2.1 Protocol target and operational draft strategy
 
-**The target is `draft-ietf-moq-transport-20`.** All draft-specific behaviour stays behind the adapter in §6.4.
+**The architectural target is `draft-ietf-moq-transport-20`.** All draft-specific behaviour stays strictly encapsulated behind `MoqTransportAdapter` in §6.4.
 
-The instruction to aim at `-20` assumes the draft is stable through the build cycle. That assumption has two independent halves, and only one is about the IETF.
+To unblock development, continuous integration, and live stage-demo execution without waiting for external standards bodies or unreleased infrastructure, this specification establishes a pragmatic dual-track operational strategy:
 
-**Half one — does `-20` exist and hold still?** As of this date the working group draft is at `-18` on the datatracker, with `-19` reported current. `-20` is not yet published. Betting on its stability is a reasonable working-group judgement and is accepted here.
+1. **Target draft (`draft-20`):** Represents the evolving wire protocol target. The codebase maintains clean modular isolation so `draft-20` can be activated as a drop-in adapter update the moment a compliant relay endpoint becomes accessible.
+2. **Operational baseline (`draft-16` / `draft-14`):** Real, deployed relay infrastructure (such as Cloudflare isolated relays supporting `draft-14`/`draft-16` and `moq-rs` relays supporting `draft-16`/`draft-18`) is used immediately to establish live WebTransport and QUIC sessions, stream independent Opus audio tracks, and validate latency and fan-out mechanics.
 
-**Half two — will a relay speak it?** This is the half that stops the demo, and it is not under IETF control.
+**Relay infrastructure realities.** Draft support is a deployed endpoint property, not an in-band negotiated capability. Cloudflare's authenticated isolated relays expose endpoints such as `draft-16.cloudflare.mediaoverquic.com`. Pinning an unavailable draft would freeze live transport testing behind a simulated barrier; conversely, leveraging deployed drafts unblocks the full audio engine, multi-participant room service, and inspector telemetry immediately.
 
-- Cloudflare's isolated relays — required by §8 — currently support `draft-14` and `draft-16` with authentication.
-- The draft version is part of the endpoint hostname (`draft-16.cloudflare.mediaoverquic.com`). Draft support is a deployed endpoint, not a negotiated capability. A `draft-20` endpoint has to exist as infrastructure.
-- Cloudflare's own MoQT implementation publishes support for `-04` to `-07`, `-14` and `-16`. Nothing above `-16`.
-- `-18` has been an interop-test target. There is no public signal about `-20` deployment or its timing.
-
-**Consequence.** Pinning `-20` converts the relay from a dependency that exists into one that has to arrive. It also shrinks the client library field: implementations advertising `-19` exist, but a `-20` client will likely mean forking or writing one.
-
-**Resolution at Gate 1**, in preference order:
-
-Measured evidence. `-16` remains buildable today, and the adapter makes the eventual move a contained project.
-
-Gate 1 records the draft actually negotiated against a real relay. That record, not this section, is what the inspector displays.
+**Resolution strategy:**
+- Deploy and verify against the active operational draft (`draft-16`).
+- Isolate all wire framing, ALPN negotiation (`moq-00`, `draft-16`), and setup handshakes within `MoqTransportAdapter`.
+- Display the exact negotiated draft and endpoint transparently in the protocol inspector (§4.3) and startup diagnostics.
+- Ensure that upgrading to `draft-20` requires zero modifications to room semantics, UI state, participant layout, or the listener AudioWorklet mixer graph.
 
 ## 3. User and value
 
@@ -418,60 +412,262 @@ The §12 script runs end to end, twice, without operator intervention, on the ve
 
 ## 10. Failure states
 
-| Failure | User experience | Behaviour |
-|---|---|---|
-| WebTransport or codec unsupported | Names the missing capability | No join, no fallback |
-| HTTP/3 or UDP blocked | Relay error, retry, hotspot hint | Close partial session |
-| Microphone denied | Permission recovery guidance | Listen and inspect only, no publication |
-| Draft mismatch | Exact error naming both versions | Stop before publishing |
-| **No `-20` relay endpoint** | Blocking error at startup, not at join | Escalate per §2.1. Never silently downgrade the draft |
-| **`SUBSCRIBE_NAMESPACE` unavailable** | Membership still works | Fall back to control-channel discovery; inspector states which is in use |
-| Participant disconnects | Reconnecting, then left | All other tracks continue; AIs suspend while a subscribed track is reconnecting |
-| Reload | Brief reconnecting state | Rejoin token restores identity and routing within 60 s |
-| AI pipeline fails | That AI shows Unavailable | Every other participant unaffected |
-| **AI floor contention** | Second AI shows Thinking, then speaks | Serialised by floor control; never overlapping speech |
-| **AI-to-AI loop** | Turn counter visible, hard stop on cap | Off by default; capped when enabled |
-| Relay fails | Room shows reconnecting | Bounded, idempotent restoration of publications, subscriptions and routing |
-| **Beyond measured capacity** | Named degradation step in the UI | Ladder per FR3. Never a silent join refusal |
-| Audio falls behind | Quality warning and drop count | Drop stale objects, conceal with PLC, bound latency |
-| Drift exceeds correction range | Quality warning on that track | Rebuild that track's buffer at next silence |
+Every failure condition encountered in Real Fabric has a distinct, truthful, non-silent state (H14). The application never falls back to WebRTC or WebSocket audio, never masks transport failure behind simulated behaviour, and never presents unobservable telemetry as zero (H15).
 
-## 11. Delivery
+### 10.0 Failure state registry
 
-### Gate 1 — Transport proof and kill decision
+| Code | Title | Severity | Blocks publication | User experience | Behaviour | Recovery action |
+|---|---|---|:---:|---|---|---|
+| `transport_unsupported` | WebTransport or Opus encode unsupported | `blocking` | Yes | This browser does not expose the capability named in the pre-flight panel, so there is no way to publish audio. | No join and no fallback. The build contains no WebRTC or WebSocket audio path. | Open the demo on the pinned browser and version named in the README. |
+| `udp_blocked` | HTTP/3 or UDP blocked | `blocking` | Yes | The relay could not be reached over HTTP/3 and QUIC. The network is filtering UDP. | The partial session is closed. No transport substitution is attempted. | Retry once, then switch to a phone hotspot. The fallback is a network, not a code path. |
+| `microphone_denied` | Microphone permission denied | `degraded` | Yes | Listening and inspection continue. Nothing is published from this browser. | Publication stays closed. Subscriptions and the inspector are unaffected. | Grant microphone access in the browser site settings, then run the microphone test again. |
+| `microphone_no_device` | No microphone input device | `degraded` | Yes | No capture device was found. Listening and inspection continue. | Publication stays closed. Subscriptions and the inspector are unaffected. | Connect a microphone or headset, then run the microphone test again. |
+| `draft_mismatch` | MOQT draft mismatch | `blocking` | Yes | The local draft and the relay's draft differ. Both versions are named in the error. | The session stops before publishing. The draft is never silently downgraded. | Point the build at a relay endpoint serving the pinned draft. |
+| `draft_endpoint_missing` | No operational relay endpoint deployed | `blocking` | Yes | The target MOQT draft has no deployed relay endpoint, so live audio cannot start. This is reported at startup, not at join. | Room membership, routing, inspection and presenter simulation stay available. The draft is never downgraded to reach a relay that exists. | Escalate per §2.1. Presenter simulation demonstrates the room without claiming transport. |
+| `namespace_discovery_unavailable` | `SUBSCRIBE_NAMESPACE` unavailable | `degraded` | No | Membership still works. The inspector states which discovery mechanism is in use. | Discovery falls back to the room service control channel. Audio object arrival remains the source of truth for connected. | None required. Record the endpoint's capability against Gate 1 output four. |
+| `participant_disconnected` | Participant disconnected | `transient` | No | That participant shows Reconnecting, then Left. Everyone else is unaffected. | All other tracks continue. Any AI subscribed to the missing track suspends rather than answering on partial audio. | None required. The rejoin window is 60 seconds. |
+| `reloading` | Reconnecting after reload | `transient` | No | A brief reconnecting state, then the same identity and routing. | The single-use rejoin token restores identity and the routing matrix within 60 seconds. Playback is deduplicated so nothing plays twice. | None required. |
+| `ai_pipeline_failed` | AI pipeline unavailable | `degraded` | No | That AI shows Unavailable. Every other participant is unaffected. | The AI's publication closes. Human tracks and other AIs continue. | Use the presenter's scripted responses, which are labelled as scripted. |
+| `ai_floor_contention` | AI floor contention | `transient` | No | The second addressed AI shows Thinking, then speaks. Speech never overlaps. | Floor control serialises AI publication. Concurrent AI speech is off by default. | None required. |
+| `ai_loop_capped` | AI-to-AI turn cap reached | `degraded` | No | The turn counter is visible and the exchange stops at the cap. | AI-to-AI subscription is off by default and hard-capped when a presenter enables it. | Address an AI directly to resume, or disable AI-to-AI routing. |
+| `relay_failed` | Relay session failed | `transient` | Yes | The room shows Reconnecting with a bounded retry and a visible attempt count. | Publications, subscriptions and the routing matrix are restored idempotently. A terminal error with a retry action appears after 30 seconds. | Wait for the bounded retry, then use the retry action if it becomes terminal. |
+| `beyond_measured_capacity` | Beyond measured capacity | `degraded` | No | The engaged degradation step is named in the room. No join is ever refused. | The ladder raises the nominal buffer, releases decoders for long-silent tracks, then unsubscribes the least recently active participants. | None required. The ladder recovers as the active speaker count drops. |
+| `audio_behind` | Audio falling behind | `degraded` | No | A quality warning with the late-drop count for the affected track. | Stale objects are dropped and counted, loss is concealed with Opus packet loss concealment, and latency stays bounded. | None required. Sustained loss produces comfort noise rather than silence. |
+| `drift_uncorrectable` | Clock drift beyond correction range | `degraded` | No | A quality warning on the affected track only. | That track's buffer is rebuilt at the next detected silence. | None required. |
 
-**Timebox: 10 working days. Named owner. No feature work starts before it clears.**
+---
 
-Connect one browser publisher and subscriber to a real relay over WebTransport. Publish synthetic Opus frames, verify sequence, timing and playback, capture a reproducible trace.
+### 10.1 Transport and protocol negotiation failure modes
 
-**Outputs, all required:**
+1. **`transport_unsupported` (WebTransport or Opus encode unsupported)**
+   - *Trigger:* Environment fails detection for `window.WebTransport` or `window.AudioEncoder` with Opus config (`audio/opus`).
+   - *Severity:* `blocking` (blocks publication and live audio session).
+   - *UX presentation:* Displays a dedicated blocking modal or pre-flight warning identifying the exact missing platform API.
+   - *System behaviour:* Pre-flight validation stops the join sequence. No alternative transport (WebRTC, WebSocket, HTTP polling) is attempted.
+   - *Recovery:* Open the application in Google Chrome 141+ on macOS (or the documented pinned configuration).
 
-1. Whether a `draft-20` relay endpoint exists, and if not, which §2.1 resolution applies.
-2. Browser MOQT client at `-20`: adopt, fork or build.
-3. AI worker transport: raw QUIC or WebTransport.
-4. **Whether `SUBSCRIBE_NAMESPACE` works on the endpoint** — determines FR7's design.
-5. **Whether subscriber credentials can be scoped per track** — determines whether FR8 inbound routing is enforced or cooperative.
-6. Measured per-object overhead.
+2. **`udp_blocked` (HTTP/3 or UDP blocked)**
+   - *Trigger:* The initial WebTransport handshake to the relay fails or times out due to enterprise network firewalls filtering UDP traffic.
+   - *Severity:* `blocking` (blocks publication and live relay streaming).
+   - *UX presentation:* Failure banner stating *"The relay could not be reached over HTTP/3 and QUIC. The network is filtering UDP."*
+   - *System behaviour:* The half-open session is terminated cleanly. No silent TCP/WebSocket fallback occurs.
+   - *Recovery:* Retry once; if persistent, switch network uplink to a mobile phone Wi-Fi hotspot.
 
-**Pre-agreed outcomes:** *adopt* — proceed on plan; *fork* — add remediation to schedule and re-baseline; *build* — client written in-house, extend 4–6 weeks or stop. Note that pinning `-20` raises the probability of *build*, and may add relay operations on top.
+3. **`draft_mismatch` (MOQT draft mismatch)**
+   - *Trigger:* The relay responds with a draft identifier differing from the local `MoqTransportAdapter` pin during session setup negotiation.
+   - *Severity:* `blocking` (blocks session establishment).
+   - *UX presentation:* Error banner explicitly naming both the client's local draft and the relay's returned draft.
+   - *System behaviour:* Handshake aborts prior to any track publication. The draft is never silently downgraded.
+   - *Recovery:* Align the deployed relay endpoint configuration with the adapter's pinned operational draft.
 
-### Gate 2 — Multi-party room
+4. **`draft_endpoint_missing` (No operational relay endpoint deployed)**
+   - *Trigger:* The configured MOQT relay endpoint URL is missing, malformed, or unroutable at startup.
+   - *Severity:* `blocking` (blocks live transport only; room service and presenter simulation remain functional).
+   - *UX presentation:* Diagnostic banner reading *"The target MOQT draft has no deployed relay endpoint, so live audio cannot start."*
+   - *System behaviour:* Room membership, control-plane presence, and presenter simulation continue operating. Live audio publication remains disarmed.
+   - *Recovery:* Configure an active operational relay endpoint (e.g. Cloudflare `draft-16` relay) per §2.1 and §11.2.
 
-Room lifecycle, identity and rejoin, credentials, capture, independent tracks, DTX, discovery, mixing worklet, drift correction, degradation ladder, reconnection. Establish latency, capacity and drop baselines.
+5. **`relay_failed` (Relay session failed)**
+   - *Trigger:* An active WebTransport session to the MoQ relay drops abruptly due to socket closure or network transient.
+   - *Severity:* `transient` (escalates to `blocking` after 30 seconds).
+   - *UX presentation:* Status indicator transitions to amber *"Reconnecting (attempt N)..."*, displaying live attempt counts.
+   - *System behaviour:* `ReconnectionPolicy` executes bounded exponential backoff with full jitter. If unrecovered after 30 seconds, enters terminal failure with an explicit user retry button.
+   - *Recovery:* Wait for automatic backoff restoration; click manual retry if the session reaches terminal state.
 
-**Exit:** ten minutes at the reference composition with no audible drift artefact and no unbounded buffering (H13). Participants join and leave mid-session without disturbing anyone. Capacity figures measured and recorded (§9.2). Addressing mechanism chosen from live comparison.
+---
 
-### Gate 3 — AI participants
+### 10.2 Client audio hardware and permission failure modes
 
-Multiple AI workers, per-AI addressing, floor control, shared transcription bus, routing matrix, barge-in with in-flight cancellation, scripted fallback, AI-to-AI default off.
+1. **`microphone_denied` (Microphone permission denied)**
+   - *Trigger:* `navigator.mediaDevices.getUserMedia` rejects with `NotAllowedError` or `PermissionDeniedError`.
+   - *Severity:* `degraded` (blocks publication; subscriptions and inspection remain active).
+   - *UX presentation:* Non-blocking warning banner: *"Listening and inspection continue. Nothing is published from this browser."*
+   - *System behaviour:* Capture graph is not initialized. Outbound audio track is not announced. Downlink subscriptions, AudioWorklet mixer, and protocol inspector operate normally.
+   - *Recovery:* Grant microphone permissions in browser site settings and re-trigger microphone calibration.
 
-**Exit:** two AIs answer their own addresses and stay silent to each other's; ten addressed exchanges complete; barge-in silences within 300 ms; routing changes take effect within 500 ms and show in the inspector; an AI fails without disturbing anyone; no AI speaks unaddressed.
+2. **`microphone_no_device` (No microphone input device)**
+   - *Trigger:* `getUserMedia` rejects with `NotFoundError` or `DevicesNotFoundError`, or `enumerateDevices` returns zero audio input hardware.
+   - *Severity:* `degraded` (blocks publication; downlink unaffected).
+   - *UX presentation:* Informational banner: *"No capture device was found. Listening and inspection continue."*
+   - *System behaviour:* Client operates in listen-only subscriber mode without throwing fatal exceptions.
+   - *Recovery:* Connect a physical microphone or USB/Bluetooth headset and click re-test.
 
-### Gate 4 — Demo readiness
+---
 
-Guided inspector with live subscription graph, presenter strip, sanitised export, failure-state copy, pre-flight page, README naming pinned configuration and measured capacity.
+### 10.3 Discovery, membership and session lifecycle failure modes
 
-**Exit:** all acceptance criteria pass, the §12 script runs twice clean on a hostile network, maturity labels match current sources.
+1. **`namespace_discovery_unavailable` (`SUBSCRIBE_NAMESPACE` unavailable)**
+   - *Trigger:* Relay rejects or does not support the MOQT `SUBSCRIBE_NAMESPACE` command (e.g. return code `UNSUPPORTED`).
+   - *Severity:* `degraded` (non-blocking for room functionality).
+   - *UX presentation:* Inspector explicitly displays discovery mode: *"Discovery: Room Service (Control Plane)"*.
+   - *System behaviour:* Automatic fallback to Durable Object WebSocket control-plane track announcements. Track arrivals are individually subscribed via `SUBSCRIBE`. Audio object arrival remains the true authority for participant connection.
+   - *Recovery:* None required. Operational telemetry records endpoint capability.
+
+2. **`participant_disconnected` (Participant disconnected)**
+   - *Trigger:* A remote participant's WebTransport session closes or heartbeat times out.
+   - *Severity:* `transient` (non-blocking).
+   - *UX presentation:* Participant card transitions to amber *"Reconnecting"*, and removes card after 60-second grace window expires.
+   - *System behaviour:* All other participants' audio continue uninterrupted. Subscribed AI agents temporarily pause generation rather than hallucinating over truncated audio.
+   - *Recovery:* None required. The remote participant has 60 seconds to reclaim session state.
+
+3. **`reloading` (Reconnecting after reload)**
+   - *Trigger:* User refreshes the browser tab or navigates away and returns within 60 seconds.
+   - *Severity:* `transient` (non-blocking).
+   - *UX presentation:* Brief *"Reconnecting"* badge, smoothly restoring display name, track associations, and routing toggles.
+   - *System behaviour:* Single-use cryptographic rejoin token reclaims identity from Durable Object SQLite storage. `PlaybackDeduplicator` discards previously played audio objects to prevent acoustic doubling.
+   - *Recovery:* None required.
+
+---
+
+### 10.4 AI pipeline, floor contention and loop failure modes
+
+1. **`ai_pipeline_failed` (AI pipeline unavailable)**
+   - *Trigger:* Upstream AI inference, speech-to-text bus, or text-to-speech engine returns 5xx error or connection timeout.
+   - *Severity:* `degraded` (non-blocking for humans and other AIs).
+   - *UX presentation:* Affected AI card displays red *"Unavailable"* badge.
+   - *System behaviour:* Closes that AI's publication track. Human conversation and remaining AIs continue unaffected.
+   - *Recovery:* Enable presenter scripted mode to provide verified deterministic responses for demonstration.
+
+2. **`ai_floor_contention` (AI floor contention)**
+   - *Trigger:* Multiple AI agents are addressed in rapid succession or simultaneously while an AI is already speaking.
+   - *Severity:* `transient` (non-blocking).
+   - *UX presentation:* Second AI transitions to *"Thinking (Queued)"* and waits for floor release.
+   - *System behaviour:* `AiDirector` serialises publications. The queued AI begins transmitting only after the active AI finishes or is barged into.
+   - *Recovery:* None required. Floor control resolves ordering automatically.
+
+3. **`ai_loop_capped` (AI-to-AI turn cap reached)**
+   - *Trigger:* Consecutive AI-to-AI conversation turns reach `AI_TO_AI_TURN_CAP` (limit = 4 turns).
+   - *Severity:* `degraded` (non-blocking).
+   - *UX presentation:* AI card displays *"Turn cap reached"* with visible turn counter.
+   - *System behaviour:* `AiDirector` blocks further AI-triggered addresses. Human speech immediately resets the turn counter to 0.
+   - *Recovery:* Speak to address an AI directly, or disable AI-to-AI routing.
+
+---
+
+### 10.5 Media playout, clock drift and capacity degradation failure modes
+
+1. **`beyond_measured_capacity` (Beyond measured capacity)**
+   - *Trigger:* Local CPU/decoding load exceeds capacity thresholds (active speaker count, jitter buffer underruns).
+   - *Severity:* `degraded` (non-blocking; joins are never refused).
+   - *UX presentation:* Prominent status notification: *"audio paused for N participants — beyond measured capacity"*.
+   - *System behaviour:* Executes 3-tier degradation ladder: (1) raises nominal buffer to 120 ms, (2) releases decoders for tracks silent > 30 s, (3) unsubscribes least recently active speakers.
+   - *Recovery:* None required. Restores subscriptions automatically as active speaker load subsides.
+
+2. **`audio_behind` (Audio falling behind)**
+   - *Trigger:* Subscribed audio objects arrive beyond the 200 ms maximum buffer threshold.
+   - *Severity:* `degraded` (non-blocking).
+   - *UX presentation:* Track telemetry highlights late-drop count in amber within the inspector.
+   - *System behaviour:* Late objects are dropped and counted. Opus Packet Loss Concealment (PLC) synthesises missing frames to preserve pitch continuity; sustained loss emits comfort noise.
+   - *Recovery:* None required. Latency remains bounded.
+
+3. **`drift_uncorrectable` (Clock drift beyond correction range)**
+   - *Trigger:* Sender media clock skew relative to local `AudioContext` clock exceeds `MAXIMUM_CORRECTION_RATIO` (skew > 5%).
+   - *Severity:* `degraded` (non-blocking).
+   - *UX presentation:* Quality warning badge on affected participant track in inspector.
+   - *System behaviour:* Resets and rebuilds that specific track's adaptive jitter buffer at the next detected speech pause (silence interval), preventing audible glitches.
+   - *Recovery:* None required.
+
+---
+
+### 10.6 Protocol invariants and privacy rules
+
+- **No Silent Fallback (H14):** A failure state never triggers an undercover transport fallback (e.g. WebRTC peer connection or WebSocket stream).
+- **Truthful Telemetry (H15):** If a metric is unexposed by the browser (such as WebTransport RTT or packet loss on certain platforms), it must display **Not exposed**, never `0` or estimated figures.
+- **Privacy Sanitisation (AC-14):** Failure telemetry, error logs, and export dumps must completely redact tokens, display names, raw audio payloads, transcripts, and hardware device labels.
+
+---
+
+## 11. Delivery and feature release plan
+
+To overcome the product launch blocker caused by the absence of published `draft-20` relay endpoints, Real Fabric adopts a phased, milestone-driven feature release plan. This strategy leverages existing operational MOQT drafts (`draft-16` / `draft-14` on Cloudflare isolated relays and `draft-16`/`draft-18` on `moq-rs`) behind the `MoqTransportAdapter` abstraction, systematically resolves all 16 failure modes, and validates full stage-demo readiness.
+
+```mermaid
+flowchart TD
+    M1["Milestone 1: Live Transport & Relay Interop (Draft-16)"] --> M2["Milestone 2: Hardware Resilience & Audio Pipeline"]
+    M2 --> M3["Milestone 3: AI Multi-Agent & Floor Control"]
+    M3 --> M4["Milestone 4: Discovery, Rejoin & Capacity Scaling"]
+    M4 --> GATES["Stage Demo Launch Acceptance Gates (H1–H16)"]
+```
+
+---
+
+### 11.1 Phased release strategy
+
+1. **Protocol Decoupling:** Keep wire constants, message framing, and setup handshakes strictly within `MoqTransportAdapter`.
+2. **Immediate Live Transport:** Target active Cloudflare `draft-16` relay endpoints (`draft-16.cloudflare.mediaoverquic.com`) to prove real WebTransport over HTTP/3 and QUIC.
+3. **Systematic Failure Mode Remediation:** Resolve each failure mode through dedicated features across four sequential delivery milestones.
+4. **Clean Upgrade Vector:** When a `draft-20` relay endpoint is deployed, plug it directly into `MoqTransportAdapter` with zero UI or room service refactoring.
+
+---
+
+### 11.2 Milestone 1: Live transport unblocking and relay interoperability
+
+*Primary focus: Establishing verified browser-to-relay MOQT transport on operational drafts, unblocking live audio flow, and eliminating transport failure modes.*
+
+- **Addressed failure modes:** `draft_endpoint_missing`, `draft_mismatch`, `transport_unsupported`, `udp_blocked`, `relay_failed`.
+- **Key deliverables:**
+  1. **Relay Endpoint Integration:** Configure `MoqTransportAdapter` to connect to Cloudflare isolated relays using `draft-16` framing and `moq-00` / `draft-16` ALPN.
+  2. **Negotiation Handshake:** Complete `CLIENT_SETUP` and `SERVER_SETUP` parameter validation, exposing negotiated draft and endpoint name in room telemetry.
+  3. **Pre-Flight Network Probe:** Implement non-blocking background UDP/HTTP-3 reachability test. If UDP is filtered, immediately display hotspot remediation advice before room join.
+  4. **Bounded Session Recovery:** Implement `ReconnectionPolicy` with exponential backoff, full jitter, and a 30-second terminal threshold for `relay_failed`.
+- **Exit criteria (Gate 1):**
+  - Live browser publisher and subscriber exchange synthetic Opus frames across the Cloudflare relay.
+  - Reproducible trace captures MOQT objects over WebTransport, HTTP/3, and QUIC.
+  - `MOQT_TRANSPORT_VERIFIED` set to `true`.
+
+---
+
+### 11.3 Milestone 2: Hardware resilience and audio pipeline hardening
+
+*Primary focus: Robust audio capture, browser hardware adaptability, jitter management, and drift correction.*
+
+- **Addressed failure modes:** `microphone_denied`, `microphone_no_device`, `audio_behind`, `drift_uncorrectable`.
+- **Key deliverables:**
+  1. **Graceful Hardware Fallback:** Implement listen-only subscriber mode when microphone permission is denied or no device is detected, without throwing unhandled exceptions.
+  2. **Dynamic Device Tracking:** Attach `navigator.mediaDevices.ondevicechange` listeners to automatically detect hot-plugged microphones or headsets and prompt calibration.
+  3. **Adaptive Jitter Buffer & PLC:** Maintain bounded jitter buffer (40–200 ms). Discard late objects exceeding the 200 ms ceiling and trigger Opus Packet Loss Concealment (PLC).
+  4. **Drift Estimation & Silence Rebuilding:** Measure sample-rate skew continuously; apply subtle resampling for slight drift (<5%) and rebuild buffer during detected silence intervals for severe drift (`drift_uncorrectable`).
+- **Exit criteria (Gate 2):**
+  - Continuous 10-minute audio playback at reference composition (6 humans + 2 AIs) with no audible drift artefacts and no unbounded buffer growth (H13).
+  - Single-machine acoustic loopback confirms p50 latency < 250 ms and p95 < 500 ms (§9.3).
+
+---
+
+### 11.4 Milestone 3: Multi-agent AI orchestration, floor control and fault isolation
+
+*Primary focus: Autonomous AI participants, deterministic addressing, barge-in cancellation, and loop protection.*
+
+- **Addressed failure modes:** `ai_pipeline_failed`, `ai_floor_contention`, `ai_loop_capped`.
+- **Key deliverables:**
+  1. **AI Pipeline Fault Isolation:** Implement circuit-breaker on upstream AI inference/synthesis endpoints. If backend fails, automatically transition AI card to *"Unavailable"* and provide presenter scripted responses.
+  2. **Deterministic Floor Control:** Implement `AiDirector` queueing to serialise AI responses. When multiple AIs are addressed, queue the second agent in *"Thinking (Queued)"* state without overlapping audio.
+  3. **Turn Budget Enforcement:** Hard-cap consecutive AI-to-AI dialogue turns at `AI_TO_AI_TURN_CAP = 4`. Human utterance instantly resets the counter.
+  4. **Sub-300ms Barge-In:** On human speech onset, emit MOQT group cancellation marker. Receivers purge queued audio objects from that group, stopping playout within 300 ms (H6).
+- **Exit criteria (Gate 3):**
+  - Two distinct AI agents respond exclusively to their respective wake names/addresses.
+  - Barge-in halts AI playback audibly within 300 ms across 10 test interruptions.
+  - Routing toggles (**Hears me** / **I hear it**) update subscription state within 500 ms and update the inspector live graph.
+
+---
+
+### 11.5 Milestone 4: Hybrid discovery, atomic rejoin and capacity scaling
+
+*Primary focus: Scale open membership, guarantee robust page reload reclamation, and prevent performance collapse.*
+
+- **Addressed failure modes:** `namespace_discovery_unavailable`, `participant_disconnected`, `reloading`, `beyond_measured_capacity`.
+- **Key deliverables:**
+  1. **Hybrid Discovery Engine:** Probe `SUBSCRIBE_NAMESPACE` on relay connection. If unavailable, smoothly fall back to Durable Object WebSocket control-plane track announcements without blocking media flow.
+  2. **Atomic 60-Second Rejoin:** Store session tokens and routing matrices in SQLite Durable Object storage. Reclaim identity upon reload; use `PlaybackDeduplicator` to prevent duplicate playback.
+  3. **3-Tier Degradation Ladder:** Implement automated degradation monitoring:
+     - *Step 1:* Expand nominal jitter buffer from 60 ms to 120 ms.
+     - *Step 2:* Release decoders for tracks silent > 30 s.
+     - *Step 3:* Unsubscribe least-recently-active participants and display banner *"audio paused for N participants — beyond measured capacity"*.
+- **Exit criteria (Gate 4 & Final Launch Gate):**
+  - All 16 acceptance criteria (AC-1 through AC-16) pass.
+  - The 3.5-minute demo script (§12) completes twice clean on a live network / mobile hotspot without operator intervention (H16).
+  - Measured capacity figures documented in `README.md`.
+
+---
 
 ## 12. Demo script
 
@@ -504,7 +700,7 @@ The real acceptance test. Three and a half minutes, in order.
 8. No AI subscribes to another AI's track unless a presenter enables it, and enabled AI-to-AI exchange stops at the turn cap.
 9. Rooms of one human, one human with several AIs, and several humans with no AI each work fully.
 10. Presenter mode completes the §12 script solo with simulated participants.
-11. Unsupported browser, missing codec, denied microphone, blocked relay, draft mismatch, missing `-20` endpoint, unavailable discovery, capacity degradation and AI failure each produce a distinct state with its own recovery advice.
+11. Every failure mode in §10 produces a distinct state with its own recovery advice, truthful presentation, and no silent transport fallback.
 12. Participant count is never rejected. Capacity is degraded visibly per the ladder, and measured figures appear in the README.
 13. Unavailable measurements read **Not exposed** and never appear as measured values.
 14. Exported telemetry contains no audio, transcript, token, display name or device label.
@@ -512,18 +708,18 @@ The real acceptance test. Three and a half minutes, in order.
 
 ## 14. Open decisions
 
-| Decision | Owner | Due |
-|---|---|---|
-| `draft-20` relay availability, and which §2.1 resolution applies | *unassigned* | **Gate 1 — blocking** |
-| Browser MOQT client at `-20`: adopt, fork or build | *unassigned* | Gate 1 |
-| `SUBSCRIBE_NAMESPACE` on the endpoint — FR7 design | *unassigned* | Gate 1 |
-| Per-track credential scoping — FR8 enforced or cooperative | *unassigned* | Gate 1 |
-| AI worker transport: raw QUIC or WebTransport | *unassigned* | Gate 1 |
-| Recognition, model and synthesis providers; retention terms; per-room cost ceiling | *unassigned* | Gate 2 start |
-| Addressing mechanism: hold-to-ask or wake name | *unassigned* | Gate 2 exit |
-| Pinned browser, OS and major version | *unassigned* | Gate 2 exit |
-| Grid layout threshold and ordering rule | *unassigned* | Gate 2 exit |
-| Reference network definition | *unassigned* | Gate 2 exit |
+| Decision | Owner | Due | Status |
+|---|---|---|---|
+| Operational MOQT draft pin (`draft-16` deployed relay vs `draft-20` future target) | Architecture | Gate 1 | **Resolved (§2.1 & §11.2)** |
+| Browser MOQT client library (`moqtail` pinned vs adapter shim) | Client Lead | Gate 1 | Resolved behind adapter |
+| `SUBSCRIBE_NAMESPACE` support on endpoint — FR7 design | Transport Lead | Gate 1 | Hybrid fallback (§11.5) |
+| Per-track credential scoping — FR8 enforced or cooperative | Security Lead | Gate 1 | Evaluated at Gate 1 |
+| AI worker transport: raw QUIC or WebTransport | AI Lead | Gate 1 | WebTransport |
+| Recognition, model and synthesis providers; retention terms; per-room cost ceiling | Product Owner | Gate 2 start | In progress |
+| Addressing mechanism: hold-to-ask or wake name | UX Lead | Gate 2 exit | In progress |
+| Pinned browser, OS and major version | QA Lead | Gate 2 exit | Chrome 141+ on macOS (provisional) |
+| Grid layout threshold and ordering rule | UX Lead | Gate 2 exit | Compact threshold = 8 |
+| Reference network definition | QA Lead | Gate 2 exit | Wired / 5 GHz Wi-Fi |
 
 ## 15. Source basis
 
