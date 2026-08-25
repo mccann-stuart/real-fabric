@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { FailureCode } from "../../shared/failures";
+import { fetchHealth } from "../api";
 
 export type CheckState =
   | "checking"
@@ -15,6 +17,8 @@ export interface CapabilityReport {
   microphone: CheckState;
   relay: CheckState;
   relayReason: string;
+  /** H14: the specific §10 row, so the caller renders named copy not a generic error. */
+  failure: FailureCode | null;
 }
 
 const INITIAL: CapabilityReport = {
@@ -24,6 +28,7 @@ const INITIAL: CapabilityReport = {
   microphone: "not_tested",
   relay: "checking",
   relayReason: "Checking the room service and draft gate.",
+  failure: null,
 };
 
 export function useCapabilities() {
@@ -37,28 +42,44 @@ export function useCapabilities() {
     let active = true;
     const run = async () => {
       const opus = await checkOpus();
+      const secureContext: CheckState = globalThis.isSecureContext ? "ready" : "unavailable";
+      const webTransport: CheckState = "WebTransport" in globalThis ? "ready" : "unavailable";
       let relay: CheckState = "unavailable";
       let relayReason = "The room service is unreachable.";
+      let failure: FailureCode | null = null;
+
       try {
-        const response = await fetch("/api/health", {
-          headers: { "x-correlation-id": crypto.randomUUID() },
-        });
-        const health = (await response.json()) as { transportVerified?: boolean; draft?: string };
+        const health = await fetchHealth();
         relay = health.transportVerified ? "ready" : "unavailable";
         relayReason = health.transportVerified
-          ? `MOQT draft ${health.draft ?? "Not exposed"} trace verified.`
-          : `Room service ready; MOQT draft ${health.draft ?? "20"} relay trace unavailable.`;
+          ? `MOQT draft ${health.draft} trace verified. Inbound routing is ${health.routingEnforcement}; discovery is ${health.discovery}.`
+          : `Room service ready; MOQT draft ${health.draft} has not passed a browser-to-relay trace.`;
+        // H14: name the §10 row rather than collapsing everything into "error".
+        if (!health.transportVerified) failure = "draft_endpoint_missing";
       } catch {
-        relayReason = "Room service or relay probe could not be reached.";
+        relayReason = "The room service or relay probe could not be reached.";
+        failure = "udp_blocked";
       }
+
+      // A missing local capability outranks the relay: it is the nearer cause,
+      // and its recovery advice is different.
+      if (
+        secureContext === "unavailable" ||
+        webTransport === "unavailable" ||
+        opus === "unavailable"
+      ) {
+        failure = "transport_unsupported";
+      }
+
       if (active) {
         setReport((current) => ({
           ...current,
-          secureContext: globalThis.isSecureContext ? "ready" : "unavailable",
-          webTransport: "WebTransport" in globalThis ? "ready" : "unavailable",
+          secureContext,
+          webTransport,
           opus,
           relay,
           relayReason,
+          failure,
         }));
       }
     };
@@ -117,10 +138,11 @@ export function useCapabilities() {
       setReport((current) => ({ ...current, microphone: "ready" }));
     } catch (error) {
       const name = error instanceof DOMException ? error.name : "";
+      const noDevice = name === "NotFoundError" || name === "DevicesNotFoundError";
       setReport((current) => ({
         ...current,
-        microphone:
-          name === "NotFoundError" || name === "DevicesNotFoundError" ? "no_device" : "denied",
+        microphone: noDevice ? "no_device" : "denied",
+        failure: noDevice ? "microphone_no_device" : "microphone_denied",
       }));
     }
   }, [stopMicrophone]);

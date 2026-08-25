@@ -1,4 +1,5 @@
 import type { CapabilityReport, CheckState } from "../hooks/useCapabilities";
+import { FailureBanner } from "./FailureBanner";
 import { StatusLight } from "./StatusLight";
 
 const CHECKS: Array<
@@ -42,6 +43,8 @@ export function PreflightPanel({
         ))}
       </div>
       <p className="preflight-reason">{report.relayReason}</p>
+      {/* H14: name the specific missing capability, with its own recovery advice. */}
+      {report.failure ? <FailureBanner code={report.failure} /> : null}
     </section>
   );
 }

@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "real-fabric",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["run", "dev:worker"],
+      "port": 8787
+    }
+  ]
+}

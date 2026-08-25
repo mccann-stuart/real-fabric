@@ -1,9 +1,12 @@
 import { useState } from "react";
-import { createRoom, joinRoom, normaliseCode, storeSession } from "../api";
+import { MAX_SIMULATED_PARTICIPANTS } from "../../shared/contracts";
+import { configurePresenter, createRoom, joinRoom, normaliseCode, storeSession } from "../api";
 import { Brand } from "../components/Brand";
+import { PinnedConfigBanner } from "../components/PinnedConfigBanner";
 import { PreflightPanel } from "../components/PreflightPanel";
 import { SignalPath } from "../components/SignalPath";
 import { useCapabilities } from "../hooks/useCapabilities";
+import { rememberRelayCredential } from "../session/RoomSession";
 
 const MIC_BARS = Array.from({ length: 18 }, (_, value) => ({ id: `mic-${value}`, value }));
 
@@ -18,6 +21,9 @@ export function EntryPage({
   const [roomCode, setRoomCode] = useState(normaliseCode(initialCode));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // H11: presenter simulation is a configurable number, not a fixed cast.
+  const [simulatedHumans, setSimulatedHumans] = useState(5);
+  const [simulatedAis, setSimulatedAis] = useState(2);
   const { report, level, testMicrophone, stopMicrophone } = useCapabilities();
 
   const enterRoom = async (mode: "create" | "join" | "presenter") => {
@@ -36,14 +42,26 @@ export function EntryPage({
         mode === "join"
           ? await joinRoom(roomCode, displayName.trim())
           : await createRoom(displayName.trim());
-      storeSession({
+      const session = storeSession({
         code: result.room.code,
         participantId: result.participant.id,
         rejoinToken: result.rejoinToken,
         displayName: displayName.trim(),
       });
-      if (mode === "presenter")
+      // §8: the relay credential stays in memory. It is never stored and never
+      // placed in a URL that could be shared.
+      rememberRelayCredential(result.participant.id, result.relayCredential);
+
+      if (mode === "presenter") {
         sessionStorage.setItem(`real-fabric:presenter:${result.room.code}`, "true");
+        await configurePresenter(session, {
+          simulatedHumans,
+          simulatedAis,
+          // FR4: no live pipeline exists, so scripted responses are the only
+          // honest option, and they are labelled as scripted everywhere.
+          scriptedResponses: true,
+        });
+      }
       stopMicrophone();
       navigate(`/room/${result.room.code}`);
     } catch (reason) {
@@ -61,9 +79,11 @@ export function EntryPage({
           Protocol inspector →
         </button>
       </header>
+      <PinnedConfigBanner />
       <div className="entry-layout">
         <section className="entry-form" aria-labelledby="entry-title">
           <h1 id="entry-title">People and AIs speaking over Media over QUIC.</h1>
+          {/* H4: stated before joining. */}
           <p className="headphones">⌁ Headphones required</p>
           <div className="form-grid">
             <label>
@@ -118,6 +138,35 @@ export function EntryPage({
               Run pre-flight only →
             </button>
           </div>
+
+          <fieldset className="simulation-config">
+            <legend>Solo presenter mode — simulated participants</legend>
+            <label>
+              Humans
+              <input
+                type="number"
+                min={0}
+                max={MAX_SIMULATED_PARTICIPANTS}
+                value={simulatedHumans}
+                onChange={(event) => setSimulatedHumans(clamp(Number(event.target.value)))}
+              />
+            </label>
+            <label>
+              AIs
+              <input
+                type="number"
+                min={0}
+                max={MAX_SIMULATED_PARTICIPANTS}
+                value={simulatedAis}
+                onChange={(event) => setSimulatedAis(clamp(Number(event.target.value)))}
+              />
+            </label>
+            <p>
+              Simulated participants are labelled everywhere they appear and never stand in for a
+              working relay or AI pipeline.
+            </p>
+          </fieldset>
+
           <button className="mic-test" type="button" onClick={() => void testMicrophone()}>
             <span>◉ Mic level test</span>
             <output className="sr-only">Microphone level {Math.round(level * 100)} percent</output>
@@ -155,4 +204,9 @@ export function EntryPage({
       </footer>
     </main>
   );
+}
+
+function clamp(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(MAX_SIMULATED_PARTICIPANTS, Math.max(0, Math.trunc(value)));
 }
