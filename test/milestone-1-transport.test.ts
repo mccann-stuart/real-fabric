@@ -213,6 +213,104 @@ describe("M1 — pre-flight HTTP/3 and QUIC probe", () => {
 });
 
 describe("M1 — bounded session recovery", () => {
+  it("starts microphone capture automatically while transport opens independently", async () => {
+    const session = new RoomSession({
+      session: {
+        code: "AAAAAAAAAAAAAAAAAAAA",
+        participantId: "participant-1",
+        rejoinToken: "rejoin-token",
+        displayName: "Test participant",
+        storedAt: 0,
+      },
+      presenterMode: false,
+    });
+    const order: string[] = [];
+    vi.spyOn(session, "startPublishing").mockImplementation(async () => {
+      order.push("microphone");
+    });
+    const internal = session as unknown as {
+      devices: { start: () => Promise<void> };
+      openControlChannel: () => void;
+      runNetworkProbe: (room: RoomSnapshot) => Promise<void>;
+      openTransport: () => Promise<void>;
+    };
+    internal.devices.start = vi.fn().mockResolvedValue(undefined);
+    internal.openControlChannel = vi.fn();
+    internal.runNetworkProbe = vi.fn().mockResolvedValue(undefined);
+    internal.openTransport = vi.fn().mockImplementation(async () => {
+      order.push("transport");
+    });
+
+    await session.start({
+      code: "AAAAAAAAAAAAAAAAAAAA",
+      participants: [],
+      aiToAi: { enabled: false },
+    } as unknown as RoomSnapshot);
+
+    expect(order).toEqual(["microphone", "transport"]);
+    await session.close();
+  });
+
+  it("retries automatic human subscriptions when a late publication is announced", async () => {
+    const session = new RoomSession({
+      session: {
+        code: "AAAAAAAAAAAAAAAAAAAA",
+        participantId: "human-1",
+        rejoinToken: "rejoin-token",
+        displayName: "Human one",
+        storedAt: 0,
+      },
+      presenterMode: false,
+    });
+    const stream = new ReadableStream<{
+      groupId: number;
+      objectId: number;
+      payload: Uint8Array;
+    }>({
+      start(controller) {
+        controller.close();
+      },
+    });
+    const subscribe = vi
+      .fn()
+      .mockRejectedValueOnce(new MoqTransportError("request_refused", "Not published yet."))
+      .mockResolvedValueOnce(stream);
+    const internal = session as unknown as {
+      phase: SessionPhase;
+      room: RoomSnapshot;
+      transport: {
+        subscribe: typeof subscribe;
+        callbacks: { onNamespacePublished?: () => void };
+      };
+      reconcileSubscriptions: () => Promise<void>;
+      snapshot: () => { subscribedParticipantIds: string[] };
+    };
+    internal.phase = { name: "live" };
+    internal.room = {
+      code: "AAAAAAAAAAAAAAAAAAAA",
+      participants: [
+        { id: "human-1", role: "human", state: "connected", simulated: false },
+        { id: "human-2", role: "human", state: "connected", simulated: false },
+        { id: "simulated-human", role: "human", state: "connected", simulated: true },
+      ],
+      routing: [],
+    } as unknown as RoomSnapshot;
+    internal.transport.subscribe = subscribe;
+
+    await internal.reconcileSubscriptions();
+    expect(subscribe).toHaveBeenCalledTimes(1);
+    expect(subscribe.mock.calls[0]?.[0]).toMatchObject({
+      namespace: "demo/AAAAAAAAAAAAAAAAAAAA/human-2",
+      name: "audio/human-2",
+    });
+    expect(internal.snapshot().subscribedParticipantIds).toEqual([]);
+
+    internal.transport.callbacks.onNamespacePublished?.();
+    await vi.waitFor(() => expect(subscribe).toHaveBeenCalledTimes(2));
+    expect(internal.snapshot().subscribedParticipantIds).toEqual(["human-2"]);
+    await session.close();
+  });
+
   it("probes unknown namespace discovery and records the live result", async () => {
     const session = new RoomSession({
       session: {

@@ -135,6 +135,12 @@ export class MoqTransportError extends Error {
   }
 }
 
+export interface MoqTransportCallbacks {
+  onUnexpectedTermination?: (error: MoqTransportError) => void;
+  /** A subscribed namespace announced a newly available publication. */
+  onNamespacePublished?: () => void;
+}
+
 interface Publication {
   address: TrackAddress;
   fullName: FullTrackName;
@@ -160,7 +166,7 @@ export class MoqTransportAdapter {
     negotiation: null,
   };
 
-  constructor(private readonly onUnexpectedTermination?: (error: MoqTransportError) => void) {}
+  constructor(private readonly callbacks: MoqTransportCallbacks = {}) {}
 
   async connect(endpoint: string, credential: string, draft: string): Promise<void> {
     const connectionGeneration = ++this.connectionGeneration;
@@ -254,7 +260,7 @@ export class MoqTransportAdapter {
             this.pendingPublications.clear();
             this.subscriptions.clear();
             this.namespaceCancels.clear();
-            this.onUnexpectedTermination?.(
+            this.callbacks.onUnexpectedTermination?.(
               new MoqTransportError(
                 "relay_unavailable",
                 `The established MOQT session ended unexpectedly: ${terminationReason(reason, credential)}`,
@@ -263,6 +269,10 @@ export class MoqTransportAdapter {
           },
         },
       });
+      // Draft-specific namespace notifications stay inside the adapter.
+      // RoomSession only learns that its ordinary subscription set should be
+      // reconciled; it never depends on MOQtail's wire types.
+      this.client.onPeerNamespace = () => this.callbacks.onNamespacePublished?.();
     } catch (error) {
       this.stats = { ...this.stats, state: "failed" };
       throw new MoqTransportError(

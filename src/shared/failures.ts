@@ -72,7 +72,7 @@ const REGISTRY: Record<FailureCode, FailureState> = {
     experience: "Listening and inspection continue. Nothing is published from this browser.",
     behaviour: "Publication stays closed. Subscriptions and the inspector are unaffected.",
     recovery:
-      "Grant microphone access in the browser site settings, then run the microphone test again.",
+      "Grant microphone access in the browser site settings, then use the in-room retry action.",
     severity: "degraded",
     blocksPublication: true,
   },
@@ -81,7 +81,7 @@ const REGISTRY: Record<FailureCode, FailureState> = {
     title: "No microphone input device",
     experience: "No capture device was found. Listening and inspection continue.",
     behaviour: "Publication stays closed. Subscriptions and the inspector are unaffected.",
-    recovery: "Connect a microphone or headset, then run the microphone test again.",
+    recovery: "Connect a microphone or headset, then use the in-room retry action.",
     severity: "degraded",
     blocksPublication: true,
   },
