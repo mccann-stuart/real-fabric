@@ -31,7 +31,8 @@ If this file and the product specification otherwise conflict, preserve the hard
 
 As reconciled on 25 August 2026 with the current repository state:
 
-- The React/Vite client, SQLite Durable Object room service, control-plane WebSocket, presenter simulation, browser media components, inspector, telemetry and failure registry are implemented with 127 automated tests across nine files.
+- The React/Vite client, SQLite Durable Object room service, control-plane WebSocket, presenter simulation, browser media components, inspector, telemetry and failure registry are implemented with 129 automated tests across nine files.
+- The inspector's Objects and Latency tabs compare exposed session measurements with specification-defined budgets or targets. Diagnostic-only values say `Reported · no gate`, and acoustic loopback acceptance remains `Not exposed` until it actually runs.
 - `wrangler.jsonc` pins MOQT draft 16, configures the Cloudflare isolated relay URL, and deliberately keeps `MOQT_TRANSPORT_VERIFIED=false`, `MOQ_ROUTING_ENFORCEMENT=cooperative` and `MOQ_DISCOVERY=unknown`.
 - `moqtail@0.12.1` frames draft 16. `MoqTransportAdapter` attempts draft-16 transport with provisioned token in URL path, but live transport is not yet trace-verified (`MOQT_TRANSPORT_VERIFIED=false`).
 - Provisioned relay-token handling is implemented. The room service returns the configured `MOQ_RELAY_TOKEN` at join; relay acceptance, enforcement and expiry remain unverified.
