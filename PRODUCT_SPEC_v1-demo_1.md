@@ -31,7 +31,7 @@ v1 has failed if any of these is untrue.
 |---|---|---|
 | H1 | All live audio is MOQT objects over WebTransport / HTTP-3 / QUIC through a real MoQ relay. No fallback transport exists in the build. | Gate 1 trace, AC-2 |
 | H2 | One independent track per participant, human or AI. No mixing at the relay or the room service, at any participant count. | AC-1, AC-3 |
-| H3 | One pinned browser, OS and major version, named in the README. Others show a "not the tested configuration" banner. | AC-11 |
+| H3 | All supported browsers, OS and major versions, named in the README. Others show a "not the tested configuration" banner. | AC-11 |
 | H4 | Headphones are required and stated before joining. Echo cancellation is a defence, not the mechanism. | Landing page, room banner |
 | H5 | Each AI has its own address and speaks only when addressed. No AI volunteers into a conversation. | AC-5 |
 | H6 | Barge-in silences the addressed AI within 300 ms of human onset, including objects already at the receiver. | AC-6, measured |
@@ -52,11 +52,11 @@ v1 has failed if any of these is untrue.
 
 Video, screen share, recording, dial-in, moderation, accounts, captions, a WebRTC comparison, mobile, end-to-end encryption opaque to the AIs, and any claim of MOQT interoperability or production readiness.
 
-### 0.3 Deferred, with reasons
+### 0.3 Deferred, to be built
 
 | Item | Why not v1 |
 |---|---|
-| Captions and the `transcript/` track | Privacy obligation out of proportion to demo value; competes with the inspector for screen space |
+| Captions and the `transcript/` track | Next task |
 | Browsers beyond the pinned one | The binding constraint is WebTransport ∩ WebCodecs Opus ∩ AudioWorklet, not WebTransport alone |
 | iOS and Android | Autoplay gating, route changes, background suspension |
 | AI-to-AI conversation | Enabled by H10's default but deliberately off; see FR4 for the loop risk |
@@ -717,7 +717,7 @@ The real acceptance test. Three and a half minutes, in order.
 | AI worker transport: raw QUIC or WebTransport | AI Lead | Gate 1 | WebTransport |
 | Recognition, model and synthesis providers; retention terms; per-room cost ceiling | Product Owner | Gate 2 start | In progress |
 | Addressing mechanism: hold-to-ask or wake name | UX Lead | Gate 2 exit | In progress |
-| Pinned browser, OS and major version | QA Lead | Gate 2 exit | Chrome 141+ on macOS (provisional) |
+| Pinned browser, OS and major version | QA Lead | Gate 2 exit | All browsers that support the required packages/capabilites |
 | Grid layout threshold and ordering rule | UX Lead | Gate 2 exit | Compact threshold = 8 |
 | Reference network definition | QA Lead | Gate 2 exit | Wired / 5 GHz Wi-Fi |
 
