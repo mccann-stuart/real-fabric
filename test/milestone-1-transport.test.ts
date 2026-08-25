@@ -12,7 +12,12 @@ import {
   MoqTransportError,
 } from "../src/client/transport/MoqTransportAdapter";
 import { HOTSPOT_REMEDIATION, probeRelayReachability } from "../src/client/transport/NetworkProbe";
-import { asMoqDraft, MOQT_DRAFTS, PINNED_MOQT_DRAFT } from "../src/shared/contracts";
+import {
+  asMoqDraft,
+  MOQT_DRAFTS,
+  PINNED_MOQT_DRAFT,
+  type RoomSnapshot,
+} from "../src/shared/contracts";
 import { configuredRelayCredential } from "../src/worker/relayCredential";
 
 /**
@@ -132,6 +137,7 @@ describe("M1 — draft registry and relay interoperability", () => {
     expect(isRetryableTransportFailure("relay_failed")).toBe(true);
     expect(isRetryableTransportFailure("relay_auth_unavailable")).toBe(false);
     expect(isRetryableTransportFailure("relay_protocol_error")).toBe(false);
+    expect(isRetryableTransportFailure("relay_request_refused")).toBe(false);
     expect(isRetryableTransportFailure("draft_mismatch")).toBe(false);
   });
 
@@ -207,6 +213,68 @@ describe("M1 — pre-flight HTTP/3 and QUIC probe", () => {
 });
 
 describe("M1 — bounded session recovery", () => {
+  it("probes unknown namespace discovery and records the live result", async () => {
+    const session = new RoomSession({
+      session: {
+        code: "AAAAAAAAAAAAAAAAAAAA",
+        participantId: "participant-1",
+        rejoinToken: "rejoin-token",
+        displayName: "Test participant",
+        storedAt: 0,
+      },
+      presenterMode: false,
+    });
+    const room = {
+      code: "AAAAAAAAAAAAAAAAAAAA",
+      transport: { discovery: "unknown" },
+    } as RoomSnapshot;
+    const internal = session as unknown as {
+      room: RoomSnapshot;
+      transport: { subscribeNamespace: (namespace: string) => Promise<void> };
+      discover: (room: RoomSnapshot) => Promise<void>;
+      snapshot: () => { room: RoomSnapshot | null; failures: string[] };
+    };
+    internal.room = room;
+    internal.transport.subscribeNamespace = vi.fn().mockResolvedValue(undefined);
+
+    await internal.discover(room);
+
+    expect(internal.transport.subscribeNamespace).toHaveBeenCalledWith("demo/AAAAAAAAAAAAAAAAAAAA");
+    expect(internal.snapshot().room?.transport.discovery).toBe("subscribe_namespace");
+  });
+
+  it("records control-channel discovery only after the live probe is refused", async () => {
+    const session = new RoomSession({
+      session: {
+        code: "AAAAAAAAAAAAAAAAAAAA",
+        participantId: "participant-1",
+        rejoinToken: "rejoin-token",
+        displayName: "Test participant",
+        storedAt: 0,
+      },
+      presenterMode: false,
+    });
+    const room = {
+      code: "AAAAAAAAAAAAAAAAAAAA",
+      transport: { discovery: "unknown" },
+    } as RoomSnapshot;
+    const internal = session as unknown as {
+      room: RoomSnapshot;
+      transport: { subscribeNamespace: (namespace: string) => Promise<void> };
+      discover: (room: RoomSnapshot) => Promise<void>;
+      snapshot: () => { room: RoomSnapshot | null; failures: string[] };
+    };
+    internal.room = room;
+    internal.transport.subscribeNamespace = vi
+      .fn()
+      .mockRejectedValue(new MoqTransportError("request_refused", "Not supported."));
+
+    await internal.discover(room);
+
+    expect(internal.snapshot().room?.transport.discovery).toBe("control_channel");
+    expect(internal.snapshot().failures).toContain("namespace_discovery_unavailable");
+  });
+
   it("moves a live room into bounded recovery when its MOQT session terminates", () => {
     vi.useFakeTimers();
     try {

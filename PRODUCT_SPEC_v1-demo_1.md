@@ -20,7 +20,7 @@ This section records implementation state; it does not weaken the acceptance cri
 
 - React, TypeScript and Vite client surfaces, the SQLite Durable Object room service, control-plane WebSocket, presenter simulation, media pipeline, inspector, telemetry and failure registry are present.
 - `moqtail` is exactly pinned at `0.12.1` and imported only by `MoqTransportAdapter`.
-- `wrangler.jsonc` pins the operational Cloudflare draft-16 endpoint and keeps `MOQT_TRANSPORT_VERIFIED` at `false`, `MOQ_ROUTING_ENFORCEMENT` at `cooperative` and `MOQ_DISCOVERY` at `unknown`.
+- `wrangler.jsonc` pins the operational Cloudflare draft-16 endpoint and keeps `MOQT_TRANSPORT_VERIFIED` at `false`, `MOQ_ROUTING_ENFORCEMENT` at `cooperative` and `MOQ_DISCOVERY` at `unknown`. Unknown discovery is probed after live setup and the observed result is recorded in the inspector; it is not inferred from configuration.
 - The adapter registry knows the supported draft metadata, while the pinned client frames draft 16 only and refuses any configured draft it cannot frame without downgrading.
 - The `real-fabric-production` isolated relay is provisioned with upstream fallback disabled. The production Worker holds a seven-day, relay-scoped publish/subscribe token that expires at `2026-09-01T20:38:32Z`; relay acceptance and expiry behaviour remain unverified until a live browser trace runs.
 - Presenter responses are scripted and visibly labelled. There is no live recognition, model, synthesis or AI-worker transport pipeline.
@@ -28,7 +28,7 @@ This section records implementation state; it does not weaken the acceptance cri
 - Dynamic device tracking, packet-loss concealment, bounded recovery and silence-gated drift correction are implemented and unit-tested; they have not passed acoustic or live-relay acceptance.
 - A bounded capture adapter retains `MediaStreamTrackProcessor` as the preferred Chrome path and adds an exact-frame AudioWorklet path for future desktop evaluation. Selection and framing are unit-tested; real-browser and acoustic parity remain open.
 - Concurrent-room limits, relay credential rate-limiting and the per-room AI cost ceiling remain product requirements rather than implemented controls.
-- The automated suite contains 118 passing tests across nine files, but Gate 1 interoperability, cross-browser acceptance, measured capacity, the audible ten-minute run and two clean venue-network script runs remain open.
+- The automated suite contains 125 passing tests across nine files, but Gate 1 interoperability, cross-browser acceptance, measured capacity, the audible ten-minute run and two clean venue-network script runs remain open.
 
 ---
 
@@ -723,7 +723,7 @@ The real acceptance test. Three and a half minutes, in order.
 |---|---|---|---|
 | Draft-20 relay endpoint and compatibility path | Architecture | Gate 1 | Open; no operational downgrade permitted |
 | Browser MOQT client library | Client Lead | Gate 1 | `moqtail` `0.12.1` pinned behind the adapter; draft-20 interoperability unverified |
-| `SUBSCRIBE_NAMESPACE` support on the draft-20 endpoint | Transport Lead | Gate 1 | Unknown; control-channel discovery implemented |
+| `SUBSCRIBE_NAMESPACE` support on the draft-20 endpoint | Transport Lead | Gate 1 | Unknown. The configured draft-16 endpoint is now probed live rather than treating unknown configuration as a refusal. |
 | Per-track credential scoping — FR8 enforced or cooperative | Security Lead | Gate 1 | Open; current UI label is cooperative |
 | Relay credential acceptance, enforcement and expiry | Security Lead | Gate 1 | Minting is implemented; live relay behaviour is unverified |
 | AI worker transport: raw QUIC or WebTransport | AI Lead | Gate 1 | Open; no live AI worker exists |

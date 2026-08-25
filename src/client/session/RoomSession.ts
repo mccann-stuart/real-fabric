@@ -1,5 +1,6 @@
 import type {
   AiPipelineState,
+  DiscoveryMechanism,
   Participant,
   RoomEvent,
   RoomSnapshot,
@@ -146,6 +147,7 @@ export class RoomSession {
   private readonly ladder = new DegradationLadder();
   private readonly reconnection = new ReconnectionPolicy();
   private readonly players = new Map<string, TrackPlayer>();
+  private readonly refusedSubscriptions = new Set<string>();
   private readonly now: () => number;
 
   private readonly devices: DeviceWatcher;
@@ -154,6 +156,7 @@ export class RoomSession {
   private socket: WebSocket | null = null;
   private phase: SessionPhase = { name: "idle" };
   private room: RoomSnapshot | null = null;
+  private observedDiscovery: DiscoveryMechanism | null = null;
   private captureMode: CaptureMode = { name: "idle" };
   private network: ProbeResult = notRunProbe("The relay reachability probe has not started.");
   private failures: FailureCode[] = [];
@@ -304,7 +307,8 @@ export class RoomSession {
 
   /** FR7: try the MoQ primitive, and say which mechanism actually carried it. */
   private async discover(room: RoomSnapshot): Promise<void> {
-    if (room.transport.discovery !== "subscribe_namespace") {
+    if (room.transport.discovery === "control_channel") {
+      this.recordDiscovery("control_channel");
       this.raise("namespace_discovery_unavailable");
       this.log.record(
         "subscribe",
@@ -314,14 +318,28 @@ export class RoomSession {
     }
     try {
       await this.transport.subscribeNamespace(roomNamespace(room.code));
+      this.recordDiscovery("subscribe_namespace");
       this.log.record("subscribe", `SUBSCRIBE_NAMESPACE on ${roomNamespace(room.code)}`);
-    } catch {
+    } catch (error) {
+      this.recordDiscovery("control_channel");
       this.raise("namespace_discovery_unavailable");
       this.log.record(
         "subscribe",
-        "SUBSCRIBE_NAMESPACE was refused; falling back to control-channel discovery.",
+        `SUBSCRIBE_NAMESPACE was refused; falling back to control-channel discovery${
+          error instanceof Error ? `: ${error.message}` : "."
+        }`,
       );
     }
+  }
+
+  /** Gate 1 output four is the request result observed on this live session. */
+  private recordDiscovery(discovery: DiscoveryMechanism): void {
+    this.observedDiscovery = discovery;
+    if (!this.room) return;
+    this.room = {
+      ...this.room,
+      transport: { ...this.room.transport, discovery },
+    };
   }
 
   private async handleTransportFailure(error: unknown): Promise<void> {
@@ -377,6 +395,7 @@ export class RoomSession {
     // after the bounded reconnect succeeds.
     for (const player of this.players.values()) player.close();
     this.players.clear();
+    this.refusedSubscriptions.clear();
     void this.handleTransportFailure(error);
   }
 
@@ -397,6 +416,8 @@ export class RoomSession {
         return "relay_auth_unavailable";
       case "protocol_error":
         return "relay_protocol_error";
+      case "request_refused":
+        return "relay_request_refused";
       default:
         return this.network.state === "udp_blocked" ? "udp_blocked" : "relay_failed";
     }
@@ -635,11 +656,15 @@ export class RoomSession {
     const room = this.room;
     if (!room || this.phase.name !== "live") return;
     const wanted = new Set(this.subscribableParticipants().map((participant) => participant.id));
+    for (const participantId of this.refusedSubscriptions) {
+      if (!wanted.has(participantId)) this.refusedSubscriptions.delete(participantId);
+    }
 
     for (const [participantId, player] of this.players) {
       if (wanted.has(participantId)) continue;
       player.close();
       this.players.delete(participantId);
+      this.refusedSubscriptions.delete(participantId);
       await this.transport.unsubscribe(audioTrack(room.code, participantId)).catch(() => undefined);
       this.log.record("unsubscribe", `audio/${participantId}`, { subject: participantId });
     }
@@ -683,16 +708,29 @@ export class RoomSession {
         },
       });
       this.players.set(participantId, player);
-      this.log.record("subscribe", `audio/${participantId}`, { subject: participantId });
+      if (!this.refusedSubscriptions.has(participantId)) {
+        this.log.record("subscribe", `audio/${participantId}`, { subject: participantId });
+      }
 
       try {
         const stream = await this.transport.subscribe(track);
+        this.refusedSubscriptions.delete(participantId);
         void this.consume(participantId, player, stream);
       } catch (error) {
         this.players.delete(participantId);
         player.close();
-        this.raise("relay_failed");
-        this.log.record("failure", error instanceof Error ? error.message : "Subscribe failed.");
+        // A missing or not-yet-published remote track is a request-level
+        // refusal, not a dead MOQT session. Reconciliation may try again as
+        // room state changes, but it must not turn the whole room blocking.
+        const requestRefused =
+          error instanceof MoqTransportError && error.code === "request_refused";
+        if (!requestRefused) {
+          this.raise("relay_failed");
+        }
+        if (!requestRefused || !this.refusedSubscriptions.has(participantId)) {
+          this.log.record("failure", error instanceof Error ? error.message : "Subscribe failed.");
+        }
+        if (requestRefused) this.refusedSubscriptions.add(participantId);
       }
     }
     this.emit();
@@ -883,7 +921,9 @@ export class RoomSession {
   }
 
   private applyRoom(room: RoomSnapshot): void {
-    this.room = room;
+    this.room = this.observedDiscovery
+      ? { ...room, transport: { ...room.transport, discovery: this.observedDiscovery } }
+      : room;
     for (const ai of room.participants.filter((participant) => participant.role === "ai")) {
       this.director.register(ai.id, "hold_to_ask");
       this.director.setAvailable(ai.id, ai.pipeline !== "unavailable");

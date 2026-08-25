@@ -21,7 +21,13 @@ import {
 import { ALL_FAILURE_CODES, allFailureStates } from "../src/shared/failures";
 import { formatMeasurement, measured, notExposed } from "../src/shared/measurement";
 import { matchConfiguration, PINNED_CONFIGURATION } from "../src/shared/pinnedConfiguration";
-import { audioTrack, fanOut, parseTrackName, presenceTrack } from "../src/shared/tracks";
+import {
+  audioTrack,
+  fanOut,
+  parseTrackName,
+  participantNamespace,
+  presenceTrack,
+} from "../src/shared/tracks";
 
 function human(id: string, overrides: Partial<Participant> = {}): Participant {
   return {
@@ -65,8 +71,14 @@ function routing(overrides: Partial<RoutingPreference> = {}): RoutingPreference 
 
 describe("H2 — one independent track per participant, no mixing upstream", () => {
   it("addresses humans and AIs identically and opaquely", () => {
-    expect(audioTrack("room1", "p1")).toEqual({ namespace: "demo/room1", name: "audio/p1" });
-    expect(presenceTrack("room1", "p1")).toEqual({ namespace: "demo/room1", name: "presence/p1" });
+    expect(audioTrack("room1", "p1")).toEqual({
+      namespace: "demo/room1/p1",
+      name: "audio/p1",
+    });
+    expect(presenceTrack("room1", "p1")).toEqual({
+      namespace: "demo/room1/p1",
+      name: "presence/p1",
+    });
     // §6.2: a human and an AI are indistinguishable at the relay, and neither
     // carries a display name.
     const asHuman = audioTrack("room1", "participant-1");
@@ -76,6 +88,12 @@ describe("H2 — one independent track per participant, no mixing upstream", () 
     );
     expect(`${asHuman.namespace} ${asHuman.name}`).not.toMatch(/\b(human|ai|bot|agent)\b/i);
     expect(parseTrackName("audio/p1")).toEqual({ kind: "audio", participantId: "p1" });
+  });
+
+  it("gives each publisher a distinct namespace under the room prefix", () => {
+    expect(participantNamespace("room1", "p1")).toBe("demo/room1/p1");
+    expect(audioTrack("room1", "p1").namespace).not.toBe(audioTrack("room1", "p2").namespace);
+    expect(audioTrack("room1", "p1").namespace.startsWith("demo/room1/")).toBe(true);
   });
 
   it("keeps the uplink at one track regardless of audience size", () => {

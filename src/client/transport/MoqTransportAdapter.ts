@@ -127,6 +127,7 @@ export class MoqTransportError extends Error {
       | "draft_unavailable"
       | "relay_configuration"
       | "relay_unavailable"
+      | "request_refused"
       | "protocol_error",
     message: string,
   ) {
@@ -394,13 +395,16 @@ export class MoqTransportAdapter {
     const namespaceResult = await client.publishNamespace(fullName.namespace);
     if (namespaceResult instanceof RequestError) {
       throw new MoqTransportError(
-        "protocol_error",
-        "The relay refused the track namespace publication.",
+        "request_refused",
+        requestErrorMessage("track namespace publication", namespaceResult),
       );
     }
     const result = await client.publish(fullName, true, this.nextAlias++);
     if (result instanceof RequestError) {
-      throw new MoqTransportError("protocol_error", "The relay refused the track publication.");
+      throw new MoqTransportError(
+        "request_refused",
+        requestErrorMessage("track publication", result),
+      );
     }
     if (connectionGeneration !== this.connectionGeneration || client !== this.client) {
       controller.close();
@@ -431,7 +435,10 @@ export class MoqTransportAdapter {
         : {}),
     });
     if (result instanceof RequestError) {
-      throw new MoqTransportError("protocol_error", "The relay refused the track subscription.");
+      throw new MoqTransportError(
+        "request_refused",
+        requestErrorMessage("track subscription", result),
+      );
     }
     this.subscriptions.set(trackKey(track), result.requestId);
     const adapter = this;
@@ -457,7 +464,10 @@ export class MoqTransportAdapter {
     const client = this.requireClient();
     const result = await client.subscribeNamespace(Tuple.fromUtf8Path(namespace));
     if (result.response instanceof RequestError) {
-      throw new MoqTransportError("protocol_error", `The relay refused namespace '${namespace}'.`);
+      throw new MoqTransportError(
+        "request_refused",
+        requestErrorMessage(`namespace '${namespace}' subscription`, result.response),
+      );
     }
     this.namespaceCancels.set(namespace, result.cancel);
   }
@@ -496,6 +506,13 @@ export class MoqTransportAdapter {
     }
     return this.client;
   }
+}
+
+function requestErrorMessage(operation: string, error: RequestError): string {
+  const reason = error.reasonPhrase.phrase.trim();
+  return `The relay refused the ${operation} (code ${error.errorCode})${
+    reason ? `: ${reason}` : "."
+  }`;
 }
 
 function trackKey(track: TrackAddress): string {
