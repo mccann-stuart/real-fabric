@@ -147,6 +147,19 @@ Preserve these entry strings unless the product specification changes:
 - Preserve unrelated user files and changes, including untracked specifications.
 - Never commit secrets, generated local state, `.DS_Store`, `.dev.vars`, build output or `node_modules`.
 
+### OneDrive dependency storage
+
+This checkout is stored in OneDrive, so `node_modules` must remain physically outside both the repository and OneDrive.
+
+- The only approved physical dependency directory for this checkout is `/Users/mccannstuart/.node_modules`.
+- The repository path `node_modules` must be a symbolic link to that directory. Never replace it with a physical directory.
+- Before running a tool that reads dependencies, verify both `test -L node_modules` and `test "$(readlink node_modules)" = "/Users/mccannstuart/.node_modules"`.
+- If the external directory exists but the repository link is absent, recreate the link with `ln -s /Users/mccannstuart/.node_modules node_modules`.
+- If `node_modules` is a physical directory, or the external target already contains different data, stop and inspect both locations. Do not merge, delete or overwrite either location without explicit user approval.
+- Use the repository-pinned pnpm 11.22.0 and committed `pnpm-lock.yaml`. After verifying the symlink, install with `pnpm install --frozen-lockfile --modules-dir /Users/mccannstuart/.node_modules`; the explicit modules directory is required because plain `pnpm install` refuses to reify a symlink target outside the project root.
+- Never run `npm install` in this repository. npm 11 removes a symlinked top-level `node_modules`, and this project is pnpm-managed.
+- After any dependency-changing pnpm command using the explicit `--modules-dir` target, re-run both symlink checks and confirm `realpath node_modules` is `/Users/mccannstuart/.node_modules` before continuing.
+
 ## GitHub and Git operations
 
 - The canonical repository is [mccann-stuart/real-fabric](https://github.com/mccann-stuart/real-fabric).
