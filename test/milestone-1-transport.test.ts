@@ -1,4 +1,11 @@
-import { ReasonPhrase, RequestError, RequestErrorCode } from "moqtail";
+import {
+  FullTrackName,
+  Publish,
+  PublishOk,
+  ReasonPhrase,
+  RequestError,
+  RequestErrorCode,
+} from "moqtail";
 import { describe, expect, it, vi } from "vitest";
 import { ReconnectionPolicy, TERMINAL_AFTER_MS } from "../src/client/session/ReconnectionPolicy";
 import {
@@ -744,6 +751,108 @@ describe("M1 — bounded session recovery", () => {
         reason: "namespace denied",
       },
     });
+  });
+
+  it("accepts a namespace-pushed publication and reuses its stream for subscribe", async () => {
+    const onTrackPublished = vi.fn();
+    const adapter = new MoqTransportAdapter({ onTrackPublished });
+    const send = vi.fn().mockResolvedValue(undefined);
+    const subscribe = vi.fn();
+    const unsubscribe = vi.fn().mockResolvedValue(undefined);
+    const client = { controlStream: { send }, subscribe, unsubscribe };
+    const internal = adapter as unknown as {
+      client: typeof client;
+      stats: ReturnType<MoqTransportAdapter["sessionStats"]>;
+      handlePeerPublish: (message: Publish, stream: ReadableStream<never>) => Promise<void>;
+    };
+    internal.client = client;
+    internal.stats = { ...adapter.sessionStats(), state: "connected" };
+    const track = { namespace: "demo/room/participant", name: "audio/participant" };
+    const message = new Publish(7n, FullTrackName.tryNew(track.namespace, track.name), 3n, []);
+    const pushedStream = new ReadableStream<never>();
+
+    await internal.handlePeerPublish(message, pushedStream);
+
+    expect(send).toHaveBeenCalledWith(expect.any(PublishOk));
+    expect(onTrackPublished).toHaveBeenCalledWith(track);
+    const stream = await adapter.subscribe(track);
+    expect(stream).toBeInstanceOf(ReadableStream);
+    expect(subscribe).not.toHaveBeenCalled();
+    await stream.cancel();
+    await adapter.unsubscribe(track);
+    expect(unsubscribe).toHaveBeenCalledWith(7n);
+  });
+
+  it("defaults every other real room party to interested in pushed audio tracks", async () => {
+    const session = new RoomSession({
+      session: {
+        code: "AAAAAAAAAAAAAAAAAAAA",
+        participantId: "human-1",
+        rejoinToken: "rejoin-token",
+        displayName: "Human one",
+        storedAt: 0,
+      },
+      presenterMode: false,
+    });
+    const internal = session as unknown as {
+      room: RoomSnapshot;
+      shouldAcceptPublishedTrack: (track: { namespace: string; name: string }) => boolean;
+    };
+    internal.room = {
+      code: "AAAAAAAAAAAAAAAAAAAA",
+      participants: [
+        { id: "human-1", role: "human", state: "connected", simulated: false },
+        { id: "human-2", role: "human", state: "connected", simulated: false },
+        { id: "ai-1", role: "ai", state: "connected", simulated: false },
+      ],
+      routing: [],
+    } as unknown as RoomSnapshot;
+
+    expect(
+      internal.shouldAcceptPublishedTrack({
+        namespace: "demo/AAAAAAAAAAAAAAAAAAAA/human-2",
+        name: "audio/human-2",
+      }),
+    ).toBe(true);
+    expect(
+      internal.shouldAcceptPublishedTrack({
+        namespace: "demo/AAAAAAAAAAAAAAAAAAAA/ai-1",
+        name: "audio/ai-1",
+      }),
+    ).toBe(true);
+    expect(
+      internal.shouldAcceptPublishedTrack({
+        namespace: "demo/AAAAAAAAAAAAAAAAAAAA/human-1",
+        name: "audio/human-1",
+      }),
+    ).toBe(false);
+    await session.close();
+  });
+
+  it("sends UNINTERESTED only when the local track control opts out", async () => {
+    const adapter = new MoqTransportAdapter({ shouldAcceptPublishedTrack: () => false });
+    const send = vi.fn().mockResolvedValue(undefined);
+    const client = { controlStream: { send } };
+    const internal = adapter as unknown as {
+      client: typeof client;
+      stats: ReturnType<MoqTransportAdapter["sessionStats"]>;
+      handlePeerPublish: (message: Publish, stream: ReadableStream<never>) => Promise<void>;
+    };
+    internal.client = client;
+    internal.stats = { ...adapter.sessionStats(), state: "connected" };
+    const message = new Publish(
+      8n,
+      FullTrackName.tryNew("demo/room/participant", "audio/participant"),
+      4n,
+      [],
+    );
+
+    await internal.handlePeerPublish(message, new ReadableStream<never>());
+
+    const response = send.mock.calls[0]?.[0] as RequestError;
+    expect(response).toBeInstanceOf(RequestError);
+    expect(response.requestId).toBe(8n);
+    expect(response.errorCode).toBe(RequestErrorCode.Uninterested);
   });
 
   it("classifies only code-16 Track not found subscriptions as publisher-not-ready", () => {

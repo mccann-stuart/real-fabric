@@ -9,7 +9,11 @@ import {
   MOQtailClient,
   MoqtObject,
   ObjectForwardingPreference,
+  type Publish,
+  PublishOk,
+  ReasonPhrase,
   RequestError,
+  RequestErrorCode,
   ServerSetup,
   SetupParameter,
   SetupParameters,
@@ -162,6 +166,10 @@ export interface MoqTransportCallbacks {
   onUnexpectedTermination?: (error: MoqTransportError) => void;
   /** A subscribed namespace announced a newly available publication. */
   onNamespacePublished?: () => void;
+  /** Whether a PUBLISH pushed through the room namespace should be accepted. */
+  shouldAcceptPublishedTrack?: (track: TrackAddress) => boolean;
+  /** A PUBLISH was accepted and is ready for the ordinary subscribe path. */
+  onTrackPublished?: (track: TrackAddress) => void;
 }
 
 interface Publication {
@@ -170,11 +178,17 @@ interface Publication {
   controller: ReadableStreamDefaultController<MoqtObject>;
 }
 
+interface PushedSubscription {
+  requestId: bigint;
+  stream: ReadableStream<MoqtObject>;
+}
+
 export class MoqTransportAdapter {
   private client: MOQtailClient | null = null;
   private publications = new Map<string, Publication>();
   private pendingPublications = new Map<string, Promise<Publication>>();
   private subscriptions = new Map<string, bigint>();
+  private pushedSubscriptions = new Map<string, PushedSubscription>();
   private namespaceCancels = new Map<string, () => Promise<void>>();
   private nextAlias = 1n;
   private connectionGeneration = 0;
@@ -282,6 +296,7 @@ export class MoqTransportAdapter {
             this.publications.clear();
             this.pendingPublications.clear();
             this.subscriptions.clear();
+            this.pushedSubscriptions.clear();
             this.namespaceCancels.clear();
             this.callbacks.onUnexpectedTermination?.(
               new MoqTransportError(
@@ -296,6 +311,21 @@ export class MoqTransportAdapter {
       // RoomSession only learns that its ordinary subscription set should be
       // reconciled; it never depends on MOQtail's wire types.
       this.client.onPeerNamespace = () => this.callbacks.onNamespacePublished?.();
+      // SUBSCRIBE_NAMESPACE defaults to requesting pushed publications as
+      // well as namespace announcements. MOQtail exposes the incoming PUBLISH
+      // to its caller but deliberately does not decide whether to accept it.
+      // Make that decision here, inside the draft boundary, and retain the
+      // stream for the existing subscribe() API.
+      this.client.onPeerPublish = (message, stream) => {
+        void this.handlePeerPublish(message, stream).catch((error: unknown) => {
+          this.callbacks.onUnexpectedTermination?.(
+            new MoqTransportError(
+              "relay_unavailable",
+              `The MOQT session could not answer a pushed publication: ${safeError(error, credential)}`,
+            ),
+          );
+        });
+      };
     } catch (error) {
       this.stats = { ...this.stats, state: "failed" };
       throw new MoqTransportError(
@@ -451,6 +481,13 @@ export class MoqTransportAdapter {
     startPosition?: { groupId: number; objectId: number },
   ): Promise<ReadableStream<MediaObject>> {
     const client = this.requireClient();
+    const key = trackKey(track);
+    const pushed = this.pushedSubscriptions.get(key);
+    if (pushed) {
+      this.pushedSubscriptions.delete(key);
+      this.subscriptions.set(key, pushed.requestId);
+      return this.mediaStream(pushed.stream);
+    }
     const fullName = FullTrackName.tryNew(track.namespace, track.name);
     const result = await client.subscribe({
       fullTrackName: fullName,
@@ -463,11 +500,24 @@ export class MoqTransportAdapter {
         : {}),
     });
     if (result instanceof RequestError) {
+      // A namespace-pushed PUBLISH can cross this explicit SUBSCRIBE on the
+      // wire. If it was accepted while this request was pending, use that
+      // established subscription instead of surfacing a duplicate race.
+      const concurrentPush = this.pushedSubscriptions.get(key);
+      if (concurrentPush) {
+        this.pushedSubscriptions.delete(key);
+        this.subscriptions.set(key, concurrentPush.requestId);
+        return this.mediaStream(concurrentPush.stream);
+      }
       throw requestRefusal("track_subscription", "track subscription", result);
     }
-    this.subscriptions.set(trackKey(track), result.requestId);
+    this.subscriptions.set(key, result.requestId);
+    return this.mediaStream(result.stream);
+  }
+
+  private mediaStream(stream: ReadableStream<MoqtObject>): ReadableStream<MediaObject> {
     const adapter = this;
-    return result.stream.pipeThrough(
+    return stream.pipeThrough(
       new TransformStream<MoqtObject, MediaObject>({
         transform(object, controller) {
           if (!object.payload) return;
@@ -483,6 +533,52 @@ export class MoqTransportAdapter {
         },
       }),
     );
+  }
+
+  private async handlePeerPublish(
+    message: Publish,
+    stream: ReadableStream<MoqtObject>,
+  ): Promise<void> {
+    const client = this.requireClient();
+    const track = trackAddress(message.fullTrackName);
+    const key = trackKey(track);
+    const accepted = this.callbacks.shouldAcceptPublishedTrack?.(track) ?? true;
+
+    if (!accepted) {
+      await client.controlStream.send(
+        new RequestError(
+          message.requestId,
+          RequestErrorCode.Uninterested,
+          0n,
+          new ReasonPhrase("uninterested"),
+        ),
+      );
+      await stream.cancel("publication not selected").catch(() => undefined);
+      return;
+    }
+
+    if (this.subscriptions.has(key) || this.pushedSubscriptions.has(key)) {
+      await client.controlStream.send(
+        new RequestError(
+          message.requestId,
+          RequestErrorCode.DuplicateSubscription,
+          0n,
+          new ReasonPhrase("duplicate subscription"),
+        ),
+      );
+      await stream.cancel("duplicate publication").catch(() => undefined);
+      return;
+    }
+
+    this.pushedSubscriptions.set(key, { requestId: message.requestId, stream });
+    try {
+      await client.controlStream.send(new PublishOk(message.requestId, []));
+    } catch (error) {
+      this.pushedSubscriptions.delete(key);
+      await stream.cancel("publication acknowledgement failed").catch(() => undefined);
+      throw error;
+    }
+    this.callbacks.onTrackPublished?.(track);
   }
 
   async subscribeNamespace(namespace: string): Promise<void> {
@@ -521,6 +617,10 @@ export class MoqTransportAdapter {
     for (const publication of this.publications.values()) publication.controller.close();
     this.publications.clear();
     this.pendingPublications.clear();
+    for (const pushed of this.pushedSubscriptions.values()) {
+      await pushed.stream.cancel("transport closed").catch(() => undefined);
+    }
+    this.pushedSubscriptions.clear();
     if (this.client) await this.client.disconnect(reason);
     this.client = null;
     this.subscriptions.clear();
@@ -555,6 +655,15 @@ function requestRefusal(
 
 function trackKey(track: TrackAddress): string {
   return `${track.namespace}/${track.name}`;
+}
+
+function trackAddress(fullName: FullTrackName): TrackAddress {
+  return {
+    // MOQtail's diagnostic path includes a leading slash, while tryNew()
+    // accepts and Real Fabric stores canonical slash-separated tuple fields.
+    namespace: fullName.namespace.fields.map((field) => field.toUtf8()).join("/"),
+    name: new TextDecoder("utf-8", { fatal: true }).decode(fullName.name),
+  };
 }
 
 /**

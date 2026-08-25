@@ -9,7 +9,14 @@ import type {
 import { ROUTING_CHANGE_BUDGET_MS } from "../../shared/contracts";
 import type { FailureCode } from "../../shared/failures";
 import { type Measurement, measured, notExposed } from "../../shared/measurement";
-import { audioTrack, fanOut, roomNamespace, trackKey } from "../../shared/tracks";
+import {
+  audioTrack,
+  fanOut,
+  parseTrackName,
+  participantNamespace,
+  roomNamespace,
+  trackKey,
+} from "../../shared/tracks";
 import { type AddressOutcome, AiDirector, type BargeInResult } from "../ai/AiDirector";
 import { ScriptedResponder } from "../ai/ScriptedResponder";
 import {
@@ -184,6 +191,12 @@ export class RoomSession {
       // A human may publish after our first SUBSCRIBE was refused. Reconcile
       // on the protocol's publication announcement instead of waiting for an
       // unrelated membership or routing event.
+      this.retryWaitingSubscriptionsNow();
+    },
+    shouldAcceptPublishedTrack: (track) => this.shouldAcceptPublishedTrack(track),
+    onTrackPublished: () => {
+      // A pushed PUBLISH is already relay-accepted by the adapter. Reconcile
+      // immediately so the retained stream enters the ordinary player path.
       this.retryWaitingSubscriptionsNow();
     },
   });
@@ -1025,6 +1038,30 @@ export class RoomSession {
     });
   }
 
+  /**
+   * Room namespace interest defaults on for every other real participant.
+   * Explicit human and AI listening controls remain authoritative, including
+   * when the relay offers a publisher-initiated subscription via PUBLISH.
+   */
+  private shouldAcceptPublishedTrack(track: { namespace: string; name: string }): boolean {
+    const room = this.room;
+    const parsed = parseTrackName(track.name);
+    if (!room || parsed?.kind !== "audio") return false;
+    if (parsed.participantId === this.options.session.participantId) return false;
+    if (track.namespace !== participantNamespace(room.code, parsed.participantId)) return false;
+
+    const participant = room.participants.find(
+      (candidate) => candidate.id === parsed.participantId,
+    );
+    // A PUBLISH can outrun the control-plane membership event. Accept a
+    // correctly scoped unknown participant by default and reconcile it when
+    // the room snapshot arrives.
+    if (!participant) return true;
+    return this.subscribableParticipants().some(
+      (candidate) => candidate.id === parsed.participantId,
+    );
+  }
+
   private subscriptionStates(): TrackSubscriptionState[] {
     const room = this.room;
     if (!room) return [];
@@ -1050,7 +1087,7 @@ export class RoomSession {
             participantId: participant.id,
             intent,
             status: "subscribed",
-            detail: "SUBSCRIBE_OK received from the relay.",
+            detail: "The relay accepted this track subscription.",
           };
         }
         if (this.subscriptionsOpening.has(participant.id)) {
