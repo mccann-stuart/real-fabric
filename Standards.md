@@ -27,7 +27,7 @@ The current code requires:
 - `MediaStreamTrackProcessor` for capture;
 - WebCodecs `AudioDecoder` for received Opus;
 - `AudioWorkletNode` and a running `AudioContext` for listener-side playout;
-- a compatible MOQT draft-20 endpoint and a server-minted relay credential.
+- a compatible MOQT endpoint and a server-minted relay credential.
 
 The last condition is unavailable. The relay URL is unset, `MOQT_TRANSPORT_VERIFIED=false`, and the pinned `moqtail@0.12.1` client frames draft 16 but not draft 20. The adapter refuses to downgrade, the room service returns no credential and no browser can be described as live-audio verified. Credential minting and relay reachability probing are implemented for use when a compatible endpoint exists; neither has passed live relay acceptance.
 
@@ -38,7 +38,7 @@ The last condition is unavailable. The relay URL is unset, `MOQT_TRANSPORT_VERIF
 | [QUIC](https://www.rfc-editor.org/info/rfc9000) | IETF Standards Track RFC | Transport beneath HTTP/3. |
 | [HTTP/3](https://www.rfc-editor.org/info/rfc9114) | IETF Standards Track RFC | WebTransport's HTTP/3 session layer. |
 | [WebTransport](https://www.w3.org/TR/webtransport/) | W3C Working Draft | Browser session used by the MOQT client. |
-| [MOQT](https://datatracker.ietf.org/doc/draft-ietf-moq-transport/) | IETF Internet-Draft; `-19` published as checked on 25 August 2026 | Product target is unreleased draft 20. Earlier drafts are not a live-audio fallback. |
+| [MOQT](https://datatracker.ietf.org/doc/draft-ietf-moq-transport/) | IETF Internet-Draft; `-19` published as checked on 25 August 2026 | Earlier drafts are not a live-audio fallback. |
 | [WebCodecs](https://www.w3.org/TR/webcodecs/) | W3C Candidate Recommendation Draft | Native Opus encode/decode. |
 | [Opus](https://www.rfc-editor.org/info/rfc6716) | IETF Standards Track RFC | 48 kHz mono voice, 32 kbit/s, 20 ms frames. |
 | [Web Audio API](https://www.w3.org/TR/webaudio/) | W3C Recommendation | Output clock and listener-side mixing worklet. |
@@ -56,7 +56,7 @@ The legend describes repository behaviour, not general browser capability:
 
 | Platform | Browser | Current repository state | Evidence still required |
 |---|---|---|---|
-| macOS | Google Chrome 141+ | **Recognised, unaccepted.** This is the only configuration accepted by `matchConfiguration`. | Draft-20 relay trace, real capture/playout, ten-minute run, latency, capacity and demo-script acceptance. |
+| macOS | Google Chrome 141+ | **Recognised, unaccepted.** This is the only configuration accepted by `matchConfiguration`. | Relay trace, real capture/playout, ten-minute run, latency, capacity and demo-script acceptance. |
 | macOS | Edge, Safari, Firefox and other browsers | **Warned / unverified.** Brand detection rejects them. | Capability audit, implementation changes where needed and the full acceptance suite. |
 | Windows or Linux | Any browser | **Warned / unverified.** The platform check accepts macOS only. | Capability audit and full acceptance suite on each named combination. |
 | iOS / iPadOS | Any browser | **Read-only design and unverified.** Mobile publishing is outside v1. | Separately approved scope plus autoplay, route-change, backgrounding and real-device acceptance. |
@@ -70,7 +70,7 @@ A browser, operating system and major-version combination enters the README's su
 
 1. capability detection and truthful unsupported-state copy;
 2. microphone denial, absence and device-change behaviour;
-3. real MOQT draft-20 publication and subscription over WebTransport / HTTP/3 / QUIC;
+3. real MOQT publication and subscription over WebTransport / HTTP/3 / QUIC;
 4. Opus capture, decoding, packet-loss concealment and AudioWorklet mixing;
 5. create, join, leave and 60-second identity/routing reclaim;
 6. per-AI routing and inspector edge reconciliation;
@@ -88,7 +88,7 @@ The suite has 113 passing automated tests across eight files. It covers room and
 Automated tests do not provide:
 
 - a browser matrix or browser end-to-end suite;
-- a live draft-20 relay trace or UDP/HTTP-3 probe result;
+- a live relay trace or UDP/HTTP-3 probe result;
 - relay acceptance, enforcement or expiry of a minted credential;
 - acoustic p50/p95 latency or audible concealment evidence;
 - live AI-worker or wake-name coverage;
@@ -142,14 +142,14 @@ The test plan separates fast deterministic tests from browser, relay, acoustic a
 |---|---|---|---|
 | 1 — unit and subsystem | Deterministic contracts, state machines and bounded media behaviour | 113 Vitest tests across eight files | Add focused tests with each new seam; keep protocol and failure-state assertions exact. |
 | 2 — browser integration | Entry, pre-flight, room lifecycle, routing controls, inspector and capability states | Manual browser acceptance remains outstanding | Automate the recognised Chrome/macOS flow first; add another browser only after its capture and codec path exists. |
-| 3 — live media and acoustic | Real transport, latency, drift, concealment and audible barge-in | Synthetic timing and buffer tests only | Capture a draft-20 browser-to-relay trace, then run calibrated acoustic and cancellation measurements. |
+| 3 — live media and acoustic | Real transport, latency, drift, concealment and audible barge-in | Synthetic timing and buffer tests only | Capture a browser-to-relay trace, then run calibrated acoustic and cancellation measurements. |
 | 4 — venue, capacity and endurance | Reference composition, degradation, network recovery and demo reliability | No measured-capacity or audible endurance result | Run the ten-minute reference composition and the complete demo script twice on the venue network and hotspot. |
 
 ### 7.1 Delivery-gate mapping
 
 | Gate | Automated work that may proceed now | Evidence that closes the gate |
 |---|---|---|
-| Gate 1 — transport and relay | Adapter contract tests, draft refusal, credential scope, network-probe classification and failure-state copy | A reproducible browser-to-relay trace showing draft 20 MOQT objects over WebTransport and HTTP/3/QUIC, plus credential acceptance and relay behaviour. |
+| Gate 1 — transport and relay | Adapter contract tests, draft refusal, credential scope, network-probe classification and failure-state copy | A reproducible browser-to-relay trace showing MOQT objects over WebTransport and HTTP/3/QUIC, plus credential acceptance and relay behaviour. |
 | Gate 2 — audio pipeline | Device changes, bounded jitter, concealment, drift estimation, silence-gated rebuild and synthetic long-run bounds | Calibrated p50/p95 acoustic latency, audible concealment review and the ten-minute reference-composition run without audible drift or unbounded growth. |
 | Gate 3 — AI and floor control | Scripted addressing, queueing, turn caps, cancellation-group and telemetry tests | Two live AI pipelines, ten addressed exchanges, audible barge-in within 300 ms and routing changes within 500 ms. |
 | Gate 4 — discovery, rejoin and capacity | Room-service discovery fallback, 60-second reclaim, deduplication, failure registry and degradation logic | Live namespace behaviour recorded, measured client capacity, recovery under the reference network and two clean demo-script runs. |
@@ -165,7 +165,7 @@ The test plan separates fast deterministic tests from browser, relay, acoustic a
 
 ## 8. Expansion sequence
 
-1. Complete Gate 1 on the currently recognised Chrome/macOS configuration when a compatible draft-20 endpoint and client exist.
+1. Complete Gate 1 on the currently recognised Chrome/macOS configuration when a compatible endpoint and client exist.
 2. Capture a capability report for the next proposed desktop combination and identify the smallest missing seam.
 3. If capture is the only missing seam, prototype the adapter boundary in §6 and measure it against the current path.
 4. Add a production dependency only after explicit approval and a demonstrated native-API gap.

@@ -17,7 +17,7 @@ Milestones 1 and 2 of the §11 release plan are built. Milestones 3 and 4 are no
 
 Conflating the two would have meant never attempting the connection that produces the trace. There is still no second transport to fall back to, and presenter simulation never stands in for a working relay or AI pipeline.
 
-**Draft 20 is a configuration change, not a rewrite.** When an endpoint deploys, add its wire version to `DRAFT_REGISTRY` in [`MoqTransportAdapter`](src/client/transport/MoqTransportAdapter.ts), bump `moqtail` to a version that frames it, and repoint `MOQT_DRAFT` and `MOQ_RELAY_URL`. No room, UI or audio-pipeline code changes.
+**Draft configuration change, not a rewrite.** When an endpoint deploys, add its wire version to `DRAFT_REGISTRY` in [`MoqTransportAdapter`](src/client/transport/MoqTransportAdapter.ts), bump `moqtail` to a version that frames it, and repoint `MOQT_DRAFT` and `MOQ_RELAY_URL`. No room, UI or audio-pipeline code changes.
 
 ### H1–H16
 
@@ -36,7 +36,7 @@ Conflating the two would have meant never attempting the connection that produce
 | H11 — presenter mode runs solo | Configurable simulated counts, reconciled server-side, labelled everywhere | `test/room-service.test.ts` |
 | H12 — 60-second reclaim, no duplicate playback | [`useRoomSession`](src/client/hooks/useRoomSession.ts) spends the token on mount; [`PlaybackDeduplicator`](src/client/audio/PlaybackDeduplicator.ts) refuses repeats | `test/invariants.test.ts`, `test/room-service.test.ts` |
 | H13 — ten minutes, no drift artefact, no unbounded buffers | [`DriftEstimator`](src/client/audio/DriftEstimator.ts), bounded jitter buffer, [`PacketLossConcealer`](src/client/audio/PacketLossConcealer.ts) and the silence-gated rebuild in [`TrackPlayer`](src/client/audio/TrackPlayer.ts) | `test/invariants.test.ts` runs 30,000 frames; `test/milestone-2-audio.test.ts` covers concealment, the 5% drift threshold and the deferred rebuild. **The live ten-minute run is outstanding.** |
-| H14 — every §10 failure distinct and non-silent | [`failures.ts`](src/shared/failures.ts) registry, [`FailureBanner`](src/client/components/FailureBanner.tsx) and [`NetworkProbe`](src/client/transport/NetworkProbe.ts) | Registry and probe logic are tested. No live draft-20 endpoint is configured, so no direct probe has run. |
+| H14 — every §10 failure distinct and non-silent | [`failures.ts`](src/shared/failures.ts) registry, [`FailureBanner`](src/client/components/FailureBanner.tsx) and [`NetworkProbe`](src/client/transport/NetworkProbe.ts) | Registry and probe logic are tested. Live endpoint is needed configured, so no direct probe has run. |
 | H15 — unobservable reads **Not exposed** | [`Measurement<T>`](src/shared/measurement.ts) and [`MeasurementValue`](src/client/components/MeasurementValue.tsx); no figure bypasses it | `test/invariants.test.ts` |
 | H16 — §12 script twice clean | [`DemoScript`](src/client/presenter/DemoScript.ts) runner with per-cue pass/fail and a two-clean-run gate | `test/invariants.test.ts`. **The venue-network runs are outstanding.** |
 
@@ -166,7 +166,7 @@ dependency installs.
 
 Automated checks cover the requirements marked above. They do not cover, and this repository does not claim:
 
-- MOQT draft-20 interoperability, or that any audio has moved over a relay. The pinned client cannot frame draft 20, no endpoint is configured and the handshake path has only unit-test evidence;
+- MOQT interoperability, or that any audio has moved over a relay. The pinned client cannot frame, no endpoint is configured and the handshake path has only unit-test evidence;
 - a live UDP/HTTP-3 network-probe result;
 - relay acceptance, enforcement or expiry of a minted credential;
 - audible quality of the packet loss concealment. Its behaviour is unit-tested; nobody has listened to it;

@@ -20,7 +20,7 @@ This section records implementation state; it does not weaken the acceptance cri
 
 - React, TypeScript and Vite client surfaces, the SQLite Durable Object room service, control-plane WebSocket, presenter simulation, media pipeline, inspector, telemetry and failure registry are present.
 - `moqtail` is exactly pinned at `0.12.1` and imported only by `MoqTransportAdapter`.
-- `wrangler.jsonc` pins draft 20, leaves the relay endpoint unset, sets `MOQT_TRANSPORT_VERIFIED` to `false`, `MOQ_ROUTING_ENFORCEMENT` to `cooperative` and `MOQ_DISCOVERY` to `unknown`.
+- `wrangler.jsonc` leaves the relay endpoint unset, sets `MOQT_TRANSPORT_VERIFIED` to `false`, `MOQ_ROUTING_ENFORCEMENT` to `cooperative` and `MOQ_DISCOVERY` to `unknown`.
 - The adapter registry knows the supported draft metadata, but the pinned client frames draft 16 only. It refuses the draft-20 target without downgrading.
 - Short-lived, room-scoped relay-credential minting is implemented, including optional signing. With no draft-20 endpoint configured, the room service returns no credential; relay acceptance, enforcement and expiry remain unverified.
 - Presenter responses are scripted and visibly labelled. There is no live recognition, model, synthesis or AI-worker transport pipeline.
@@ -98,11 +98,11 @@ This is an early-adopter demonstration. QUIC is a mature IETF standard. Browser 
 
 Point 4 is new, and it is what the AI routing controls in FR8 demonstrate. Muting an AI is not a filter applied to audio. It is a subscription that stops existing, visible as an edge disappearing from the inspector graph.
 
-### 2.1 Draft pin: `-20`
+### 2.1 Draft pin:
 
-**The only live-audio target is `draft-ietf-moq-transport-20`.** All draft-specific behaviour stays strictly encapsulated behind `MoqTransportAdapter` in §6.4. The application must not connect live audio using an earlier MOQT draft merely because a relay for that draft is available.
+**The only live-audio target is `draft-ietf-moq-transport-20`.** All draft-specific behaviour stays strictly encapsulated behind `MoqTransportAdapter` in §6.4. The application must connect live audio using an earlier MOQT draft merely because a relay for that draft is available.
 
-As of 25 August 2026, the IETF datatracker publishes `draft-ietf-moq-transport-19`; draft 20 is not published. Cloudflare documents production relay support for draft 16. Those facts make Gate 1 an external dependency, not permission to alter the product claim.
+As of 25 August 2026, the IETF datatracker publishes `draft-ietf-moq-transport-19`. Cloudflare documents production relay support for draft 16. Those facts make Gate 1 an external dependency, not permission to alter the product claim.
 
 The current repository therefore behaves as follows:
 
