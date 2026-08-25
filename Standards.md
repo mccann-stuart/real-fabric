@@ -83,7 +83,7 @@ Until a combination meets all ten conditions, document it as unverified.
 
 ## 5. Current automated coverage
 
-The suite has 111 passing automated tests across eight files. It covers room and Worker behaviour, validation, MOQT setup framing, credential scope and lifetime, network-probe classification, jitter buffering, packet-loss concealment, device changes, routing, presenter simulation, failure-registry invariants, telemetry sanitisation, reconnection policy, layout logic and synthetic long-run buffer bounds.
+The suite has 113 passing automated tests across eight files. It covers room and Worker behaviour, validation, MOQT setup framing, credential scope and lifetime, network-probe classification, jitter buffering, packet-loss concealment, device changes, routing, presenter simulation, failure-registry invariants, telemetry sanitisation, reconnection policy, layout logic and synthetic long-run buffer bounds.
 
 Automated tests do not provide:
 
@@ -97,13 +97,80 @@ Automated tests do not provide:
 - real mobile lifecycle or device-route tests;
 - the audible ten-minute or two clean venue-network runs.
 
-## 6. Expansion sequence
+## 6. Candidate desktop capture boundary
+
+`MediaStreamTrackProcessor` is the first code-level barrier to evaluating Safari and Firefox as future desktop configurations. A proposed `UniversalAudioCaptureAdapter`, mobile support and Wasm codec are not implemented or approved, so they are recorded here as a decision boundary rather than as the current architecture.
+
+The smallest useful boundary would let `CaptureController` select a capture source without changing the encoder, room or transport contracts:
+
+```text
+microphone MediaStreamTrack
+  -> capture adapter
+       -> current MediaStreamTrackProcessor path
+       -> candidate MediaStreamAudioSourceNode + capture AudioWorklet path
+  -> exact 960-sample mono frames at 48 kHz
+  -> existing Opus encoder and publication path
+```
+
+Any implementation of that boundary must meet these constraints:
+
+- Keep the current `MediaStreamTrackProcessor` path available until the alternative has equivalent measured behaviour on the recognised Chrome/macOS configuration.
+- Aggregate browser render quanta into exact 20 ms, 960-sample frames with monotonic media timestamps.
+- Bound queues and pre-allocate or pool worklet-thread storage. The `process()` callback must not perform blocking work, resize buffers or create an unbounded allocation rate.
+- Treat transferable `ArrayBuffer` messages and `SharedArrayBuffer` ring buffers as different designs. Transfer can avoid a copy but still requires storage management; shared memory additionally requires a verified cross-origin-isolated deployment.
+- Keep voice-onset detection local and fast enough to leave a measured end-to-end budget for H6. A local callback or unit test does not prove audible stop within 300 ms.
+- Preserve `Measurement` truthfulness for DTX, levels, timing and unsupported codec features.
+- Keep codec selection behind a separate interface if a second implementation is approved. A Wasm Opus fallback would be a new production dependency and needs explicit approval, licensing review, bundle-size measurement and native-versus-Wasm parity tests.
+
+This candidate addresses future desktop evaluation only. Mobile publishing, background lifecycle handling and communications-audio routing remain outside v1 and require a separate product decision.
+
+### 6.1 Existing playback, drift and barge-in seams
+
+Useful parts of the proposed design already exist in narrower, tested forms:
+
+- [`DriftEstimator.ts`](src/client/audio/DriftEstimator.ts) compares sender media time with local arrival time; [`MixerGraph.ts`](src/client/audio/MixerGraph.ts) applies bounded correction; [`TrackPlayer.ts`](src/client/audio/TrackPlayer.ts) defers an uncorrectable-drift rebuild until silence, with a bounded maximum wait.
+- [`AdaptiveJitterBuffer.ts`](src/client/audio/AdaptiveJitterBuffer.ts) and `TrackPlayer.cancelGroup` discard queued and later-arriving objects from a cancelled group, then flush that track from the mixer.
+- [`RoomSession.ts`](src/client/session/RoomSession.ts) connects the local barge-in decision to the cancellation marker and receiver cleanup.
+
+Those components establish testable seams; they do not establish acoustic quality, live cancellation propagation or the H6/H13 acceptance gates. The receiver worklet and live relay remain the evidence boundary.
+
+## 7. Test expansion and gate matrix
+
+The test plan separates fast deterministic tests from browser, relay, acoustic and real-device evidence. It does not invent delivery dates, arbitrary coverage percentages or tests for files that do not exist.
+
+| Tier | Purpose | Current evidence | Next evidence boundary |
+|---|---|---|---|
+| 1 — unit and subsystem | Deterministic contracts, state machines and bounded media behaviour | 113 Vitest tests across eight files | Add focused tests with each new seam; keep protocol and failure-state assertions exact. |
+| 2 — browser integration | Entry, pre-flight, room lifecycle, routing controls, inspector and capability states | Manual browser acceptance remains outstanding | Automate the recognised Chrome/macOS flow first; add another browser only after its capture and codec path exists. |
+| 3 — live media and acoustic | Real transport, latency, drift, concealment and audible barge-in | Synthetic timing and buffer tests only | Capture a draft-20 browser-to-relay trace, then run calibrated acoustic and cancellation measurements. |
+| 4 — venue, capacity and endurance | Reference composition, degradation, network recovery and demo reliability | No measured-capacity or audible endurance result | Run the ten-minute reference composition and the complete demo script twice on the venue network and hotspot. |
+
+### 7.1 Delivery-gate mapping
+
+| Gate | Automated work that may proceed now | Evidence that closes the gate |
+|---|---|---|
+| Gate 1 — transport and relay | Adapter contract tests, draft refusal, credential scope, network-probe classification and failure-state copy | A reproducible browser-to-relay trace showing draft 20 MOQT objects over WebTransport and HTTP/3/QUIC, plus credential acceptance and relay behaviour. |
+| Gate 2 — audio pipeline | Device changes, bounded jitter, concealment, drift estimation, silence-gated rebuild and synthetic long-run bounds | Calibrated p50/p95 acoustic latency, audible concealment review and the ten-minute reference-composition run without audible drift or unbounded growth. |
+| Gate 3 — AI and floor control | Scripted addressing, queueing, turn caps, cancellation-group and telemetry tests | Two live AI pipelines, ten addressed exchanges, audible barge-in within 300 ms and routing changes within 500 ms. |
+| Gate 4 — discovery, rejoin and capacity | Room-service discovery fallback, 60-second reclaim, deduplication, failure registry and degradation logic | Live namespace behaviour recorded, measured client capacity, recovery under the reference network and two clean demo-script runs. |
+
+### 7.2 CI promotion rule
+
+1. Keep deterministic Tier 1 tests blocking on every pull request.
+2. Add browser or live-media jobs as advisory while their external relay, browser or hardware prerequisite is unavailable.
+3. Make a job blocking only after the corresponding environment is stable and the acceptance boundary has passed at least once reproducibly.
+4. Do not replace live transport evidence with a socket mock. Mocks may verify adapter state and room semantics, but only the real trace can close Gate 1.
+5. Assert **Not exposed** for unavailable measurements and the exact registered title, behaviour and recovery for each failure state.
+6. Keep Cloudflare deployment status separate from lint, type-check, unit, build and acceptance results.
+
+## 8. Expansion sequence
 
 1. Complete Gate 1 on the currently recognised Chrome/macOS configuration when a compatible draft-20 endpoint and client exist.
 2. Capture a capability report for the next proposed desktop combination and identify the smallest missing seam.
-3. Add a production dependency only after explicit approval and a demonstrated native-API gap.
-4. Add focused unit and browser tests for that seam.
-5. Run the complete H3 support rule before naming the combination in the README.
-6. Treat mobile publishing as a separate product decision because it is outside v1.
+3. If capture is the only missing seam, prototype the adapter boundary in §6 and measure it against the current path.
+4. Add a production dependency only after explicit approval and a demonstrated native-API gap.
+5. Add focused unit and browser tests for that seam.
+6. Run the complete H3 support rule before naming the combination in the README.
+7. Treat mobile publishing as a separate product decision because it is outside v1.
 
-No roadmap date, coverage percentage or device-cloud commitment is approved by the current repository.
+No roadmap date, coverage percentage, cross-browser support claim or device-cloud commitment is approved by the current repository.
