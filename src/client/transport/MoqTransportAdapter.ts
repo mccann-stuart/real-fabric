@@ -146,6 +146,7 @@ export class MoqTransportAdapter {
   private subscriptions = new Map<string, bigint>();
   private namespaceCancels = new Map<string, () => Promise<void>>();
   private nextAlias = 1n;
+  private connectionGeneration = 0;
   private stats: MoqSessionStats = {
     state: "idle",
     draft: "Not exposed",
@@ -157,7 +158,10 @@ export class MoqTransportAdapter {
     negotiation: null,
   };
 
+  constructor(private readonly onUnexpectedTermination?: (error: MoqTransportError) => void) {}
+
   async connect(endpoint: string, credential: string, draft: string): Promise<void> {
+    const connectionGeneration = ++this.connectionGeneration;
     const profile = DRAFT_REGISTRY[draft as MoqDraft];
     if (!profile) {
       throw new MoqTransportError(
@@ -229,7 +233,30 @@ export class MoqTransportAdapter {
             if (message instanceof ServerSetup) serverSetupObserved = true;
           },
           onSessionTerminated: () => {
+            if (
+              connectionGeneration !== this.connectionGeneration ||
+              this.stats.state !== "connected"
+            ) {
+              return;
+            }
             this.stats = { ...this.stats, state: "closed" };
+            this.client = null;
+            for (const publication of this.publications.values()) {
+              try {
+                publication.controller.close();
+              } catch {
+                // The terminated transport may already have closed the stream.
+              }
+            }
+            this.publications.clear();
+            this.subscriptions.clear();
+            this.namespaceCancels.clear();
+            this.onUnexpectedTermination?.(
+              new MoqTransportError(
+                "relay_unavailable",
+                "The established MOQT session ended unexpectedly.",
+              ),
+            );
           },
         },
       });
@@ -418,6 +445,10 @@ export class MoqTransportAdapter {
   }
 
   async close(reason: string): Promise<void> {
+    // Mark an intentional close before disconnecting. MOQtail invokes the
+    // termination callback during disconnect, and that must not start recovery.
+    this.connectionGeneration += 1;
+    this.stats = { ...this.stats, state: "closed" };
     for (const cancel of this.namespaceCancels.values()) await cancel();
     this.namespaceCancels.clear();
     for (const publication of this.publications.values()) publication.controller.close();
@@ -425,7 +456,6 @@ export class MoqTransportAdapter {
     if (this.client) await this.client.disconnect(reason);
     this.client = null;
     this.subscriptions.clear();
-    this.stats = { ...this.stats, state: "closed" };
   }
 
   private requireClient(): MOQtailClient {

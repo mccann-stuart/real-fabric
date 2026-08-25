@@ -123,6 +123,8 @@ export interface RoomSessionOptions {
 
 const LADDER_INTERVAL_MS = 2_000;
 const DRAIN_INTERVAL_MS = 20;
+const CONTROL_RETRY_BASE_MS = 250;
+const CONTROL_RETRY_MAX_MS = 5_000;
 
 /** Only an indeterminate relay outage benefits from the bounded retry policy. */
 export function isRetryableTransportFailure(failure: FailureCode): boolean {
@@ -135,7 +137,9 @@ export class RoomSession {
   readonly telemetry = new SessionTelemetry();
 
   private readonly log = new SessionEventLog();
-  private readonly transport = new MoqTransportAdapter();
+  private readonly transport = new MoqTransportAdapter((error) =>
+    this.onTransportTerminated(error),
+  );
   private readonly mixer = new MixerGraph();
   private readonly capture = new CaptureController();
   private readonly ladder = new DegradationLadder();
@@ -172,6 +176,8 @@ export class RoomSession {
   private ladderTimer: ReturnType<typeof setInterval> | null = null;
   private drainTimer: ReturnType<typeof setInterval> | null = null;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private controlRetryTimer: ReturnType<typeof setTimeout> | null = null;
+  private controlReconnectAttempt = 0;
   private closed = false;
 
   constructor(private readonly options: RoomSessionOptions) {
@@ -288,8 +294,8 @@ export class RoomSession {
       );
       this.telemetry.record({ type: "transport_ready", value: this.transportReadyMsRaw() ?? 0 });
       await this.discover(room);
-      await this.reconcileSubscriptions();
       this.setPhase({ name: "live" });
+      await this.reconcileSubscriptions();
       this.startDraining();
     } catch (error) {
       await this.handleTransportFailure(error);
@@ -354,6 +360,17 @@ export class RoomSession {
     this.retryTimer = setTimeout(() => {
       if (!this.closed) void this.openTransport();
     }, decision.delayMs);
+  }
+
+  private onTransportTerminated(error: MoqTransportError): void {
+    if (this.closed || this.phase.name !== "live") return;
+
+    // A dead subscription belongs to the dead MOQT session. Clearing these
+    // lets the normal reconciliation path recreate each track idempotently
+    // after the bounded reconnect succeeds.
+    for (const player of this.players.values()) player.close();
+    this.players.clear();
+    void this.handleTransportFailure(error);
   }
 
   /**
@@ -773,6 +790,18 @@ export class RoomSession {
   private openControlChannel(): void {
     // AGENTS.md: WebSockets carry control-plane membership only, never audio.
     const socket = new WebSocket(roomEventsUrl(this.options.session));
+    socket.addEventListener("open", () => {
+      if (socket !== this.socket || this.closed) return;
+      const restored = this.controlReconnectAttempt > 0;
+      this.controlReconnectAttempt = 0;
+      if (this.controlRetryTimer) clearTimeout(this.controlRetryTimer);
+      this.controlRetryTimer = null;
+      if (restored) {
+        this.log.record("reconnect", "Control channel restored; refreshing the room snapshot.");
+        void this.refresh();
+      }
+      this.emit();
+    });
     socket.addEventListener("message", (event) => {
       let parsed: RoomEvent;
       try {
@@ -782,9 +811,23 @@ export class RoomSession {
       }
       this.applyEvent(parsed);
     });
-    socket.addEventListener("close", () => {
-      if (this.closed) return;
-      this.log.record("reconnect", "Control channel closed; membership updates paused.");
+    socket.addEventListener("close", (event) => {
+      if (this.closed || socket !== this.socket) return;
+      this.socket = null;
+      const delayMs = Math.min(
+        CONTROL_RETRY_MAX_MS,
+        CONTROL_RETRY_BASE_MS * 2 ** this.controlReconnectAttempt,
+      );
+      this.controlReconnectAttempt += 1;
+      this.log.record(
+        "reconnect",
+        `Control channel closed (${event.code || "no status"}); attempt ${this.controlReconnectAttempt} in ${delayMs} ms.`,
+      );
+      if (this.controlRetryTimer) clearTimeout(this.controlRetryTimer);
+      this.controlRetryTimer = setTimeout(() => {
+        this.controlRetryTimer = null;
+        if (!this.closed) this.openControlChannel();
+      }, delayMs);
       this.emit();
     });
     this.socket = socket;
@@ -869,9 +912,11 @@ export class RoomSession {
     if (this.ladderTimer) clearInterval(this.ladderTimer);
     if (this.drainTimer) clearInterval(this.drainTimer);
     if (this.retryTimer) clearTimeout(this.retryTimer);
+    if (this.controlRetryTimer) clearTimeout(this.controlRetryTimer);
     this.ladderTimer = null;
     this.drainTimer = null;
     this.retryTimer = null;
+    this.controlRetryTimer = null;
 
     for (const player of this.players.values()) player.close();
     this.players.clear();

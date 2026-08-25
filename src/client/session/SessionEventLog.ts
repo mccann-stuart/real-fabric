@@ -38,6 +38,7 @@ export interface SessionEvent {
 }
 
 const RETAINED_EVENTS = 200;
+const DUPLICATE_FAILURE_WINDOW_MS = 1_000;
 
 export class SessionEventLog {
   private events: SessionEvent[] = [];
@@ -47,9 +48,20 @@ export class SessionEventLog {
     detail: string,
     options: { subject?: string; simulated?: boolean; at?: number } = {},
   ): SessionEvent {
+    const at = options.at ?? Date.now();
+    const previous = this.events[0];
+    if (
+      kind === "failure" &&
+      previous?.kind === kind &&
+      previous.detail === detail &&
+      previous.subject === (options.subject ?? null) &&
+      at - previous.at < DUPLICATE_FAILURE_WINDOW_MS
+    ) {
+      return previous;
+    }
     const event: SessionEvent = {
       id: crypto.randomUUID(),
-      at: options.at ?? Date.now(),
+      at,
       kind,
       subject: options.subject ?? null,
       detail,
