@@ -1,7 +1,8 @@
 # Product specification: MoQ Multi-Party Audio Room — v1 demo
 
-**Status:** Scoped for build, pending Gate 1
+**Status:** Core implementation scaffold complete; live acceptance pending Gate 1
 **Date:** 25 August 2026
+**Implementation reconciliation:** 25 August 2026, current repository state
 **Supersedes:** v1 demo scope of 25 August 2026 (three-way)
 **Protocol target:** MOQT `draft-ietf-moq-transport-20`
 
@@ -9,9 +10,24 @@
 
 | Change | Effect |
 |---|---|
-| Working on `-16` in the hope of standardised `-20` | §2.1. Introduces a hard external dependency; see the risk statement there |
+| Draft pin remains `-20`; no operational downgrade | §2.1. Draft-specific code stays behind the adapter and live transport remains blocked until the target is trace-verified |
 | Fixed three-participant room replaced by open membership | Any number of humans and AIs. §5 FR1, FR3, FR7. Capacity is measured and displayed, never configured as a cap |
 | AI audio routing controls added | §5 FR8. Each human independently controls, per AI, whether that AI hears them and whether they hear it |
+
+### Current implementation snapshot
+
+This section records implementation state; it does not weaken the acceptance criteria below.
+
+- React, TypeScript and Vite client surfaces, the SQLite Durable Object room service, control-plane WebSocket, presenter simulation, media pipeline, inspector, telemetry and failure registry are present.
+- `moqtail` is exactly pinned at `0.12.1` and imported only by `MoqTransportAdapter`.
+- `wrangler.jsonc` pins draft 20, leaves the relay endpoint unset, sets `MOQT_TRANSPORT_VERIFIED` to `false`, `MOQ_ROUTING_ENFORCEMENT` to `cooperative` and `MOQ_DISCOVERY` to `unknown`.
+- The adapter registry knows the supported draft metadata, but the pinned client frames draft 16 only. It refuses the draft-20 target without downgrading.
+- Short-lived, room-scoped relay-credential minting is implemented, including optional signing. With no draft-20 endpoint configured, the room service returns no credential; relay acceptance, enforcement and expiry remain unverified.
+- Presenter responses are scripted and visibly labelled. There is no live recognition, model, synthesis or AI-worker transport pipeline.
+- `NetworkProbe` can compare a configured relay's WebTransport reachability with the room-service health gate. With no endpoint configured it returns `not_run`, so there is no live UDP/HTTP-3 result.
+- Dynamic device tracking, packet-loss concealment, bounded recovery and silence-gated drift correction are implemented and unit-tested; they have not passed acoustic or live-relay acceptance.
+- Concurrent-room limits, relay credential rate-limiting and the per-room AI cost ceiling remain product requirements rather than implemented controls.
+- The automated suite contains 111 passing tests across eight files, but Gate 1 interoperability, cross-browser acceptance, measured capacity, the audible ten-minute run and two clean venue-network script runs remain open.
 
 ---
 
@@ -31,7 +47,7 @@ v1 has failed if any of these is untrue.
 |---|---|---|
 | H1 | All live audio is MOQT objects over WebTransport / HTTP-3 / QUIC through a real MoQ relay. No fallback transport exists in the build. | Gate 1 trace, AC-2 |
 | H2 | One independent track per participant, human or AI. No mixing at the relay or the room service, at any participant count. | AC-1, AC-3 |
-| H3 | All supported browsers, OS and major versions, named in the README. Others show a "not the tested configuration" banner. | AC-11 |
+| H3 | All supported browser, OS and major-version combinations are named in the README. Others show a "not the tested configuration" banner. | AC-11 |
 | H4 | Headphones are required and stated before joining. Echo cancellation is a defence, not the mechanism. | Landing page, room banner |
 | H5 | Each AI has its own address and speaks only when addressed. No AI volunteers into a conversation. | AC-5 |
 | H6 | Barge-in silences the addressed AI within 300 ms of human onset, including objects already at the receiver. | AC-6, measured |
@@ -56,8 +72,8 @@ Video, screen share, recording, dial-in, moderation, accounts, captions, a WebRT
 
 | Item | Why not v1 |
 |---|---|
-| Captions and the `transcript/` track | Next task |
-| Browsers beyond the pinned one | The binding constraint is WebTransport ∩ WebCodecs Opus ∩ AudioWorklet, not WebTransport alone |
+| Captions and the `transcript/` track | Next task; it must include an explicit retention, privacy and screen-space design before implementation |
+| Additional desktop browsers | H3 requires every capable combination to be tested and named; the current code recognises only provisional Chrome 141+ on macOS |
 | iOS and Android | Autoplay gating, route changes, background suspension |
 | AI-to-AI conversation | Enabled by H10's default but deliberately off; see FR4 for the loop risk |
 | Global mute — one participant silencing another for everyone | Needs an authority model the demo does not have. v1 routing is per-listener only |
@@ -82,22 +98,19 @@ This is an early-adopter demonstration. QUIC is a mature IETF standard. Browser 
 
 Point 4 is new, and it is what the AI routing controls in FR8 demonstrate. Muting an AI is not a filter applied to audio. It is a subscription that stops existing, visible as an edge disappearing from the inspector graph.
 
-### 2.1 Protocol target and operational draft strategy
+### 2.1 Draft pin: `-20`
 
-**The architectural target is `draft-ietf-moq-transport-20`.** All draft-specific behaviour stays strictly encapsulated behind `MoqTransportAdapter` in §6.4.
+**The only live-audio target is `draft-ietf-moq-transport-20`.** All draft-specific behaviour stays strictly encapsulated behind `MoqTransportAdapter` in §6.4. The application must not connect live audio using an earlier MOQT draft merely because a relay for that draft is available.
 
-To unblock development, continuous integration, and live stage-demo execution without waiting for external standards bodies or unreleased infrastructure, this specification establishes a pragmatic dual-track operational strategy:
+As of 25 August 2026, the IETF datatracker publishes `draft-ietf-moq-transport-19`; draft 20 is not published. Cloudflare documents production relay support for draft 16. Those facts make Gate 1 an external dependency, not permission to alter the product claim.
 
-1. **Target draft (`draft-20`):** Represents the evolving wire protocol target. The codebase maintains clean modular isolation so `draft-20` can be activated as a drop-in adapter update the moment a compliant relay endpoint becomes accessible.
-2. **Operational baseline (`draft-16` / `draft-14`):** Real, deployed relay infrastructure (such as Cloudflare isolated relays supporting `draft-14`/`draft-16` and `moq-rs` relays supporting `draft-16`/`draft-18`) is used immediately to establish live WebTransport and QUIC sessions, stream independent Opus audio tracks, and validate latency and fan-out mechanics.
+The current repository therefore behaves as follows:
 
-**Relay infrastructure realities.** Draft support is a deployed endpoint property, not an in-band negotiated capability. Cloudflare's authenticated isolated relays expose endpoints such as `draft-16.cloudflare.mediaoverquic.com`. Pinning an unavailable draft would freeze live transport testing behind a simulated barrier; conversely, leveraging deployed drafts unblocks the full audio engine, multi-participant room service, and inspector telemetry immediately.
-
-**Resolution strategy:**
-- Deploy and verify against the active operational draft (`draft-16`).
-- Isolate all wire framing, ALPN negotiation (`moq-00`, `draft-16`), and setup handshakes within `MoqTransportAdapter`.
-- Display the exact negotiated draft and endpoint transparently in the protocol inspector (§4.3) and startup diagnostics.
-- Ensure that upgrading to `draft-20` requires zero modifications to room semantics, UI state, participant layout, or the listener AudioWorklet mixer graph.
+1. Room membership, routing, presenter simulation, the frontend, media components, inspector, telemetry and automated tests continue independently of relay availability.
+2. `MoqTransportAdapter.connect` refuses any configured draft other than `20`.
+3. `MOQT_TRANSPORT_VERIFIED=false` causes the room service to return no relay credential and the client to show `draft_endpoint_missing` before any connection attempt.
+4. A draft-20 endpoint, compatible client path and least-privilege credential model must be proven together with a reproducible browser-to-relay trace before the verification flag can change.
+5. Until that trace exists, the product makes no interoperability, latency, fan-out or live-audio claim.
 
 ## 3. User and value
 
@@ -123,7 +136,7 @@ The user enters a display name, tests the microphone, and chooses:
 
 Pre-join checks cover secure context, `WebTransport`, WebCodecs Opus encode, microphone access and browser identity. Failures name the specific missing capability. The app never switches transport silently (H14).
 
-**Pre-flight page.** A separate shareable URL runs the same checks plus a relay reachability probe, without joining. Run it on the venue network before the talk. If HTTP-3 or UDP is blocked, the documented fallback is a phone hotspot, not a code path.
+**Pre-flight page.** A separate shareable URL runs the browser checks and reads the room-service health gate without joining. The direct relay reachability and UDP/HTTP-3 probe required for venue diagnosis remains a Gate 1 deliverable. Until it exists, a failed health request must not be described as proof that UDP is blocked. The documented network recovery is a phone hotspot, not a code path.
 
 ### 4.2 Room
 
@@ -142,7 +155,7 @@ Both default per §8's consent rule. Turning off **Hears me** removes a real sub
 
 When an AI is not receiving every human in the room, its card reads **Partial context**, visible to everyone. Its answers are shaped by an incomplete picture and the room should be able to see that.
 
-**Presenter health strip.** A compact status row visible to the presenter only, excluded from screen capture: transport state, participant count, subscription count, worst buffer depth, AI pipeline states, last error.
+**Presenter health strip.** A compact status row shows transport state, participant count, subscription count, worst buffer depth, AI pipeline states and the last error. The current web implementation does not provide a technical screen-capture exclusion; the presenter must choose the captured surface accordingly.
 
 ### 4.3 Protocol inspector
 
@@ -174,7 +187,7 @@ Values the client cannot observe read **Not exposed** (H15).
 
 ### 4.4 Exit
 
-Leaving closes publications and subscriptions, stops capture and invalidates the credential, subject to the 60-second rejoin window. When the last human leaves and the window elapses, the backend ends all AI sessions and schedules room expiry. No audio is retained.
+Leaving closes local publications and subscriptions, stops capture and signals the room service, subject to the 60-second rejoin window. Relay-credential invalidation cannot be accepted until credential minting exists. When the last human leaves and the window elapses, the backend expires the room state. No audio is retained.
 
 ## 5. Functional requirements
 
@@ -240,8 +253,8 @@ Leaving closes publications and subscriptions, stops capture and invalidates the
 
 Open membership needs clients to learn about participants who arrive after them.
 
-- **Preferred:** `SUBSCRIBE_NAMESPACE`, added in `draft-16`, which requests every track announced under a namespace and covers tracks added later. This is precisely the primitive an open room needs, and using it keeps discovery inside MoQ where the demo's argument lives.
-- **Verify at Gate 1.** Cloudflare's published implementation notes have listed `SUBSCRIBE_NAMESPACE` as not yet supported. Announced in a draft is not the same as deployed on the endpoint. Test it against a real relay before designing around it.
+- **Preferred:** `SUBSCRIBE_NAMESPACE`, which requests every track announced under a namespace and covers tracks added later. This is precisely the primitive an open room needs, and using it keeps discovery inside MoQ where the demo's argument lives.
+- **Verify at Gate 1.** Cloudflare's current draft-16 implementation documentation lists `SUBSCRIBE_NAMESPACE` as supported, but that does not establish support or semantics for the unavailable draft-20 target. Test it against the actual Gate 1 endpoint before treating discovery as negotiated.
 - **Fallback:** the room service pushes a membership list over its existing control channel and clients subscribe per track. Correct and dull. If used, the inspector must say so rather than implying discovery came over MoQ.
 - Either way, discovery is advisory. **Arrival of audio objects is the source of truth for "connected".** The UI never blocks on a membership list.
 
@@ -423,7 +436,7 @@ Every failure condition encountered in Real Fabric has a distinct, truthful, non
 | `microphone_denied` | Microphone permission denied | `degraded` | Yes | Listening and inspection continue. Nothing is published from this browser. | Publication stays closed. Subscriptions and the inspector are unaffected. | Grant microphone access in the browser site settings, then run the microphone test again. |
 | `microphone_no_device` | No microphone input device | `degraded` | Yes | No capture device was found. Listening and inspection continue. | Publication stays closed. Subscriptions and the inspector are unaffected. | Connect a microphone or headset, then run the microphone test again. |
 | `draft_mismatch` | MOQT draft mismatch | `blocking` | Yes | The local draft and the relay's draft differ. Both versions are named in the error. | The session stops before publishing. The draft is never silently downgraded. | Point the build at a relay endpoint serving the pinned draft. |
-| `draft_endpoint_missing` | No operational relay endpoint deployed | `blocking` | Yes | The target MOQT draft has no deployed relay endpoint, so live audio cannot start. This is reported at startup, not at join. | Room membership, routing, inspection and presenter simulation stay available. The draft is never downgraded to reach a relay that exists. | Escalate per §2.1. Presenter simulation demonstrates the room without claiming transport. |
+| `draft_endpoint_missing` | No draft-20 relay endpoint | `blocking` | Yes | The pinned MOQT draft has no verified relay endpoint, so live audio cannot start. This is reported at startup, not at join. | Room membership, routing, inspection and presenter simulation stay available. The draft is never downgraded to reach a relay that exists. | Complete Gate 1 per §2.1. Presenter simulation demonstrates the room without claiming transport. |
 | `namespace_discovery_unavailable` | `SUBSCRIBE_NAMESPACE` unavailable | `degraded` | No | Membership still works. The inspector states which discovery mechanism is in use. | Discovery falls back to the room service control channel. Audio object arrival remains the source of truth for connected. | None required. Record the endpoint's capability against Gate 1 output four. |
 | `participant_disconnected` | Participant disconnected | `transient` | No | That participant shows Reconnecting, then Left. Everyone else is unaffected. | All other tracks continue. Any AI subscribed to the missing track suspends rather than answering on partial audio. | None required. The rejoin window is 60 seconds. |
 | `reloading` | Reconnecting after reload | `transient` | No | A brief reconnecting state, then the same identity and routing. | The single-use rejoin token restores identity and the routing matrix within 60 seconds. Playback is deduplicated so nothing plays twice. | None required. |
@@ -460,12 +473,12 @@ Every failure condition encountered in Real Fabric has a distinct, truthful, non
    - *System behaviour:* Handshake aborts prior to any track publication. The draft is never silently downgraded.
    - *Recovery:* Align the deployed relay endpoint configuration with the adapter's pinned operational draft.
 
-4. **`draft_endpoint_missing` (No operational relay endpoint deployed)**
-   - *Trigger:* The configured MOQT relay endpoint URL is missing, malformed, or unroutable at startup.
+4. **`draft_endpoint_missing` (No verified draft-20 relay endpoint)**
+   - *Trigger:* The room snapshot marks draft-20 transport unavailable or the room service returns no relay credential because `MOQT_TRANSPORT_VERIFIED` is false.
    - *Severity:* `blocking` (blocks live transport only; room service and presenter simulation remain functional).
    - *UX presentation:* Diagnostic banner reading *"The target MOQT draft has no deployed relay endpoint, so live audio cannot start."*
    - *System behaviour:* Room membership, control-plane presence, and presenter simulation continue operating. Live audio publication remains disarmed.
-   - *Recovery:* Configure an active operational relay endpoint (e.g. Cloudflare `draft-16` relay) per §2.1 and §11.2.
+   - *Recovery:* Complete the draft-20 endpoint, client and credential proof in Gate 1. Do not configure an earlier draft as a live-audio fallback.
 
 5. **`relay_failed` (Relay session failed)**
    - *Trigger:* An active WebTransport session to the MoQ relay drops abruptly due to socket closure or network transient.
@@ -536,7 +549,7 @@ Every failure condition encountered in Real Fabric has a distinct, truthful, non
    - *Recovery:* None required. Floor control resolves ordering automatically.
 
 3. **`ai_loop_capped` (AI-to-AI turn cap reached)**
-   - *Trigger:* Consecutive AI-to-AI conversation turns reach `AI_TO_AI_TURN_CAP` (limit = 4 turns).
+   - *Trigger:* Consecutive AI-to-AI conversation turns reach `AI_TO_AI_TURN_CAP` (currently six turns).
    - *Severity:* `degraded` (non-blocking).
    - *UX presentation:* AI card displays *"Turn cap reached"* with visible turn counter.
    - *System behaviour:* `AiDirector` blocks further AI-triggered addresses. Human speech immediately resets the turn counter to 0.
@@ -561,7 +574,7 @@ Every failure condition encountered in Real Fabric has a distinct, truthful, non
    - *Recovery:* None required. Latency remains bounded.
 
 3. **`drift_uncorrectable` (Clock drift beyond correction range)**
-   - *Trigger:* Sender media clock skew relative to local `AudioContext` clock exceeds `MAXIMUM_CORRECTION_RATIO` (skew > 5%).
+   - *Trigger:* Sender media clock skew relative to the local output clock falls outside the implemented 0.98–1.02 correction ratio.
    - *Severity:* `degraded` (non-blocking).
    - *UX presentation:* Quality warning badge on affected participant track in inspector.
    - *System behaviour:* Resets and rebuilds that specific track's adaptive jitter buffer at the next detected speech pause (silence interval), preventing audible glitches.
@@ -577,72 +590,71 @@ Every failure condition encountered in Real Fabric has a distinct, truthful, non
 
 ---
 
-## 11. Delivery and feature release plan
+## 11. Delivery gates and current status
 
-To overcome the product launch blocker caused by the absence of published `draft-20` relay endpoints, Real Fabric adopts a phased, milestone-driven feature release plan. This strategy leverages existing operational MOQT drafts (`draft-16` / `draft-14` on Cloudflare isolated relays and `draft-16`/`draft-18` on `moq-rs`) behind the `MoqTransportAdapter` abstraction, systematically resolves all 16 failure modes, and validates full stage-demo readiness.
+The build proceeds around the external draft-20 dependency without changing the live-audio protocol claim. Earlier-draft relays may inform research, but they are not an operational fallback and cannot satisfy Gate 1. Each gate distinguishes code present in the repository from evidence collected at the real browser, relay, audio and venue boundaries.
 
 ```mermaid
 flowchart TD
-    M1["Milestone 1: Live Transport & Relay Interop (Draft-16)"] --> M2["Milestone 2: Hardware Resilience & Audio Pipeline"]
-    M2 --> M3["Milestone 3: AI Multi-Agent & Floor Control"]
-    M3 --> M4["Milestone 4: Discovery, Rejoin & Capacity Scaling"]
+    M1["Gate 1: Draft-20 Transport & Relay Interop"] --> M2["Gate 2: Hardware Resilience & Audio Pipeline"]
+    M2 --> M3["Gate 3: AI Multi-Agent & Floor Control"]
+    M3 --> M4["Gate 4: Discovery, Rejoin & Capacity Scaling"]
     M4 --> GATES["Stage Demo Launch Acceptance Gates (H1–H16)"]
 ```
 
 ---
 
-### 11.1 Phased release strategy
+### 11.1 Operating rule and status
 
-1. **Protocol Decoupling:** Keep wire constants, message framing, and setup handshakes strictly within `MoqTransportAdapter`.
-2. **Immediate Live Transport:** Target active Cloudflare `draft-16` relay endpoints (`draft-16.cloudflare.mediaoverquic.com`) to prove real WebTransport over HTTP/3 and QUIC.
-3. **Systematic Failure Mode Remediation:** Resolve each failure mode through dedicated features across four sequential delivery milestones.
-4. **Clean Upgrade Vector:** When a `draft-20` relay endpoint is deployed, plug it directly into `MoqTransportAdapter` with zero UI or room service refactoring.
+1. **Protocol decoupling:** Keep protocol-library imports and draft-sensitive compatibility work strictly within `MoqTransportAdapter`.
+2. **No operational downgrade:** Only a draft-20 browser-to-relay trace can enable live audio or satisfy Gate 1.
+3. **Independent progress:** Continue frontend, room service, presenter simulation, media components, inspector, telemetry and tests while transport is unavailable.
+4. **Truthful gates:** A unit test proves code behaviour, not relay interoperability, audible quality, capacity or venue readiness.
 
 ---
 
-### 11.2 Milestone 1: Live transport unblocking and relay interoperability
+### 11.2 Gate 1: Live transport unblocking and relay interoperability
 
-*Primary focus: Establishing verified browser-to-relay MOQT transport on operational drafts, unblocking live audio flow, and eliminating transport failure modes.*
+*Primary focus: establish verified browser-to-relay MOQT draft-20 transport, unblock live audio and eliminate transport failure modes.*
 
 - **Addressed failure modes:** `draft_endpoint_missing`, `draft_mismatch`, `transport_unsupported`, `udp_blocked`, `relay_failed`.
 - **Key deliverables:**
-  1. **Relay Endpoint Integration:** Configure `MoqTransportAdapter` to connect to Cloudflare isolated relays using `draft-16` framing and `moq-00` / `draft-16` ALPN.
-  2. **Negotiation Handshake:** Complete `CLIENT_SETUP` and `SERVER_SETUP` parameter validation, exposing negotiated draft and endpoint name in room telemetry.
-  3. **Pre-Flight Network Probe:** Implement non-blocking background UDP/HTTP-3 reachability test. If UDP is filtered, immediately display hotspot remediation advice before room join.
-  4. **Bounded Session Recovery:** Implement `ReconnectionPolicy` with exponential backoff, full jitter, and a 30-second terminal threshold for `relay_failed`.
+  1. **Draft-20 endpoint and adapter compatibility:** obtain a real endpoint and update only `MoqTransportAdapter` for the compatible draft-20 client/library surface.
+  2. **Least-privilege credentials:** implement server-side minting and expiry; the current verified-path placeholder deliberately returns `501`.
+  3. **Negotiation evidence:** expose the negotiated draft and redacted endpoint and capture a reproducible trace.
+  4. **Pre-flight network probe:** implement an active UDP/HTTP-3 reachability test; the current page checks `/api/health` only.
+  5. **Bounded recovery:** verify the implemented `ReconnectionPolicy` and idempotent restoration against the live relay.
 - **Exit criteria (Gate 1):**
-  - Live browser publisher and subscriber exchange synthetic Opus frames across the Cloudflare relay.
+  - Live browser publisher and subscriber exchange synthetic Opus frames across the selected draft-20 relay.
   - Reproducible trace captures MOQT objects over WebTransport, HTTP/3, and QUIC.
   - `MOQT_TRANSPORT_VERIFIED` set to `true`.
 
 ---
 
-### 11.3 Milestone 2: Hardware resilience and audio pipeline hardening
+### 11.3 Gate 2: Hardware resilience and audio pipeline hardening
 
 *Primary focus: Robust audio capture, browser hardware adaptability, jitter management, and drift correction.*
 
 - **Addressed failure modes:** `microphone_denied`, `microphone_no_device`, `audio_behind`, `drift_uncorrectable`.
 - **Key deliverables:**
-  1. **Graceful Hardware Fallback:** Implement listen-only subscriber mode when microphone permission is denied or no device is detected, without throwing unhandled exceptions.
-  2. **Dynamic Device Tracking:** Attach `navigator.mediaDevices.ondevicechange` listeners to automatically detect hot-plugged microphones or headsets and prompt calibration.
-  3. **Adaptive Jitter Buffer & PLC:** Maintain bounded jitter buffer (40–200 ms). Discard late objects exceeding the 200 ms ceiling and trigger Opus Packet Loss Concealment (PLC).
-  4. **Drift Estimation & Silence Rebuilding:** Measure sample-rate skew continuously; apply subtle resampling for slight drift (<5%) and rebuild buffer during detected silence intervals for severe drift (`drift_uncorrectable`).
+  1. **Implemented and unit-tested:** listen-only failure states, mono capture constraints, Opus configuration, DTX capability reporting, bounded 40–200 ms jitter buffering, late drops, drift estimation and one listener-side mixing worklet.
+  2. **Still required:** hot-plug device handling, explicit packet-loss concealment/comfort-noise verification, and browser-level teardown checks.
+  3. **Acceptance evidence:** acoustic loopback latency, ten-minute audible stability, reference-hardware capacity and the supported-browser matrix.
 - **Exit criteria (Gate 2):**
   - Continuous 10-minute audio playback at reference composition (6 humans + 2 AIs) with no audible drift artefacts and no unbounded buffer growth (H13).
   - Single-machine acoustic loopback confirms p50 latency < 250 ms and p95 < 500 ms (§9.3).
 
 ---
 
-### 11.4 Milestone 3: Multi-agent AI orchestration, floor control and fault isolation
+### 11.4 Gate 3: Multi-agent AI orchestration, floor control and fault isolation
 
 *Primary focus: Autonomous AI participants, deterministic addressing, barge-in cancellation, and loop protection.*
 
 - **Addressed failure modes:** `ai_pipeline_failed`, `ai_floor_contention`, `ai_loop_capped`.
 - **Key deliverables:**
-  1. **AI Pipeline Fault Isolation:** Implement circuit-breaker on upstream AI inference/synthesis endpoints. If backend fails, automatically transition AI card to *"Unavailable"* and provide presenter scripted responses.
-  2. **Deterministic Floor Control:** Implement `AiDirector` queueing to serialise AI responses. When multiple AIs are addressed, queue the second agent in *"Thinking (Queued)"* state without overlapping audio.
-  3. **Turn Budget Enforcement:** Hard-cap consecutive AI-to-AI dialogue turns at `AI_TO_AI_TURN_CAP = 4`. Human utterance instantly resets the counter.
-  4. **Sub-300ms Barge-In:** On human speech onset, emit MOQT group cancellation marker. Receivers purge queued audio objects from that group, stopping playout within 300 ms (H6).
+  1. **Implemented and unit-tested:** labelled scripted responses, `AiDirector` addressing and floor queue, unavailable state, six-turn AI-to-AI cap, receiver queue purging and routing-state changes.
+  2. **Still required:** live recognition/model/synthesis workers, provider retention and cost controls, wake-name detection if selected, publisher emission of cancellation markers and end-to-end fault isolation.
+  3. **Acceptance evidence:** two live AIs, ten addressed exchanges, audible barge-in within 300 ms and live routing changes within 500 ms.
 - **Exit criteria (Gate 3):**
   - Two distinct AI agents respond exclusively to their respective wake names/addresses.
   - Barge-in halts AI playback audibly within 300 ms across 10 test interruptions.
@@ -650,20 +662,18 @@ flowchart TD
 
 ---
 
-### 11.5 Milestone 4: Hybrid discovery, atomic rejoin and capacity scaling
+### 11.5 Gate 4: Hybrid discovery, rejoin and capacity scaling
 
 *Primary focus: Scale open membership, guarantee robust page reload reclamation, and prevent performance collapse.*
 
 - **Addressed failure modes:** `namespace_discovery_unavailable`, `participant_disconnected`, `reloading`, `beyond_measured_capacity`.
 - **Key deliverables:**
-  1. **Hybrid Discovery Engine:** Probe `SUBSCRIBE_NAMESPACE` on relay connection. If unavailable, smoothly fall back to Durable Object WebSocket control-plane track announcements without blocking media flow.
-  2. **Atomic 60-Second Rejoin:** Store session tokens and routing matrices in SQLite Durable Object storage. Reclaim identity upon reload; use `PlaybackDeduplicator` to prevent duplicate playback.
-  3. **3-Tier Degradation Ladder:** Implement automated degradation monitoring:
+  1. **Implemented and unit-tested:** control-channel discovery, attempted `SUBSCRIBE_NAMESPACE` when configured, SQLite room/routing state, 60-second rejoin, playback deduplication and the three-step degradation ladder:
      - *Step 1:* Expand nominal jitter buffer from 60 ms to 120 ms.
      - *Step 2:* Release decoders for tracks silent > 30 s.
      - *Step 3:* Unsubscribe least-recently-active participants and display banner *"audio paused for N participants — beyond measured capacity"*.
 - **Exit criteria (Gate 4 & Final Launch Gate):**
-  - All 16 acceptance criteria (AC-1 through AC-16) pass.
+  - Every acceptance criterion in §13 passes.
   - The 3.5-minute demo script (§12) completes twice clean on a live network / mobile hotspot without operator intervention (H16).
   - Measured capacity figures documented in `README.md`.
 
@@ -710,25 +720,26 @@ The real acceptance test. Three and a half minutes, in order.
 
 | Decision | Owner | Due | Status |
 |---|---|---|---|
-| Operational MOQT draft pin (`draft-16` deployed relay vs `draft-20` future target) | Architecture | Gate 1 | **Resolved (§2.1 & §11.2)** |
-| Browser MOQT client library (`moqtail` pinned vs adapter shim) | Client Lead | Gate 1 | Resolved behind adapter |
-| `SUBSCRIBE_NAMESPACE` support on endpoint — FR7 design | Transport Lead | Gate 1 | Hybrid fallback (§11.5) |
-| Per-track credential scoping — FR8 enforced or cooperative | Security Lead | Gate 1 | Evaluated at Gate 1 |
-| AI worker transport: raw QUIC or WebTransport | AI Lead | Gate 1 | WebTransport |
-| Recognition, model and synthesis providers; retention terms; per-room cost ceiling | Product Owner | Gate 2 start | In progress |
-| Addressing mechanism: hold-to-ask or wake name | UX Lead | Gate 2 exit | In progress |
-| Pinned browser, OS and major version | QA Lead | Gate 2 exit | All browsers that support the required packages/capabilites |
+| Draft-20 relay endpoint and compatibility path | Architecture | Gate 1 | Open; no operational downgrade permitted |
+| Browser MOQT client library | Client Lead | Gate 1 | `moqtail` `0.12.1` pinned behind the adapter; draft-20 interoperability unverified |
+| `SUBSCRIBE_NAMESPACE` support on the draft-20 endpoint | Transport Lead | Gate 1 | Unknown; control-channel discovery implemented |
+| Per-track credential scoping — FR8 enforced or cooperative | Security Lead | Gate 1 | Open; current UI label is cooperative |
+| Relay credential acceptance, enforcement and expiry | Security Lead | Gate 1 | Minting is implemented; live relay behaviour is unverified |
+| AI worker transport: raw QUIC or WebTransport | AI Lead | Gate 1 | Open; no live AI worker exists |
+| Recognition, model and synthesis providers; retention terms; per-room cost ceiling | Product Owner | Gate 2 start | Not implemented |
+| Addressing mechanism: hold-to-ask or wake name | UX Lead | Gate 2 exit | Hold-to-ask is wired; wake names are stored but not detected |
+| Supported browser, OS and major-version matrix | QA Lead | Gate 2 exit | Open; current implementation recognises provisional Chrome 141+ on macOS only |
 | Grid layout threshold and ordering rule | UX Lead | Gate 2 exit | Compact threshold = 8 |
-| Reference network definition | QA Lead | Gate 2 exit | Wired / 5 GHz Wi-Fi |
+| Reference network definition | QA Lead | Gate 2 exit | Open; wired or good Wi-Fi remains the provisional test condition |
 
 ## 15. Source basis
 
 - [RFC 9000](https://www.rfc-editor.org/info/rfc9000/) — IETF Standards Track, May 2021.
 - [W3C WebTransport Working Draft](https://www.w3.org/TR/webtransport/) — browser streams and datagrams API; explicitly work in progress.
 - [MDN WebTransport](https://developer.mozilla.org/en-US/docs/Web/API/WebTransport) — Baseline 2026, with older-device and subfeature caveats.
-- [IETF MOQT draft](https://datatracker.ietf.org/doc/draft-ietf-moq-transport/) — datatracker at `-18` as of this check; `-19` reported current; **`-20` not yet published**. Not an RFC.
-- [Cloudflare isolated relay API](https://blog.cloudflare.com/moq-relays/) — isolated relays, publisher/subscriber credentials, `draft-14` and `draft-16` support, `PUBLISH` and `SUBSCRIBE_NAMESPACE`, July 2026.
-- [Cloudflare moq-rs](https://github.com/cloudflare/moq-rs) — implementation notes and interop relay; `SUBSCRIBE_NAMESPACE` listed as not yet supported.
+- [IETF MOQT draft](https://datatracker.ietf.org/doc/draft-ietf-moq-transport/) — datatracker at `-19` as checked on 25 August 2026; **`-20` is not yet published**. Not an RFC.
+- [Cloudflare isolated relay API](https://blog.cloudflare.com/moq-relays/) — isolated relays and separate publisher/subscriber credentials; Cloudflare reports draft-16 production support, July 2026.
+- [Cloudflare moq-rs](https://github.com/cloudflare/moq-rs) — the main branch targets draft 16 and currently lists `SUBSCRIBE_NAMESPACE` as supported; that does not prove draft-20 endpoint support.
 - [MoQ ecosystem directory](https://moqtap.com/directory/) — implementations by draft version; useful for the Gate 1 client survey.
 - [Cloudflare relay launch](https://blog.cloudflare.com/moq/) — launched across 330+ cities, August 2025.
 - [Safari 26.4 release notes](https://developer.apple.com/documentation/safari-release-notes/safari-26_4-release-notes) — WebTransport added in Safari 26.4.
