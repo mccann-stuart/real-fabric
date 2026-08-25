@@ -6,15 +6,24 @@ Real Fabric is a conference-stage demonstration of humans and AI agents speaking
 
 ## Status
 
-Every hard requirement H1–H16 in [PRODUCT_SPEC_v1-demo_1.md](PRODUCT_SPEC_v1-demo_1.md) §0.1 is implemented, except where a live `draft-20` relay is the only way to observe it. The table below states exactly which half each one is in.
+Every hard requirement H1–H16 in [PRODUCT_SPEC_v1-demo_1.md](PRODUCT_SPEC_v1-demo_1.md) §0.1 is implemented, except where a live relay is the only way to observe it. The table below states exactly which half each one is in.
 
-**Live transport remains blocked, and nothing in the build pretends otherwise.** No relay endpoint serves the pinned MOQT draft, so the room service mints no relay credential, the client reports the specific "no draft-20 relay endpoint" failure at startup rather than at join, and there is no second transport to fall back to. Presenter simulation demonstrates the room; it never stands in for a working relay or AI pipeline.
+Milestones 1 and 2 of the §11 release plan are built. Milestones 3 and 4 are not.
+
+**The build now attempts a real MOQT session, and still claims nothing it has not traced.** Those are two separate facts, and the code keeps them separate:
+
+- **Attempting** is gated on a relay endpoint being configured for a draft the pinned client can frame. `moqtail@0.12.1` frames `moqt-16`, and the Cloudflare isolated relays serve draft 16, so the build is pinned there (§11.2) and the room service mints a real short-lived, room-scoped relay credential.
+- **Claiming** is gated on `MOQT_TRANSPORT_VERIFIED`, which stays `false` until a browser-to-relay trace is recorded. Until then the inspector reads "attempted live but not yet claimed as verified", and the negotiated draft reads **Not exposed** until a SERVER_SETUP has actually been validated.
+
+Conflating the two would have meant never attempting the connection that produces the trace. There is still no second transport to fall back to, and presenter simulation never stands in for a working relay or AI pipeline.
+
+**Draft 20 is a configuration change, not a rewrite.** When an endpoint deploys, add its wire version to `DRAFT_REGISTRY` in [`MoqTransportAdapter`](src/client/transport/MoqTransportAdapter.ts), bump `moqtail` to a version that frames it, and repoint `MOQT_DRAFT` and `MOQ_RELAY_URL`. No room, UI or audio-pipeline code changes.
 
 ### H1–H16
 
 | ID | Where it lives | Verified by |
 |---|---|---|
-| H1 — MOQT over WebTransport only, no fallback | [`MoqTransportAdapter`](src/client/transport/MoqTransportAdapter.ts) is the sole transport; [`RoomSession`](src/client/session/RoomSession.ts) imports no alternative | `test/room-service.test.ts` asserts the draft failure and null credential. **A live browser-to-relay trace is still outstanding.** |
+| H1 — MOQT over WebTransport only, no fallback | [`MoqTransportAdapter`](src/client/transport/MoqTransportAdapter.ts) is the sole transport and the only module holding draft constants; [`RoomSession`](src/client/session/RoomSession.ts) imports no alternative | `test/milestone-1-transport.test.ts` asserts the draft registry refuses an unframeable draft by name without downgrading. **A live browser-to-relay trace is still outstanding.** |
 | H2 — one track per participant, no upstream mixing | [`tracks.ts`](src/shared/tracks.ts), [`mixer-worklet.js`](public/audio/mixer-worklet.js) — the only mixing point, on the listener's machine | `test/invariants.test.ts` |
 | H3 — one pinned browser, others warned | [`pinnedConfiguration.ts`](src/shared/pinnedConfiguration.ts), [`PinnedConfigBanner`](src/client/components/PinnedConfigBanner.tsx) | `test/invariants.test.ts` |
 | H4 — headphones required and stated | Entry page, pre-flight page and room top bar | Visual |
@@ -26,7 +35,7 @@ Every hard requirement H1–H16 in [PRODUCT_SPEC_v1-demo_1.md](PRODUCT_SPEC_v1-d
 | H10 — no AI-to-AI by default | Off by default with a hard turn cap and a visible counter | `test/invariants.test.ts`, `test/room-service.test.ts` |
 | H11 — presenter mode runs solo | Configurable simulated counts, reconciled server-side, labelled everywhere | `test/room-service.test.ts` |
 | H12 — 60-second reclaim, no duplicate playback | [`useRoomSession`](src/client/hooks/useRoomSession.ts) spends the token on mount; [`PlaybackDeduplicator`](src/client/audio/PlaybackDeduplicator.ts) refuses repeats | `test/invariants.test.ts`, `test/room-service.test.ts` |
-| H13 — ten minutes, no drift artefact, no unbounded buffers | [`DriftEstimator`](src/client/audio/DriftEstimator.ts), bounded jitter buffer | `test/invariants.test.ts` runs 30,000 frames. **The live ten-minute run is outstanding.** |
+| H13 — ten minutes, no drift artefact, no unbounded buffers | [`DriftEstimator`](src/client/audio/DriftEstimator.ts), bounded jitter buffer, [`PacketLossConcealer`](src/client/audio/PacketLossConcealer.ts) and the silence-gated rebuild in [`TrackPlayer`](src/client/audio/TrackPlayer.ts) | `test/invariants.test.ts` runs 30,000 frames; `test/milestone-2-audio.test.ts` covers concealment, the 5% drift threshold and the deferred rebuild. **The live ten-minute run is outstanding.** |
 | H14 — every §10 failure distinct and non-silent | [`failures.ts`](src/shared/failures.ts) registry and [`FailureBanner`](src/client/components/FailureBanner.tsx) | `test/invariants.test.ts` |
 | H15 — unobservable reads **Not exposed** | [`Measurement<T>`](src/shared/measurement.ts) and [`MeasurementValue`](src/client/components/MeasurementValue.tsx); no figure bypasses it | `test/invariants.test.ts` |
 | H16 — §12 script twice clean | [`DemoScript`](src/client/presenter/DemoScript.ts) runner with per-cue pass/fail and a two-clean-run gate | `test/invariants.test.ts`. **The venue-network runs are outstanding.** |
@@ -47,15 +56,38 @@ This pin is **provisional**: specification §14 assigns the final browser, opera
 
 The ladder is implemented and unit-tested, and it announces every step. What is missing is the measurement on reference hardware, which needs Gate 2.
 
-### Gate 1 outcomes still open
+### Milestone 1 — live transport and relay interoperability (§11.2)
 
-These are read from Worker configuration rather than assumed, so recording a Gate 1 result is a configuration change, not a code change:
+| Deliverable | State |
+|---|---|
+| Relay endpoint integration on draft 16 | Built. `DRAFT_REGISTRY` holds the wire version and ALPN offer (`moqt-16`, `moq-00`) per draft; the frameable set is read from the library's own `SUPPORTED_VERSIONS`, so it cannot claim a draft its encoder does not implement. |
+| CLIENT_SETUP / SERVER_SETUP negotiation | Built. The credential is sent as an `AUTHORIZATION_TOKEN` setup parameter, never in the URL. A session with no SERVER_SETUP, or a `MAX_REQUEST_ID` of zero, is closed as a protocol failure rather than left to present as dead air. The negotiated draft, endpoint and parameters appear in the inspector, with the token redacted. |
+| Pre-flight HTTP/3 and UDP probe | Built, in [`NetworkProbe`](src/client/transport/NetworkProbe.ts). Non-blocking, runs alongside the join, and compares a QUIC leg against a TCP leg to separate filtered UDP from a dead connection. It says so when the two are indistinguishable. |
+| Bounded session recovery | Built. Full jitter across the whole backoff window (equal jitter re-synchronises a roomful of clients), 30-second terminal threshold, and a floor so an unlucky draw is not a tight retry loop. |
+| **Gate 1 exit: `MOQT_TRANSPORT_VERIFIED = true`** | **Outstanding.** Needs a browser-to-relay trace on a real network. |
+
+**Observed during development:** `draft-16.cloudflare.mediaoverquic.com` did not complete a WebTransport handshake from the development machine within the 4-second probe budget. The probe reported `udp_blocked` with the correct hedge — a filtered network and a relay that is not serving look identical from the client. Confirming which, and confirming the endpoint's exact path, is Gate 1's first job.
+
+### Milestone 2 — hardware resilience and audio pipeline (§11.3)
+
+| Deliverable | State |
+|---|---|
+| Graceful hardware fallback | Built. `startPublishing` does not throw; a denied, missing or unsupported microphone enters a named listen-only mode with subscriptions, mixer and inspector untouched, and offers a retry where it gives the reason. |
+| Dynamic device tracking | Built, in [`DeviceWatcher`](src/client/audio/DeviceWatcher.ts). A headset plugged in after a listen-only join clears the failure and offers calibration. Device labels are never read, so they cannot reach telemetry (AC-14). |
+| Adaptive jitter buffer and Opus PLC | Built. The buffer was already bounded 40–200 ms; concealment was not. [`PacketLossConcealer`](src/client/audio/PacketLossConcealer.ts) fills a sequence gap by repeating the last pitch period with decay, and switches to comfort noise at the track's own noise floor once loss is sustained. Both are counted and shown. |
+| Drift estimation and silence rebuilding | Built. The threshold now matches §10.6 (5%, previously 2%), correction is applied at most 2% per step so it stays inaudible, and a rebuild waits for a pause instead of firing mid-word — bounded at 10 seconds so a continuous speaker cannot defer it forever. |
+| **Gate 2 exit: ten-minute run and acoustic loopback latency** | **Outstanding.** Both need the reference composition on reference hardware. |
+
+### Gate outcomes still open
+
+These are read from Worker configuration rather than assumed, so recording a result is a configuration change, not a code change:
 
 | Variable | Current | Meaning |
 |---|---|---|
-| `MOQT_TRANSPORT_VERIFIED` | `false` | No browser-to-relay trace has passed. Blocks live audio; blocks nothing else. |
-| `MOQ_ROUTING_ENFORCEMENT` | `cooperative` | Per-track credential scoping is unproven, so inbound routing is labelled cooperative, not enforced (FR8). |
+| `MOQT_TRANSPORT_VERIFIED` | `false` | No browser-to-relay trace has passed. Gates the *claim*, not the *attempt*: the build connects for real and reports the result honestly either way. |
+| `MOQ_ROUTING_ENFORCEMENT` | `cooperative` | The operational draft-16 relays do not enforce token scope, so inbound routing is labelled cooperative, not enforced (FR8). The credential is minted in the scoped form anyway, so an enforcing relay is a configuration change. |
 | `MOQ_DISCOVERY` | `unknown` | `SUBSCRIBE_NAMESPACE` support on the endpoint is untested, so the inspector says discovery is undetermined (FR7). |
+| `MOQ_RELAY_SECRET` | unset | Optional Worker secret that signs the relay credential. Unset, the credential is still scoped and still expires, but is marked `unsigned` rather than presented as something a relay could trust. |
 
 ## Product invariants
 
@@ -70,15 +102,16 @@ These are read from Worker configuration rather than assumed, so recording a Gat
 
 ## Layout
 
-- `src/shared` — contracts, the §10 failure registry, `Measurement<T>`, track addressing, the §9.3 latency budget and the pinned configuration.
+- `src/shared` — contracts, the draft list, the §10 failure registry, `Measurement<T>`, track addressing, the §9.3 latency budget and the pinned configuration.
+- `src/client/transport` — `MoqTransportAdapter` (the only module holding draft constants, wire versions or ALPN identifiers) and the draft-free HTTP/3 reachability probe.
 - `src/client/session` — `RoomSession`, the bounded reconnection policy and the inspector event log.
-- `src/client/audio` — capture and Opus encode, per-track receive path, adaptive jitter buffer, drift estimation, degradation ladder, playback deduplication and the mixer graph.
+- `src/client/audio` — capture and Opus encode, per-track receive path, adaptive jitter buffer, packet loss concealment, drift estimation, device tracking, degradation ladder, playback deduplication and the mixer graph.
 - `src/client/ai` — the addressing, floor-control and barge-in state machine, plus the labelled scripted responder.
 - `src/client/presenter` — the §12 demo-script runner.
 - `src/client/components`, `src/client/pages` — entry, pre-flight, room, inspector and presenter surfaces.
 - `public/audio/mixer-worklet.js` — the single mixing point, served same-origin so it satisfies the existing `script-src 'self'` policy.
-- `src/worker` — API routing, security headers, redacted structured logs and the SQLite Durable Object room service.
-- `test` — 76 tests covering the requirements above.
+- `src/worker` — API routing, security headers, redacted structured logs, relay credential minting and the SQLite Durable Object room service.
+- `test` — 110 tests covering the requirements above.
 
 ## Local setup
 
@@ -118,10 +151,13 @@ dependency installs.
 
 Automated checks cover the requirements marked above. They do not cover, and this repository does not claim:
 
-- MOQT interoperability, or that any audio has moved over a relay;
+- MOQT interoperability, or that any audio has moved over a relay. The build attempts a real draft-16 session and reports what happened; no run has yet succeeded end to end, and the handshake-validation path has only been exercised against unit tests, never against a live SERVER_SETUP;
+- the exact URL path the Cloudflare draft-16 relay expects. `MOQ_RELAY_URL` holds the origin named in §11.2 and is configuration, not a verified endpoint;
+- audible quality of the packet loss concealment. Its behaviour is unit-tested; nobody has listened to it;
 - the §9.3 latency budget, which needs the §9.4 acoustic loopback method;
 - measured capacity;
 - the ten-minute reference-composition run (H13);
+- milestones 3 and 4 of the §11 release plan, which are not built;
 - the §12 script on a venue network (H16);
 - browser behaviour on any configuration other than the provisional pin.
 

@@ -12,3 +12,15 @@ export function configValue(value: string): string {
 export function configFlag(value: string): boolean {
   return configValue(value) === "true";
 }
+
+/**
+ * Secrets never appear in `wrangler.jsonc`, so `wrangler types` cannot see
+ * them. This is the declaration-merge point the generated file leaves open for
+ * exactly that case — one optional secret, not a second copy of `Env`.
+ */
+declare global {
+  interface Env {
+    /** §8: signs short-lived, room-scoped relay credentials. */
+    MOQ_RELAY_SECRET?: string;
+  }
+}

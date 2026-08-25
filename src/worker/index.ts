@@ -6,7 +6,9 @@ import type {
   RoomSnapshot,
 } from "../shared/contracts";
 import { MAX_SIMULATED_PARTICIPANTS } from "../shared/contracts";
+import { audioTrack, roomNamespace, trackKey } from "../shared/tracks";
 import { configFlag, configValue } from "./env";
+import { credentialLifetimeMs, mintRelayCredential } from "./relayCredential";
 import type { ParticipantCredential } from "./room";
 import { Room } from "./room";
 import { decodeRoomError } from "./roomError";
@@ -78,10 +80,14 @@ async function route(request: Request, env: Env, correlationId: string): Promise
   if (request.method === "GET" && url.pathname === "/api/health") {
     // Gate 1 facts, read from configuration rather than assumed. The client
     // renders the specific §10 failure from these, never a generic error.
+    // `relayEndpoint` is what the pre-flight HTTP/3 probe aims at (§11.2), so
+    // the probe tests the endpoint the room would really use.
     return json({
       ok: true,
       service: "real-fabric",
       draft: env.MOQT_DRAFT,
+      relayEndpoint: configValue(env.MOQ_RELAY_URL) || null,
+      relayEndpointName: endpointName(configValue(env.MOQ_RELAY_URL)),
       transportVerified: configFlag(env.MOQT_TRANSPORT_VERIFIED),
       routingEnforcement:
         configValue(env.MOQ_ROUTING_ENFORCEMENT) === "enforced" ? "enforced" : "cooperative",
@@ -99,7 +105,16 @@ async function route(request: Request, env: Env, correlationId: string): Promise
     const joined = await stub.join(displayName);
     logRoomEvent("room_created", correlationId, code, joined.participant.id);
     return json<CreateRoomResponse>(
-      { ...joined, relayCredential: mintRelayCredential(env), correlationId },
+      {
+        ...joined,
+        relayCredential: await mintCredential(
+          env,
+          code,
+          joined.participant.id,
+          joined.room.expiresAt,
+        ),
+        correlationId,
+      },
       201,
     );
   }
@@ -128,7 +143,12 @@ async function route(request: Request, env: Env, correlationId: string): Promise
       logRoomEvent("participant_joined", correlationId, code, joined.participant.id);
       return json<JoinRoomResponse>({
         ...joined,
-        relayCredential: mintRelayCredential(env),
+        relayCredential: await mintCredential(
+          env,
+          code,
+          joined.participant.id,
+          joined.room.expiresAt,
+        ),
         correlationId,
       });
     }
@@ -279,17 +299,36 @@ async function route(request: Request, env: Env, correlationId: string): Promise
 /**
  * §8: short-lived, least-privilege relay credentials are minted server-side.
  *
- * No relay serves the pinned draft yet (§2.1), so there is nothing to mint
- * against and this returns null. Returning null rather than a placeholder is
- * the point: the client reports "no draft-20 relay endpoint" instead of
- * attempting a connection that would have to downgrade to succeed.
+ * A credential is minted whenever an endpoint is configured for the pinned
+ * draft — that is what makes §11.2's live transport attempt real. It is not
+ * gated on `MOQT_TRANSPORT_VERIFIED`, because that flag records whether a trace
+ * has *proved* transport, not whether one may be *attempted*. Conflating the
+ * two would mean never attempting the connection that produces the trace.
+ *
+ * Null only where no endpoint is configured. The client then reports the
+ * specific §10 "no relay endpoint" row rather than downgrading to reach a
+ * relay that happens to exist.
  */
-function mintRelayCredential(env: Env): string | null {
-  if (!configFlag(env.MOQT_TRANSPORT_VERIFIED)) return null;
-  throw new HttpError(
-    501,
-    "relay_credential_unimplemented",
-    "Transport is marked verified but relay credential minting is not implemented. Gate 1 must record the credential model before this path is enabled.",
+async function mintCredential(
+  env: Env,
+  code: string,
+  participantId: string,
+  roomExpiresAt: number,
+): Promise<string | null> {
+  const endpoint = configValue(env.MOQ_RELAY_URL);
+  if (!endpoint) return null;
+  const now = Date.now();
+  const lifetimeMs = credentialLifetimeMs(roomExpiresAt, now);
+  if (lifetimeMs <= 0) return null;
+  return mintRelayCredential(
+    {
+      room: roomNamespace(code),
+      participant: participantId,
+      publish: trackKey(audioTrack(code, participantId)),
+      subscribe: roomNamespace(code),
+      expiresAt: now + lifetimeMs,
+    },
+    env.MOQ_RELAY_SECRET,
   );
 }
 
@@ -357,6 +396,16 @@ function withSecurityHeaders(response: Response, correlationId: string): Respons
 
 function normalisedRoute(pathname: string): string {
   return pathname.replace(/[A-Z0-9]{20}/g, ":room");
+}
+
+/** The relay's operator-facing name, for pre-flight and the Gate 1 record. */
+function endpointName(endpoint: string): string | null {
+  if (!endpoint) return null;
+  try {
+    return new URL(endpoint).host;
+  } catch {
+    return null;
+  }
 }
 
 function logRoomEvent(

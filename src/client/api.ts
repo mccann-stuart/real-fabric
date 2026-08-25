@@ -20,6 +20,10 @@ export interface HealthReport {
   ok: boolean;
   service: string;
   draft: string;
+  /** §11.2: what the pre-flight HTTP/3 probe aims at. Null when none is set. */
+  relayEndpoint: string | null;
+  relayEndpointName: string | null;
+  /** Gate 1 exit: whether a browser-to-relay trace has been recorded. */
   transportVerified: boolean;
   routingEnforcement: "enforced" | "cooperative";
   discovery: string;

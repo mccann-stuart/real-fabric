@@ -5,6 +5,8 @@ import { type Measurement, measured, notExposed } from "../../shared/measurement
 import type { LadderState } from "../audio/DegradationLadder";
 import type { SessionMetrics, SessionPhase } from "../session/RoomSession";
 import type { SessionEvent } from "../session/SessionEventLog";
+import type { MoqNegotiation } from "../transport/MoqTransportAdapter";
+import type { ProbeResult } from "../transport/NetworkProbe";
 import { MeasurementRow, MeasurementValue } from "./MeasurementValue";
 import { SubscriptionGraph } from "./SubscriptionGraph";
 
@@ -23,6 +25,9 @@ export interface InspectorProps {
   events: readonly SessionEvent[];
   publishing: boolean;
   subscribedIds: readonly string[];
+  /** §11.2: the validated handshake, or null before one has completed. */
+  negotiation: MoqNegotiation | null;
+  network: ProbeResult;
   open: boolean;
   onClose: () => void;
 }
@@ -38,6 +43,8 @@ export function Inspector({
   events,
   publishing,
   subscribedIds,
+  negotiation,
+  network,
   open,
   onClose,
 }: InspectorProps) {
@@ -86,7 +93,15 @@ export function Inspector({
       </div>
 
       <div className="inspector__body">
-        {tab === "signal" ? <Signal room={room} phase={phase} metrics={metrics} /> : null}
+        {tab === "signal" ? (
+          <Signal
+            room={room}
+            phase={phase}
+            metrics={metrics}
+            negotiation={negotiation}
+            network={network}
+          />
+        ) : null}
         {tab === "graph" ? (
           <SubscriptionGraph
             participants={room.participants}
@@ -108,10 +123,14 @@ function Signal({
   room,
   phase,
   metrics,
+  negotiation,
+  network,
 }: {
   room: RoomSnapshot;
   phase: SessionPhase;
   metrics: SessionMetrics;
+  negotiation: MoqNegotiation | null;
+  network: ProbeResult;
 }) {
   const live = phase.name === "live";
   return (
@@ -135,15 +154,19 @@ function Signal({
       </ol>
 
       <dl className="inspector-facts">
+        {/* §11.2: read from the validated handshake, never from configuration.
+            A configured draft is an intention; a negotiated one is a fact. */}
         <div>
           <dt>Negotiated draft</dt>
           <dd>
-            {room.transport.availability === "available" ? (
-              `draft-${room.transport.draft}`
+            {negotiation ? (
+              <code>
+                draft-{negotiation.negotiatedDraft} ({negotiation.wireVersion})
+              </code>
             ) : (
               <MeasurementValue
                 measurement={notExposed<string>(
-                  "No MOQT session has been negotiated, so there is no negotiated draft to report.",
+                  "No MOQT setup handshake has completed, so there is no negotiated draft to report.",
                 )}
               />
             )}
@@ -152,8 +175,51 @@ function Signal({
         <div>
           <dt>Relay endpoint</dt>
           <dd>
-            <code>{room.transport.endpoint}</code>
+            <code>{negotiation?.endpointName ?? room.transport.endpoint}</code>
           </dd>
+        </div>
+        <div>
+          <dt>ALPN offered</dt>
+          <dd>
+            {negotiation ? (
+              <code>{negotiation.alpnOffered.join(", ")}</code>
+            ) : (
+              <MeasurementValue
+                measurement={notExposed<string>("No session has been attempted yet.")}
+              />
+            )}
+          </dd>
+        </div>
+        <div>
+          <dt>SERVER_SETUP</dt>
+          <dd>
+            {negotiation ? (
+              <code>
+                {negotiation.serverSetup.length === 0
+                  ? "validated, no parameters"
+                  : negotiation.serverSetup
+                      .map((parameter) => `${parameter.name}=${parameter.value}`)
+                      .join(" · ")}
+              </code>
+            ) : (
+              <MeasurementValue
+                measurement={notExposed<string>("No SERVER_SETUP has been received.")}
+              />
+            )}
+          </dd>
+        </div>
+        {/* Gate 1 exit. Configured and attempted is not the same as traced. */}
+        <div>
+          <dt>Gate 1 trace</dt>
+          <dd>
+            {room.transport.traceVerified
+              ? "Recorded — a browser-to-relay trace has verified this endpoint"
+              : "Not recorded — transport is attempted live but not yet claimed as verified"}
+          </dd>
+        </div>
+        <div>
+          <dt>HTTP/3 reachability</dt>
+          <dd>{network.detail}</dd>
         </div>
         <div>
           <dt>Discovery</dt>
@@ -187,6 +253,11 @@ function Objects({ metrics, degradation }: { metrics: SessionMetrics; degradatio
       />
       <MeasurementRow label="Late drops" measurement={metrics.lateDrops} />
       <MeasurementRow label="Cancelled on barge-in" measurement={metrics.cancelledDrops} />
+      {/* §10.5: concealment is counted and shown, not hidden behind the gap. */}
+      <MeasurementRow label="Concealed frames" measurement={metrics.concealedFrames} />
+      <MeasurementRow label="Comfort noise frames" measurement={metrics.comfortNoiseFrames} />
+      <MeasurementRow label="Audio inputs" measurement={metrics.audioInputs} />
+      <MeasurementRow label="Device changes" measurement={metrics.deviceChanges} />
       <MeasurementRow
         label="Worst buffer"
         measurement={metrics.worstBufferMs}

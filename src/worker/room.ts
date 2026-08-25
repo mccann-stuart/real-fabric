@@ -3,13 +3,15 @@ import {
   AI_TO_AI_TURN_CAP,
   type AiPipelineState,
   type AiToAiState,
+  asMoqDraft,
   type DiscoveryMechanism,
   EMPTY_ROOM_EXPIRY_MS,
   evaluateComposition,
   type FloorState,
   MAX_SIMULATED_PARTICIPANTS,
-  MOQT_DRAFT,
+  type MoqDraft,
   type Participant,
+  PINNED_MOQT_DRAFT,
   type PresenterConfiguration,
   REJOIN_WINDOW_MS,
   ROOM_LIFETIME_MS,
@@ -21,6 +23,16 @@ import {
 } from "../shared/contracts";
 import { configFlag, configValue } from "./env";
 import { roomError } from "./roomError";
+
+/** The relay's operator-facing name, as the inspector and Gate 1 sheet quote it. */
+function endpointName(endpoint: string): string {
+  if (!endpoint) return "no configured endpoint";
+  try {
+    return new URL(endpoint).host;
+  } catch {
+    return "an unparseable endpoint";
+  }
+}
 
 /**
  * Bump when the table shape changes. Rooms are ephemeral and hard-stop at 20
@@ -843,32 +855,53 @@ export class Room extends DurableObject<Env> {
   }
 
   /**
-   * The room service never claims transport it has not traced. Until a
-   * browser-to-relay trace passes, this reports the specific §10 row rather
-   * than downgrading the draft to something a relay happens to serve.
+   * The room service never claims transport it has not traced, and never
+   * downgrades the draft to reach a relay that happens to serve another one.
+   *
+   * Two separate facts (§11.2). Whether an endpoint is *configured* for the
+   * pinned draft decides whether a real session is attempted. Whether a
+   * browser-to-relay trace has been *recorded* decides whether the build says
+   * transport works. Gate 1 exists to move the second one, and it cannot be
+   * moved without first attempting the first.
    */
   private transportStatus(): TransportStatus {
-    const verified = configFlag(this.env.MOQT_TRANSPORT_VERIFIED);
-    if (verified) {
-      return {
-        availability: "available",
-        draft: MOQT_DRAFT,
-        endpoint: this.env.MOQ_RELAY_URL,
-        failure: null,
-        reason: `MOQT draft ${MOQT_DRAFT} passed a browser-to-relay trace.`,
-        discovery: this.discoveryMechanism(),
-        routingEnforcement: this.routingEnforcement(),
-      };
-    }
-    return {
-      availability: "draft_unavailable",
-      draft: MOQT_DRAFT,
-      endpoint: this.env.MOQ_RELAY_URL,
-      failure: "draft_endpoint_missing",
-      reason: `MOQT draft ${MOQT_DRAFT} has not passed a browser-to-relay transport trace.`,
+    const draft = this.pinnedDraft();
+    const endpoint = configValue(this.env.MOQ_RELAY_URL);
+    const traceVerified = configFlag(this.env.MOQT_TRANSPORT_VERIFIED);
+    const shared = {
+      draft,
+      endpoint,
+      endpointName: endpointName(endpoint),
+      traceVerified,
       discovery: this.discoveryMechanism(),
       routingEnforcement: this.routingEnforcement(),
     };
+
+    if (!endpoint) {
+      return {
+        ...shared,
+        availability: "draft_unavailable",
+        failure: "draft_endpoint_missing",
+        reason: `No relay endpoint is configured for MOQT draft ${draft}, so no session is attempted.`,
+      };
+    }
+    return {
+      ...shared,
+      availability: "available",
+      failure: null,
+      reason: traceVerified
+        ? `MOQT draft ${draft} passed a browser-to-relay trace on ${shared.endpointName}.`
+        : `MOQT draft ${draft} is configured on ${shared.endpointName} and will be attempted live. No Gate 1 browser-to-relay trace has been recorded yet, so transport is not claimed as verified.`,
+    };
+  }
+
+  /**
+   * The draft this deployment is pinned to, validated against the drafts the
+   * build knows. An unrecognised configuration value falls back to the pinned
+   * default rather than inventing a draft nothing can frame.
+   */
+  private pinnedDraft(): MoqDraft {
+    return asMoqDraft(configValue(this.env.MOQT_DRAFT)) ?? PINNED_MOQT_DRAFT;
   }
 
   /** FR8 / Gate 1 output five. Cooperative until credential scoping is proven. */

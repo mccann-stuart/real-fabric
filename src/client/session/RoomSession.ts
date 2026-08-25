@@ -23,11 +23,17 @@ import {
 } from "../api";
 import { CaptureController } from "../audio/CaptureController";
 import { DegradationLadder, type LadderState } from "../audio/DegradationLadder";
+import { DeviceWatcher } from "../audio/DeviceWatcher";
 import { encodeAudioObject } from "../audio/frame";
 import { MixerGraph } from "../audio/MixerGraph";
 import { TrackPlayer } from "../audio/TrackPlayer";
 import { SessionTelemetry } from "../telemetry/SessionTelemetry";
-import { MoqTransportAdapter, MoqTransportError } from "../transport/MoqTransportAdapter";
+import {
+  type MoqNegotiation,
+  MoqTransportAdapter,
+  MoqTransportError,
+} from "../transport/MoqTransportAdapter";
+import { notRunProbe, type ProbeResult, probeRelayReachability } from "../transport/NetworkProbe";
 import { ReconnectionPolicy } from "./ReconnectionPolicy";
 import { type SessionEvent, SessionEventLog } from "./SessionEventLog";
 
@@ -62,12 +68,31 @@ export interface SessionMetrics {
   transportRttMs: Measurement<number>;
   lateDrops: Measurement<number>;
   cancelledDrops: Measurement<number>;
+  /** §10.5: frames synthesised by packet loss concealment. */
+  concealedFrames: Measurement<number>;
+  comfortNoiseFrames: Measurement<number>;
   lastBargeInMs: Measurement<number>;
   lastRoutingChangeMs: Measurement<number>;
   reconnects: Measurement<number>;
   dtxEnabled: Measurement<boolean>;
   objectsPerSecond: Measurement<number>;
+  /** §11.3: audio inputs seen, and how many times they changed. */
+  audioInputs: Measurement<number>;
+  deviceChanges: Measurement<number>;
 }
+
+/**
+ * §11.3 deliverable one: a browser with no usable microphone is a listener,
+ * not an error. The mode is explicit so the UI never has to infer "can this
+ * person speak" from a boolean that means something else on another screen.
+ */
+export type CaptureMode =
+  | { name: "idle" }
+  | { name: "publishing" }
+  /** Listening and inspecting continue; nothing is published from here. */
+  | { name: "listen_only"; failure: FailureCode; reason: string }
+  /** A device appeared while in listen-only; the presenter is offered calibration. */
+  | { name: "listen_only_device_available"; reason: string };
 
 export interface SessionState {
   phase: SessionPhase;
@@ -76,9 +101,14 @@ export interface SessionState {
   failures: FailureCode[];
   degradation: LadderState;
   publishing: boolean;
+  capture: CaptureMode;
   speaking: boolean;
   micLevel: number;
   metrics: SessionMetrics;
+  /** §11.2: the negotiated draft and endpoint, once setup has been validated. */
+  negotiation: MoqNegotiation | null;
+  /** §11.2: background HTTP/3 reachability, used to tell UDP filtering apart. */
+  network: ProbeResult;
   events: SessionEvent[];
 }
 
@@ -106,10 +136,14 @@ export class RoomSession {
   private readonly players = new Map<string, TrackPlayer>();
   private readonly now: () => number;
 
+  private readonly devices: DeviceWatcher;
+
   private listeners = new Set<(state: SessionState) => void>();
   private socket: WebSocket | null = null;
   private phase: SessionPhase = { name: "idle" };
   private room: RoomSnapshot | null = null;
+  private captureMode: CaptureMode = { name: "idle" };
+  private network: ProbeResult = notRunProbe("The relay reachability probe has not started.");
   private failures: FailureCode[] = [];
   private degradation: LadderState = {
     step: 0,
@@ -135,6 +169,39 @@ export class RoomSession {
 
   constructor(private readonly options: RoomSessionOptions) {
     this.now = options.now ?? Date.now;
+    this.devices = new DeviceWatcher({
+      onChange: (transition) => this.onDeviceChange(transition),
+    });
+  }
+
+  /**
+   * §11.3 deliverable two: a headset plugged in after a listen-only join is
+   * offered calibration instead of requiring a reload, and a device removed
+   * mid-session is named rather than presenting as a dead microphone.
+   */
+  private onDeviceChange(
+    transition: "first_input_appeared" | "input_added" | "input_removed" | "none",
+  ): void {
+    if (transition === "none") return;
+    this.log.record("device", `Audio input devices changed: ${transition.replaceAll("_", " ")}`);
+
+    const listenOnly = this.captureMode.name === "listen_only";
+    if (transition !== "input_removed" && listenOnly) {
+      const previous = this.captureMode;
+      if (previous.name === "listen_only" && previous.failure === "microphone_no_device") {
+        // The reason for listen-only has gone away. Clear it and offer capture.
+        this.clearFailure("microphone_no_device");
+        this.captureMode = {
+          name: "listen_only_device_available",
+          reason:
+            "An audio input device appeared. Run the microphone test to calibrate and start publishing.",
+        };
+      }
+    }
+    if (transition === "input_removed" && this.publishing) {
+      this.raise("microphone_no_device");
+    }
+    this.emit();
   }
 
   subscribe(listener: (state: SessionState) => void): () => void {
@@ -153,7 +220,21 @@ export class RoomSession {
     this.applyRoom(room);
     this.openControlChannel();
     this.ladderTimer = setInterval(() => this.tickLadder(), LADDER_INTERVAL_MS);
+    // §11.3: watch for hot-plugged devices from the moment the room opens, not
+    // only once capture has been attempted.
+    void this.devices.start();
+    // §11.2: the reachability probe runs alongside the session rather than
+    // before it, so it never delays the join, and its answer is ready when a
+    // transport failure needs classifying.
+    void this.runNetworkProbe(room);
     await this.openTransport();
+  }
+
+  private async runNetworkProbe(room: RoomSnapshot): Promise<void> {
+    const relayEndpoint = room.transport.endpoint || null;
+    this.network = await probeRelayReachability({ relayEndpoint });
+    this.log.record("connect", `HTTP/3 reachability: ${this.network.detail}`);
+    this.emit();
   }
 
   /**
@@ -189,7 +270,15 @@ export class RoomSession {
       await this.transport.connect(room.transport.endpoint, credential, room.transport.draft);
       this.transportReadyAt = this.now();
       this.reconnection.reset();
-      this.log.record("connect", `MOQT draft ${room.transport.draft} session established`);
+      const negotiation = this.transport.sessionStats().negotiation;
+      // §11.2 deliverable two: the negotiated draft and endpoint are recorded
+      // from the handshake, not restated from configuration.
+      this.log.record(
+        "connect",
+        negotiation
+          ? `MOQT draft ${negotiation.negotiatedDraft} (${negotiation.wireVersion}) established with ${negotiation.endpointName}; SERVER_SETUP validated`
+          : `MOQT draft ${room.transport.draft} session established`,
+      );
       this.telemetry.record({ type: "transport_ready", value: this.transportReadyMsRaw() ?? 0 });
       await this.discover(room);
       await this.reconcileSubscriptions();
@@ -223,16 +312,23 @@ export class RoomSession {
   }
 
   private async handleTransportFailure(error: unknown): Promise<void> {
-    const failure: FailureCode =
-      error instanceof MoqTransportError
-        ? error.code === "draft_mismatch"
-          ? "draft_mismatch"
-          : error.code === "draft_unavailable"
-            ? "transport_unsupported"
-            : "relay_failed"
-        : "relay_failed";
+    const failure = this.classifyTransportFailure(error);
     this.raise(failure);
     this.log.record("failure", error instanceof Error ? error.message : "Transport failed.");
+
+    // A blocked network is not a relay that will come back, so it is terminal
+    // rather than retried into the 30-second deadline. The remedy is a
+    // different network, which no amount of backoff produces.
+    if (failure === "udp_blocked") {
+      this.setPhase({ name: "blocked", failure });
+      this.log.record("failure", this.network.remediation ?? "Switch to the documented hotspot.");
+      return;
+    }
+    if (failure === "draft_mismatch" || failure === "transport_unsupported") {
+      // Neither is retryable: retrying re-runs an identical refusal.
+      this.setPhase({ name: "blocked", failure });
+      return;
+    }
 
     const decision = this.reconnection.next(this.now());
     if (!decision.retry) {
@@ -257,6 +353,26 @@ export class RoomSession {
     }, decision.delayMs);
   }
 
+  /**
+   * §10 rows are distinct, so a transport failure is classified rather than
+   * collapsed into one. The background probe is what separates "this network
+   * filters UDP" from "this relay is down" — from inside a failed connection
+   * attempt the two are indistinguishable, and their recovery advice differs.
+   */
+  private classifyTransportFailure(error: unknown): FailureCode {
+    if (!(error instanceof MoqTransportError)) return "relay_failed";
+    switch (error.code) {
+      case "draft_mismatch":
+        return "draft_mismatch";
+      case "draft_unavailable":
+        return "transport_unsupported";
+      case "protocol_error":
+        return "relay_failed";
+      default:
+        return this.network.state === "udp_blocked" ? "udp_blocked" : "relay_failed";
+    }
+  }
+
   /** FR5: the presenter's explicit retry after a terminal failure. */
   async retry(): Promise<void> {
     this.reconnection.reset();
@@ -265,13 +381,32 @@ export class RoomSession {
   }
 
   /**
-   * FR2: publication starts only on an explicit user action, and a denied
-   * microphone leaves listening and inspection working.
+   * FR2 and §11.3 deliverable one: publication starts only on an explicit user
+   * action, and a microphone that is denied, missing or unsupported drops this
+   * browser into listen-only rather than throwing. Subscriptions, the mixer and
+   * the inspector are untouched — the person can still hear the room and see
+   * the protocol, which is most of what the demo is for.
+   *
+   * This method does not throw. A caller that had to catch a hardware failure
+   * would end up writing its own fallback, and the point is that there is
+   * exactly one.
    */
   async startPublishing(): Promise<void> {
     if (this.publishing) return;
     try {
+      // The mixer is started first and deliberately kept running: listen-only
+      // still needs an output clock.
       await this.mixer.start();
+    } catch (error) {
+      this.enterListenOnly(
+        "transport_unsupported",
+        error instanceof Error ? error.message : "The audio output graph could not start.",
+      );
+      this.emit();
+      return;
+    }
+
+    try {
       await this.capture.start({
         onEncodedFrame: (frame) => this.publishFrame(frame),
         onOnset: () => void this.onHumanOnset(),
@@ -282,20 +417,41 @@ export class RoomSession {
         },
       });
       this.publishing = true;
+      this.captureMode = { name: "publishing" };
       this.log.record("publish", `audio/${this.options.session.participantId}`);
       this.telemetry.record({ type: "publication_opened" });
     } catch (error) {
       const name = error instanceof DOMException ? error.name : "";
-      this.raise(
+      const failure: FailureCode =
         name === "NotFoundError" || name === "DevicesNotFoundError"
           ? "microphone_no_device"
           : name === "NotAllowedError" || name === "SecurityError"
             ? "microphone_denied"
-            : "transport_unsupported",
+            : "transport_unsupported";
+      this.enterListenOnly(
+        failure,
+        error instanceof Error ? error.message : "Microphone capture failed.",
       );
-      this.log.record("failure", error instanceof Error ? error.message : "Capture failed.");
     }
     this.emit();
+  }
+
+  private enterListenOnly(failure: FailureCode, reason: string): void {
+    this.publishing = false;
+    this.captureMode = { name: "listen_only", failure, reason };
+    this.raise(failure);
+    this.log.record(
+      "failure",
+      `${reason} Continuing in listen-only mode; subscriptions and the inspector are unaffected.`,
+    );
+  }
+
+  /** True while this browser can hear the room but publishes nothing. */
+  get listenOnly(): boolean {
+    return (
+      this.captureMode.name === "listen_only" ||
+      this.captureMode.name === "listen_only_device_available"
+    );
   }
 
   private publishFrame(frame: EncodedAudioChunk): void {
@@ -473,9 +629,21 @@ export class RoomSession {
           ),
         onDriftBeyondRange: () => {
           this.raise("drift_uncorrectable");
-          this.log.record("drift", "Beyond correction range; buffer rebuilt", {
+          // §11.3: scheduled, not immediate. Rebuilding mid-word is audible.
+          this.log.record("drift", "Beyond correction range; buffer rebuild queued for a pause", {
             subject: participantId,
           });
+        },
+        onConcealment: (_trackId, frames, kind) => {
+          // §10.5: concealment is a quality warning, never a silent repair.
+          this.raise("audio_behind");
+          this.log.record(
+            "concealment",
+            kind === "comfort_noise"
+              ? `${frames} frames missing; sustained loss, emitting comfort noise`
+              : `${frames} frames missing; concealed by pitch repetition`,
+            { subject: participantId },
+          );
         },
         onError: (_trackId, error) => {
           this.raise("audio_behind");
@@ -702,8 +870,10 @@ export class RoomSession {
 
     for (const player of this.players.values()) player.close();
     this.players.clear();
+    this.devices.stop();
     await this.capture.stop();
     this.publishing = false;
+    this.captureMode = { name: "idle" };
     await this.transport.close("participant left");
     await this.mixer.close();
     this.socket?.close(1000, "left");
@@ -729,9 +899,12 @@ export class RoomSession {
       failures: [...this.failures],
       degradation: this.degradation,
       publishing: this.publishing,
+      capture: this.captureMode,
       speaking: this.capture.speaking,
       micLevel: this.capture.level,
       metrics: this.metrics(),
+      negotiation: this.transport.sessionStats().negotiation,
+      network: this.network,
       events: this.log.list(),
     };
   }
@@ -748,6 +921,14 @@ export class RoomSession {
     );
     const cancelled = objectStats.reduce(
       (sum, entry) => sum + (entry.cancelledDrops.exposed ? entry.cancelledDrops.value : 0),
+      0,
+    );
+    const concealed = objectStats.reduce(
+      (sum, entry) => sum + (entry.concealedFrames.exposed ? entry.concealedFrames.value : 0),
+      0,
+    );
+    const comfortNoise = objectStats.reduce(
+      (sum, entry) => sum + (entry.comfortNoiseFrames.exposed ? entry.comfortNoiseFrames.value : 0),
       0,
     );
     const objects = objectStats.reduce(
@@ -780,6 +961,8 @@ export class RoomSession {
           : notExposed("The browser does not expose a WebTransport round-trip time."),
       lateDrops: players.length === 0 ? notExposed(unavailable) : measured(lateDrops),
       cancelledDrops: players.length === 0 ? notExposed(unavailable) : measured(cancelled),
+      concealedFrames: players.length === 0 ? notExposed(unavailable) : measured(concealed),
+      comfortNoiseFrames: players.length === 0 ? notExposed(unavailable) : measured(comfortNoise),
       lastBargeInMs:
         this.lastBargeIn === null
           ? notExposed("No barge-in has occurred in this session.")
@@ -796,6 +979,8 @@ export class RoomSession {
         liveFor < 1
           ? notExposed("Too little live time to compute an object rate.")
           : measured(objects / liveFor),
+      audioInputs: this.devices.inputCount(),
+      deviceChanges: this.devices.deviceChanges(),
     };
   }
 

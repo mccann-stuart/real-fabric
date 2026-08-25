@@ -9,6 +9,12 @@
 export const TERMINAL_AFTER_MS = 30_000;
 const BASE_DELAY_MS = 400;
 const MAXIMUM_DELAY_MS = 5_000;
+/**
+ * Full jitter can draw a delay of nearly zero. This floor keeps a run of
+ * unlucky draws from becoming a tight retry loop against a relay that is
+ * already struggling, without meaningfully narrowing the distribution.
+ */
+const MINIMUM_DELAY_MS = 50;
 
 export interface ReconnectionDecision {
   /** False once the terminal deadline has passed; show the retry action. */
@@ -34,9 +40,11 @@ export class ReconnectionPolicy {
 
     this.attempt += 1;
     const exponential = Math.min(MAXIMUM_DELAY_MS, BASE_DELAY_MS * 2 ** (this.attempt - 1));
-    // Full jitter. Several clients dropped by one relay blip must not return in
-    // lockstep and reproduce the failure.
-    const delayMs = Math.round(exponential * (0.5 + this.random() * 0.5));
+    // §11.2: full jitter — uniform across the whole backoff window, not the top
+    // half of it. Several clients dropped by one relay blip must not return in
+    // lockstep and reproduce the failure, and a room full of them is exactly
+    // the case where a narrow band re-synchronises.
+    const delayMs = Math.max(MINIMUM_DELAY_MS, Math.round(exponential * this.random()));
     return { retry: true, attempt: this.attempt, delayMs, elapsedMs };
   }
 

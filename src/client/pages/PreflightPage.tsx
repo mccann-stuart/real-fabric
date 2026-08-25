@@ -50,7 +50,7 @@ export function PreflightPage({ navigate }: { navigate: (path: string) => void }
         </p>
         <p>
           <b>Draft unavailable:</b> the UI, routing and presenter simulation remain usable; live
-          audio stays blocked until a draft-20 browser-to-relay trace passes.
+          audio stays blocked until a browser-to-relay trace passes on the pinned draft.
         </p>
       </section>
     </main>
