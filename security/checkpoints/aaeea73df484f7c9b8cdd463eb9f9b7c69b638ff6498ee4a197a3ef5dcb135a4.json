@@ -1,0 +1,3473 @@
+{
+  "complete": false,
+  "scanId": "57e664f1-aa19-4e8c-a020-d7ef4fe380bc",
+  "scope": {
+    "summary": "Standard whole-repository scan of the exact registered Git revision.",
+    "artifactsReviewed": [
+      ".claude/launch.json",
+      ".dev.vars.example",
+      ".gitignore",
+      "AGENTS.md",
+      "MEMORIES.md",
+      "PRODUCT_SPEC_v1-demo_1.md",
+      "README.md",
+      "Standards.md",
+      "biome.json",
+      "design/PRODUCT_SPEC_v1-demo.md",
+      "design/concepts/entry.png",
+      "design/concepts/mobile.png",
+      "design/concepts/room.png",
+      "index.html",
+      "package.json",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "public/audio/capture-worklet.js",
+      "public/audio/mixer-worklet.js",
+      "scripts/workers-build.mjs",
+      "src/client/App.tsx",
+      "src/client/ai/AiDirector.ts",
+      "src/client/ai/ScriptedResponder.ts",
+      "src/client/api.ts",
+      "src/client/audio/AdaptiveJitterBuffer.ts",
+      "src/client/audio/CaptureController.ts",
+      "src/client/audio/DegradationLadder.ts",
+      "src/client/audio/DeviceWatcher.ts",
+      "src/client/audio/DriftEstimator.ts",
+      "src/client/audio/MixerGraph.ts",
+      "src/client/audio/PacketLossConcealer.ts",
+      "src/client/audio/PlaybackDeduplicator.ts",
+      "src/client/audio/TrackPlayer.ts",
+      "src/client/audio/UniversalAudioCaptureAdapter.ts",
+      "src/client/audio/VoiceActivityDetector.ts",
+      "src/client/audio/frame.ts",
+      "src/client/components/Brand.tsx",
+      "src/client/components/DemoScriptPanel.tsx",
+      "src/client/components/FailureBanner.tsx",
+      "src/client/components/Inspector.tsx",
+      "src/client/components/MeasurementValue.tsx",
+      "src/client/components/ParticipantCard.tsx",
+      "src/client/components/PinnedConfigBanner.tsx",
+      "src/client/components/PreflightPanel.tsx",
+      "src/client/components/PresenterStrip.tsx",
+      "src/client/components/SignalPath.tsx",
+      "src/client/components/StatusLight.tsx",
+      "src/client/components/SubscriptionGraph.tsx",
+      "src/client/hooks/useCapabilities.ts",
+      "src/client/hooks/useRoomSession.ts",
+      "src/client/main.tsx",
+      "src/client/pages/EntryPage.tsx",
+      "src/client/pages/PreflightPage.tsx",
+      "src/client/pages/RoomPage.tsx",
+      "src/client/presenter/DemoScript.ts",
+      "src/client/room/participantLayout.ts",
+      "src/client/session/ReconnectionPolicy.ts",
+      "src/client/session/RoomSession.ts",
+      "src/client/session/SessionEventLog.ts",
+      "src/client/styles.css",
+      "src/client/telemetry/SessionTelemetry.ts",
+      "src/client/transport/MoqTransportAdapter.ts",
+      "src/client/transport/NetworkProbe.ts",
+      "src/shared/contracts.ts",
+      "src/shared/failures.ts",
+      "src/shared/latency.ts",
+      "src/shared/measurement.ts",
+      "src/shared/pinnedConfiguration.ts",
+      "src/shared/tracks.ts",
+      "src/worker/env.ts",
+      "src/worker/index.ts",
+      "src/worker/relayCredential.ts",
+      "src/worker/room.ts",
+      "src/worker/roomError.ts",
+      "src/worker/validation.ts",
+      "test/audio-frame.test.ts",
+      "test/capture-adapter.test.ts",
+      "test/invariants.test.ts",
+      "test/jitter-buffer.test.ts",
+      "test/milestone-1-transport.test.ts",
+      "test/milestone-2-audio.test.ts",
+      "test/room-service.test.ts",
+      "test/validation.test.ts",
+      "test/worker.test.ts",
+      "tsconfig.app.json",
+      "tsconfig.json",
+      "tsconfig.node.json",
+      "tsconfig.test.json",
+      "tsconfig.worker.json",
+      "vite.config.ts",
+      "vitest.config.ts",
+      "worker-configuration.d.ts",
+      "wrangler.jsonc"
+    ],
+    "runtimeStatus": "All 13 distinct findings validated; 14 duplicate candidate closures remain.",
+    "validationMode": "Offline source trace at exact Git revision a784122aa18c6b7fbee1ae53d34b054a24d71f0b.",
+    "context": "Registered revision a784122aa18c6b7fbee1ae53d34b054a24d71f0b, materialised read-only from Git because the registered checkout advanced after launch.",
+    "limitations": [
+      "MOQT relay acceptance, token ACLs, expiry, duplicate-publication behaviour and cross-room enforcement were not exercised.",
+      "Cloudflare intermediary URL logging, request quotas, Durable Object billing and runtime limits were not inspected.",
+      "Narrow-screen capture/publication and browser media-exhaustion thresholds were not reproduced in a live browser."
+    ]
+  },
+  "threatModel": {
+    "summary": "Real Fabric is a ten-minute conference-stage demo in which a React/Vite browser creates or joins an open room through a Cloudflare Worker, receives a participant rejoin credential and a provisioned relay credential, opens an authenticated control-plane WebSocket to a per-room SQLite Durable Object, and publishes or subscribes to independent audio tracks through MoqTransportAdapter and a Cloudflare WebTransport/MOQT relay. There is no live AI pipeline; AI behaviour is labelled presenter simulation. Production and declared staging select MOQT draft 16, cooperative routing, unknown discovery and an unverified transport claim (wrangler.jsonc:3-30,37-48; src/client/session/RoomSession.ts:241-320; src/worker/index.ts:77-143).",
+    "assets": [
+      "Raw microphone audio, Opus frames and decoded PCM, kept in browser memory/worklets and not persisted by application source (src/client/audio/CaptureController.ts:34-43,62-115,147-170; public/audio/mixer-worklet.js:23-67).",
+      "The provisioned MOQ_RELAY_TOKEN and its coarse relay publish/subscribe authority, returned to every creator or joiner and appended to the WebTransport URL path (src/worker/env.ts:16-25; src/worker/index.ts:98-143,289-304; src/client/transport/MoqTransportAdapter.ts:225-271,532-540).",
+      "Participant identity and control authority: room code, participant ID, rejoin token/hash, role, state and routing ownership (src/client/api.ts:10-17,200-230; src/worker/room.ts:45-68,148-180).",
+      "Room-state integrity for membership, routing, AI pipeline/floor, simulation, AI-to-AI turns, expiry and reconnect deadlines (src/worker/room.ts:70-84,535-594,820-855).",
+      "Privacy of display names and routing relationships in a complete RoomSnapshot readable by a room-code holder (src/shared/contracts.ts:51-78,126-138; src/worker/index.ts:117-143).",
+      "Relay-visible track namespace integrity: demo/<room-code>/<participant-id>/audio/<participant-id>, not independently bound to a participant by the shared credential (src/shared/tracks.ts:17-40; src/client/session/RoomSession.ts:544-580).",
+      "Availability controls: creation throttling, room expiry, AI turn cap and bounded simulation counts; concurrent-room, credential-issuance and AI-cost ceilings are absent (src/shared/contracts.ts:24-35; src/worker/room.ts:114-138,383-430; PRODUCT_SPEC_v1-demo_1.md:17-31).",
+      "Sanitised telemetry, application logs and privileged Cloudflare build/deployment authority (src/client/telemetry/SessionTelemetry.ts:15-81; src/worker/index.ts:33-73,382-389; package.json:8-18)."
+    ],
+    "trustBoundaries": [
+      "Unauthenticated Internet caller to Worker API: health and creation are public; joining is open with a room code; full snapshots are readable with the room code; field validation follows whole-body parsing (src/worker/index.ts:77-143; src/worker/validation.ts:11-105).",
+      "Participant browser to Durable Object: mutations carry participantId and rejoinToken; routing binds its row to the authenticated participant, while AI, floor, AI-to-AI and presenter operations require only any human role (src/worker/room.ts:272-452,785-810).",
+      "Participant browser to control WebSocket: the reusable token is placed in a same-origin query string and authenticated before socket acceptance; only ping/pong client messages are accepted (src/client/api.ts:187-198; src/worker/index.ts:263-280; src/worker/room.ts:466-533).",
+      "Worker secret to browser and relay: the same optional secret is returned raw at create/join, held in memory and encoded into the relay URL path (src/worker/relayCredential.ts:1-13; src/worker/index.ts:98-143,289-304; src/client/transport/MoqTransportAdapter.ts:532-597).",
+      "Relay-originated setup and media objects to moqtail, TrackPlayer, jitter/deduplication buffers, decoder and mixer; dependency internals and relay are outside the inventory (src/client/transport/MoqTransportAdapter.ts:1-18,307-471; src/client/audio/TrackPlayer.ts:72-136).",
+      "Developer/CI principal to Cloudflare deployment through pinned Wrangler; account and approval are external (package.json:8-18; wrangler.jsonc:1-16)."
+    ],
+    "attackerCapabilities": [
+      "An unauthenticated caller can create a limited number of rooms and join any known room code, but lacks another participant token and deployment credentials (src/worker/index.ts:77-143,327-344).",
+      "A room-code holder can read the complete RoomSnapshot without joining (src/worker/index.ts:117-143; src/shared/contracts.ts:126-138).",
+      "A joined human receives a reusable participant credential and the configured shared relay token; their participant credential authorises all AI, floor, AI-to-AI and presenter operations because the backend checks only human role (src/worker/index.ts:155-260; src/worker/room.ts:187-452).",
+      "A shared relay-token holder gains the externally configured coarse authority; source implements no per-room, participant or track grant and labels routing cooperative (src/worker/index.ts:289-304; src/worker/room.ts:916-920).",
+      "A malicious participant publisher or compromised relay can supply setup and media objects to the browser receive path (src/client/transport/MoqTransportAdapter.ts:225-471)."
+    ],
+    "securityObjectives": [
+      "Keep credentials out of share links, snapshots, telemetry and application logs, and issue only short-lived least-privilege relay authority (src/shared/contracts.ts:140-154; src/client/api.ts:187-219; src/client/telemetry/SessionTelemetry.ts:24-81).",
+      "Preserve routing ownership and distinguish ordinary participant authority from presenter/global room authority; never claim relay enforcement while credentials are coarse (src/worker/room.ts:267-452,916-920).",
+      "Bound request, room, WebSocket and media-object resources without imposing a legitimate participant-count cap (src/shared/contracts.ts:24-35; src/worker/room.ts:114-138,499-525).",
+      "Validate identifiers and input; store only token hashes and require matching active participant credentials (src/worker/index.ts:117-123,306-344; src/worker/validation.ts:11-105; src/worker/room.ts:793-810,1035-1045).",
+      "Keep microphone audio transient and close capture, worklets, publications, subscriptions and sockets on leave (src/client/audio/CaptureController.ts:147-170; src/client/session/RoomSession.ts:995-1019).",
+      "Bind privileged deployment to the intended account, Worker, environment, revision and payload externally (package.json:8-18; wrangler.jsonc:1-16)."
+    ],
+    "assumptions": [
+      "Offline review is limited to the exact 93-file snapshot at revision a784122aa18c6b7fbee1ae53d34b054a24d71f0b; deployed secrets, relay acceptance and runtime exploitability are unverified.",
+      "No SECURITY.md, supplied threat model, user security context or authoritative knowledge base was available.",
+      "Docs say the relay token is configured and expires on 2026-09-01, but source proves only an optional secret reference (README.md:85-92; src/worker/env.ts:16-25).",
+      "The Product Spec calls the rejoin token single-use, but source reuses it unchanged after reclaim (PRODUCT_SPEC_v1-demo_1.md:195-201; src/worker/room.ts:596-630,793-810).",
+      "The Product Spec calls several operations presenter actions and says each human sees only their routing row, while server authorisation is any human and snapshots contain all rows (PRODUCT_SPEC_v1-demo_1.md:226-237,263-273; src/worker/room.ts:383-452,820-855).",
+      "moqtail internals, generated dist, relay, Cloudflare platform logging and deployed bindings are outside the authorised inventory."
+    ]
+  },
+  "findings": [
+    {
+      "ruleId": "access-control.relay-wide-browser-bearer",
+      "identity": {
+        "anchor": "relay-wide-token-returned-to-browser"
+      },
+      "title": "Room creation and joining disclose a relay-wide publish/subscribe bearer",
+      "summary": "The public create route and open join route return the same configured MOQ_RELAY_TOKEN to browsers. The adapter then authenticates relay operations with that bearer without room, participant, track, action or expiry claims.",
+      "severity": {
+        "level": "high",
+        "rationale": "A public caller can obtain authority intended to publish and subscribe at the relay, bypassing all client-only routing controls. This compromises the primary media isolation boundary if the configured relay accepts the documented token authority."
+      },
+      "confidence": {
+        "level": "medium",
+        "rationale": "The unscoped credential flow and caller-controlled adapter operations are direct source facts. Actual relay acceptance, ACLs, expiry and duplicate-publication semantics remain unverified."
+      },
+      "taxonomy": {
+        "category": "broken-access-control",
+        "cwe": ["CWE-522"]
+      },
+      "locations": [
+        {
+          "path": "src/worker/index.ts",
+          "startLine": 98,
+          "endLine": 114,
+          "role": "public source"
+        },
+        {
+          "path": "src/worker/index.ts",
+          "startLine": 289,
+          "endLine": 304,
+          "role": "missing scoping control"
+        },
+        {
+          "path": "src/worker/relayCredential.ts",
+          "startLine": 10,
+          "endLine": 13,
+          "role": "secret passthrough"
+        },
+        {
+          "path": "src/client/transport/MoqTransportAdapter.ts",
+          "startLine": 361,
+          "endLine": 483,
+          "role": "privileged relay sink"
+        }
+      ],
+      "codeEvidence": [
+        {
+          "id": "relay-issue",
+          "label": "Worker returns the configured token",
+          "path": "src/worker/index.ts",
+          "startLine": 289,
+          "endLine": 304,
+          "language": "typescript",
+          "role": "source evidence",
+          "code": "This token grants publish and subscribe access at the relay, so routing stays\n * labelled cooperative. The current Cloudflare token API cannot mint the\n * room- and track-scoped credentials the long-term design calls for.\n */\nfunction relayCredential(env: Env): string | null {\n  const endpoint = configValue(env.MOQ_RELAY_URL);\n  if (!endpoint) return null;\n  return configuredRelayCredential(env.MOQ_RELAY_TOKEN);\n}",
+          "explanation": "The application explicitly describes relay-wide authority and returns the configured secret unchanged."
+        },
+        {
+          "id": "relay-create-response",
+          "label": "Public create response includes the bearer",
+          "path": "src/worker/index.ts",
+          "startLine": 98,
+          "endLine": 114,
+          "language": "typescript",
+          "role": "source evidence",
+          "code": "if (request.method === \"POST\" && url.pathname === \"/api/rooms\") {\n  const body = await readJsonObject(request);\n  const displayName = requiredString(body, \"displayName\", 80);\n  await enforceCreationRateLimit(request, env);\n  const code = roomCode();\n  const stub = roomStub(env, code);\n  await stub.initialise(code, Date.now());\n  const joined = await stub.join(displayName);\n  return json<CreateRoomResponse>({\n    ...joined,\n    relayCredential: relayCredential(env),\n    correlationId,\n  }, 201);\n}",
+          "explanation": "Room creation requires no existing participant authority yet returns the relay bearer."
+        }
+      ],
+      "rootCause": {
+        "summary": "A single Worker secret is treated as a browser credential; no server component mints or enforces room-, participant-, publication- or subscription-specific claims.",
+        "evidenceRefs": ["relay-issue", "relay-create-response"]
+      },
+      "remediation": "Replace the shared browser-visible token with short-lived credentials scoped to one opaque room and participant, authorising only the participant's publication track and server-approved subscriptions. If the relay cannot enforce that scope, keep live transport unavailable or add an enforcing relay boundary, then rotate the shared secret.",
+      "validation": {
+        "assertions": [
+          "Both create and join return relayCredential(env).",
+          "configuredRelayCredential returns the trimmed Worker secret unchanged.",
+          "MoqTransportAdapter accepts caller-selected publication, subscription and namespace targets."
+        ],
+        "counterEvidence": [
+          "Responses are no-store; the token is absent from RoomSnapshot, logs and telemetry.",
+          "Room codes and participant identifiers are high entropy.",
+          "Routing is truthfully labelled cooperative and transport is unverified."
+        ],
+        "evidenceRefs": ["relay-issue", "relay-create-response"],
+        "limitations": [
+          "Successful relay abuse was not run because live relay acceptance is outside the authorised source snapshot."
+        ],
+        "method": "Offline source review of the exact authorised Git revision.",
+        "status": "validated",
+        "summary": "The source-to-sink path and missing control were traced directly; documented mitigations and external uncertainties were considered.",
+        "disposition": "reported"
+      },
+      "attackPath": {
+        "controls": [
+          "Responses are no-store; the token is absent from RoomSnapshot, logs and telemetry.",
+          "Room codes and participant identifiers are high entropy.",
+          "Routing is truthfully labelled cooperative and transport is unverified."
+        ],
+        "evidenceRefs": ["relay-issue", "relay-create-response"],
+        "impact": {
+          "level": "high",
+          "rationale": "Successful abuse can expose or spoof room audio and disrupt every connected participant; cross-room reach depends on external namespace and relay behaviour."
+        },
+        "likelihood": {
+          "level": "medium",
+          "rationale": "medium"
+        },
+        "limitations": [
+          "Successful relay abuse was not run because live relay acceptance is outside the authorised source snapshot."
+        ],
+        "preconditions": [
+          "A relay endpoint and MOQ_RELAY_TOKEN are configured.",
+          "The relay accepts the documented publish/subscribe authority."
+        ],
+        "steps": [
+          "Call public POST /api/rooms.",
+          "Read relayCredential from the response.",
+          "Authenticate a modified MOQT client with the bearer.",
+          "Request arbitrary publish or subscribe addresses."
+        ],
+        "summary": "An Internet caller creates a room, receives the global relay bearer, and uses a modified client to request relay operations outside application routing."
+      },
+      "remediationTests": [
+        "Verify create and join return distinct short-lived credentials.",
+        "Attempt publication outside the participant's own namespace and assert relay denial.",
+        "Toggle routing consent and assert a revoked subscription is rejected at the relay."
+      ],
+      "preventiveControls": [
+        "Automated check forbidding Worker secret passthrough into API responses.",
+        "Credential claims and expiry audit logging without token values.",
+        "Live relay acceptance tests for namespace ownership and revocation."
+      ],
+      "provenance": {
+        "source": "local_plugin",
+        "candidateId": "baseline-relay-wide-credential",
+        "originalCandidates": [
+          {
+            "rule": "A Worker-wide relay bearer credential is disclosed to every room creator and joiner",
+            "cwe": "CWE-522",
+            "severity": "high",
+            "confidence": "high",
+            "attacker": "Any unauthenticated Internet user who creates a room, or any person who joins a known room.",
+            "violated_security_invariant": "Relay credentials must be short-lived and least-privilege, with participant publication and subscription authority enforced.",
+            "source_to_sink": "Unauthenticated create and open join handlers include relayCredential(env); that helper returns the same trimmed MOQ_RELAY_TOKEN without room, participant, track, action or expiry scoping; the browser inserts it into the relay WebTransport URL.",
+            "impact": "If accepted with the documented coarse authority, a modified client can bypass cooperative routing, subscribe or publish outside UI permissions, impersonate tracks and disrupt participants.",
+            "locations": [
+              {
+                "path": "src/worker/index.ts",
+                "lines": "98-114",
+                "role": "source"
+              },
+              {
+                "path": "src/worker/index.ts",
+                "lines": "132-143",
+                "role": "source"
+              },
+              {
+                "path": "src/worker/index.ts",
+                "lines": "289-304",
+                "role": "root_control"
+              },
+              {
+                "path": "src/worker/relayCredential.ts",
+                "lines": "1-13",
+                "role": "implementation"
+              },
+              {
+                "path": "src/client/transport/MoqTransportAdapter.ts",
+                "lines": "532-539",
+                "role": "sink"
+              },
+              {
+                "path": "src/worker/room.ts",
+                "lines": "916-920",
+                "role": "counterevidence"
+              }
+            ],
+            "supporting_source_evidence": [
+              "Creation needs no participant credential yet returns the Worker relay secret.",
+              "The same secret is returned for creation and every join.",
+              "No source mints participant- or room-specific grants or derives relay permissions from routing."
+            ],
+            "counterevidence": [
+              "The token is a Worker secret and omitted from logs, telemetry, snapshots and share links.",
+              "Identifiers are opaque and UI labels routing cooperative.",
+              "Live relay acceptance and deployed scope are unverified."
+            ],
+            "recommended_remediation": "Mint short-lived room/participant credentials restricting publication and subscriptions; revoke them on routing, leave and expiry; do not expose a relay-wide secret if enforcement is unavailable."
+          }
+        ]
+      },
+      "extensions": {
+        "validatedRevision": "a784122aa18c6b7fbee1ae53d34b054a24d71f0b"
+      }
+    },
+    {
+      "ruleId": "authorization.any-human-global-room-control",
+      "identity": {
+        "anchor": "any-human-authorized-as-presenter"
+      },
+      "title": "Any joined human can execute presenter and AI lifecycle controls",
+      "summary": "All AI creation, removal, pipeline, presenter-simulation and AI-to-AI administration methods authorise through assertHuman, which distinguishes only human from AI. The server stores no creator, presenter, owner or per-AI worker authority.",
+      "severity": {
+        "level": "high",
+        "rationale": "An ordinary attendee can corrupt or remove the complete AI cast, change global safety state and interrupt the ten-minute stage demonstration for every participant."
+      },
+      "confidence": {
+        "level": "high",
+        "rationale": "The public routes, Durable Object mutations and shared assertHuman guard are directly visible, and the product specification explicitly identifies presenter-only operations."
+      },
+      "taxonomy": {
+        "category": "missing-authorization",
+        "cwe": ["CWE-862"]
+      },
+      "locations": [
+        {
+          "path": "src/worker/index.ts",
+          "startLine": 167,
+          "endLine": 252,
+          "role": "global mutation entrypoints"
+        },
+        {
+          "path": "src/worker/room.ts",
+          "startLine": 187,
+          "endLine": 245,
+          "role": "AI lifecycle sinks"
+        },
+        {
+          "path": "src/worker/room.ts",
+          "startLine": 314,
+          "endLine": 452,
+          "role": "pipeline and presenter sinks"
+        },
+        {
+          "path": "src/worker/room.ts",
+          "startLine": 785,
+          "endLine": 810,
+          "role": "insufficient authorisation guard"
+        }
+      ],
+      "codeEvidence": [
+        {
+          "id": "global-ai-add",
+          "label": "AI creation accepts any human",
+          "path": "src/worker/room.ts",
+          "startLine": 187,
+          "endLine": 219,
+          "language": "typescript",
+          "role": "source evidence",
+          "code": "async addAi(\n  credential: ParticipantCredential,\n  displayName: string,\n  options: { address?: string; wakeName?: string; simulated?: boolean } = {},\n): Promise<RoomSnapshot> {\n  await this.assertHuman(credential);\n  return this.addAiInternal(displayName, options);\n}",
+          "explanation": "The only authority check for creating room-wide AIs is membership as any human."
+        },
+        {
+          "id": "global-human-guard",
+          "label": "Shared guard has no presenter role",
+          "path": "src/worker/room.ts",
+          "startLine": 785,
+          "endLine": 790,
+          "language": "typescript",
+          "role": "source evidence",
+          "code": "private async assertHuman(credential: ParticipantCredential): Promise<ParticipantRow> {\n  const row = await this.assertParticipant(credential.participantId, credential.rejoinToken);\n  if (row.role !== \"human\") {\n    throw roomError(403, \"human_only\", \"Only a human participant can perform this action.\");\n  }\n  return row;\n}",
+          "explanation": "The central guard cannot distinguish the room creator, presenter, AI worker or an ordinary attendee."
+        }
+      ],
+      "rootCause": {
+        "summary": "Global room mutations rely on a role predicate that verifies only human membership, while presenterMode is client-side UI state and no stronger server principal exists.",
+        "evidenceRefs": ["global-ai-add", "global-human-guard"]
+      },
+      "remediation": "Persist a room owner/presenter capability at creation, support deliberate delegation, require it for presenter and AI lifecycle administration, and issue per-AI worker credentials for pipeline heartbeats. Add per-room AI mutation and cost budgets without capping ordinary human membership.",
+      "validation": {
+        "assertions": [
+          "A second joined human receives a credential accepted by addAi, removeAi, setAiPipeline, setAiToAi and configurePresenter.",
+          "No owner/presenter field or capability is persisted.",
+          "Client sessionStorage changes only UI visibility."
+        ],
+        "counterEvidence": [
+          "A valid high-entropy participant credential is required.",
+          "Simulation counts and AI-to-AI turns are bounded.",
+          "Rooms hard-stop after twenty minutes and no live AI workers exist yet."
+        ],
+        "evidenceRefs": ["global-ai-add", "global-human-guard"],
+        "limitations": [
+          "External AI cost impact is prospective because the revision uses labelled presenter simulation only."
+        ],
+        "method": "Offline source review of the exact authorised Git revision.",
+        "status": "validated",
+        "summary": "The source-to-sink path and missing control were traced directly; documented mitigations and external uncertainties were considered.",
+        "disposition": "reported"
+      },
+      "attackPath": {
+        "controls": [
+          "A valid high-entropy participant credential is required.",
+          "Simulation counts and AI-to-AI turns are bounded.",
+          "Rooms hard-stop after twenty minutes and no live AI workers exist yet."
+        ],
+        "evidenceRefs": ["global-ai-add", "global-human-guard"],
+        "impact": {
+          "level": "high",
+          "rationale": "The attacker can remove legitimate AIs, fabricate shared AI state, reshape the simulated cast and manipulate AI-to-AI safety counters, breaking the demo's integrity and availability."
+        },
+        "likelihood": {
+          "level": "high",
+          "rationale": "high"
+        },
+        "limitations": [
+          "External AI cost impact is prospective because the revision uses labelled presenter simulation only."
+        ],
+        "preconditions": [
+          "The attacker knows the non-guessable room code and completes an ordinary join."
+        ],
+        "steps": [
+          "Join the open room as an ordinary human.",
+          "Read AI identifiers from the snapshot.",
+          "Call AI lifecycle, pipeline, presenter or AI-to-AI routes.",
+          "The server applies and broadcasts global state changes."
+        ],
+        "summary": "A room-code holder joins normally, then sends global mutation requests with their own participant credential; assertHuman authorises each operation and the Durable Object broadcasts the altered state."
+      },
+      "remediationTests": [
+        "Create a room, join a second human, and assert 403 for every global presenter/AI operation.",
+        "Assert a valid presenter capability succeeds and can be revoked.",
+        "Assert per-AI credentials can update only their bound AI pipeline."
+      ],
+      "preventiveControls": [
+        "Central authorisation policy for room-global actions.",
+        "Negative cross-participant tests for every new RPC.",
+        "Explicit AI lifecycle and cost budgets."
+      ],
+      "provenance": {
+        "source": "local_plugin",
+        "candidateId": "baseline-presenter-global-controls",
+        "originalCandidates": [
+          {
+            "rule": "Any joined human can execute presenter-only global room controls",
+            "cwe": "CWE-862",
+            "severity": "medium",
+            "confidence": "high",
+            "attacker": "Any attendee who knows the room code and joins normally.",
+            "violated_security_invariant": "Global presenter actions must be authorised to a presenter or owner, not any human.",
+            "source_to_sink": "All AI, floor, AI-to-AI and presenter mutations call assertHuman, which verifies only human role; the browser presenter flag affects only UI visibility, and requestFloor accepts arbitrary aiId.",
+            "impact": "A malicious attendee can add/remove AIs, fabricate pipeline state, reconfigure simulation, enable AI loops or wedge floor ownership.",
+            "locations": [
+              {
+                "path": "src/worker/index.ts",
+                "lines": "167-260",
+                "role": "entrypoints"
+              },
+              {
+                "path": "src/worker/room.ts",
+                "lines": "187-245",
+                "role": "sink"
+              },
+              {
+                "path": "src/worker/room.ts",
+                "lines": "314-453",
+                "role": "sink"
+              },
+              {
+                "path": "src/worker/room.ts",
+                "lines": "785-790",
+                "role": "root_control"
+              },
+              {
+                "path": "src/client/pages/RoomPage.tsx",
+                "lines": "22-28",
+                "role": "client_only_control"
+              },
+              {
+                "path": "test/room-service.test.ts",
+                "lines": "387-409",
+                "role": "missing_test"
+              }
+            ],
+            "supporting_source_evidence": [
+              "Open membership gives every attendee a valid human credential.",
+              "No owner or presenter role is persisted or checked.",
+              "Every global action accepts any valid human credential."
+            ],
+            "counterevidence": [
+              "Anonymous, invalid-token and AI-role callers are rejected.",
+              "Participant routing updates enforce ownership.",
+              "The client hides presenter controls."
+            ],
+            "recommended_remediation": "Persist a room owner/presenter principal and require a distinct server capability for global mutations; validate AI targets; limit ordinary humans to participant-owned operations."
+          }
+        ]
+      },
+      "extensions": {
+        "validatedRevision": "a784122aa18c6b7fbee1ae53d34b054a24d71f0b"
+      }
+    },
+    {
+      "ruleId": "input-validation.ai-floor-target",
+      "identity": {
+        "anchor": "unchecked-ai-id-corrupts-floor-state"
+      },
+      "title": "Unvalidated AI identifiers can wedge or pre-empt the global floor",
+      "summary": "requestFloor stores an arbitrary caller-supplied aiId as the floor holder or queue entry without proving that it names an active AI. releaseFloor likewise needs only the supplied holder ID.",
+      "severity": {
+        "level": "medium",
+        "rationale": "A joined human can block every legitimate AI behind a nonexistent holder, fill the queue with bogus identifiers or release another AI's turn, disrupting shared room availability."
+      },
+      "confidence": {
+        "level": "high",
+        "rationale": "The missing target lookup and direct SQL writes are explicit in source; no foreign key or turn capability exists."
+      },
+      "taxonomy": {
+        "category": "improper-input-validation",
+        "cwe": ["CWE-20"]
+      },
+      "locations": [
+        {
+          "path": "src/worker/index.ts",
+          "startLine": 207,
+          "endLine": 216,
+          "role": "entrypoint"
+        },
+        {
+          "path": "src/worker/room.ts",
+          "startLine": 336,
+          "endLine": 381,
+          "role": "state sink"
+        },
+        {
+          "path": "src/worker/room.ts",
+          "startLine": 586,
+          "endLine": 589,
+          "role": "unconstrained queue schema"
+        }
+      ],
+      "codeEvidence": [
+        {
+          "id": "floor-write",
+          "label": "Caller target is stored without validation",
+          "path": "src/worker/room.ts",
+          "startLine": 336,
+          "endLine": 360,
+          "language": "typescript",
+          "role": "source evidence",
+          "code": "async requestFloor(\n  credential: ParticipantCredential,\n  aiId: string,\n): Promise<{ granted: boolean; room: RoomSnapshot }> {\n  await this.assertHuman(credential);\n  this.assertActive();\n  const now = Date.now();\n  const meta = this.meta();\n  if (!meta) throw roomError(404, \"room_not_found\", \"Room is not initialised.\");\n\n  if (meta.floor_holder === aiId) return { granted: true, room: this.snapshot() };\n  if (meta.floor_holder === null) {\n    this.ctx.storage.sql.exec(\n      \"UPDATE room_meta SET floor_holder = ?, floor_since = ? WHERE singleton = 1\",\n      aiId,\n      now,\n    );\n  }\n  this.ctx.storage.sql.exec(\n    \"INSERT INTO floor_queue (ai_id, queued_at) VALUES (?, ?) ON CONFLICT(ai_id) DO NOTHING\",\n    aiId,\n    now,\n  );\n}",
+          "explanation": "No participant existence, role or state check occurs before the supplied identifier becomes shared floor state."
+        }
+      ],
+      "rootCause": {
+        "summary": "The floor API trusts an identifier asserted by a human caller and the database schema does not bind floor holders or queue entries to active AI participant rows.",
+        "evidenceRefs": ["floor-write"]
+      },
+      "remediation": "Resolve aiId to an active role='ai' participant before every floor operation. Bind acquisition and release to an authorised AI or server-issued turn capability, reject stale requests and constrain the queue to active AI rows.",
+      "validation": {
+        "assertions": [
+          "Nonexistent and human identifiers are accepted as floor holders.",
+          "releaseFloor has no proof that the caller controls the active AI turn.",
+          "floor_queue has only a text primary key."
+        ],
+        "counterEvidence": [
+          "A valid human credential is required.",
+          "Duplicate queue identifiers are deduplicated.",
+          "Removing a known AI cleans its own floor state."
+        ],
+        "evidenceRefs": ["floor-write"],
+        "limitations": [],
+        "method": "Offline source review of the exact authorised Git revision.",
+        "status": "validated",
+        "summary": "The source-to-sink path and missing control were traced directly; documented mitigations and external uncertainties were considered.",
+        "disposition": "reported"
+      },
+      "attackPath": {
+        "controls": [
+          "A valid human credential is required.",
+          "Duplicate queue identifiers are deduplicated.",
+          "Removing a known AI cleans its own floor state."
+        ],
+        "evidenceRefs": ["floor-write"],
+        "impact": {
+          "level": "medium",
+          "rationale": "Shared AI turn-taking is wedged or pre-empted until another caller supplies the exact bogus holder or the room expires."
+        },
+        "likelihood": {
+          "level": "high",
+          "rationale": "high"
+        },
+        "limitations": [],
+        "preconditions": ["The attacker is an active human participant."],
+        "steps": [
+          "Join as a human.",
+          "Request the floor for a nonexistent identifier while the floor is empty.",
+          "Legitimate AIs subsequently queue behind the unreachable holder."
+        ],
+        "summary": "An ordinary human calls the floor route with a fabricated or known aiId; the Durable Object stores or releases that identifier without target validation."
+      },
+      "remediationTests": [
+        "Reject nonexistent, human, left and simulated-disallowed targets.",
+        "Require a valid turn capability to release the holder.",
+        "Verify queue rows reference active AI participants after lifecycle changes."
+      ],
+      "preventiveControls": [
+        "Foreign-key or application invariant for floor targets.",
+        "Capability-bound floor API.",
+        "Invariant tests for every participant state transition."
+      ],
+      "provenance": {
+        "source": "local_plugin",
+        "candidateId": "control-floor-target-validation",
+        "originalCandidates": [
+          {
+            "rule": "Unvalidated floor targets let any human wedge or pre-empt the global AI floor",
+            "cwe": "CWE-20",
+            "severity": "medium",
+            "confidence": "high",
+            "attacker": "An ordinary joined human.",
+            "violated_security_invariant": "Floor holders and queued entries must be active AIs and release must prove control of the turn.",
+            "source_to_sink": "requestFloor writes caller-supplied aiId to floor holder or queue after assertHuman without participant lookup. releaseFloor clears or advances when the supplied ID equals the holder.",
+            "impact": "A participant can wedge the floor with nonexistent/human IDs, queue bogus IDs, or pre-empt another AI's active floor.",
+            "locations": [
+              {
+                "path": "src/worker/index.ts",
+                "lines": "207-216",
+                "role": "entrypoint"
+              },
+              {
+                "path": "src/worker/room.ts",
+                "lines": "332-381",
+                "role": "sink"
+              },
+              {
+                "path": "src/worker/room.ts",
+                "lines": "663-697",
+                "role": "state"
+              }
+            ],
+            "supporting_source_evidence": [
+              "No role/state/existence validation precedes writes.",
+              "floor_queue has no foreign key.",
+              "Release needs only holder ID knowledge."
+            ],
+            "counterevidence": [
+              "Valid human credential required.",
+              "Duplicate queue IDs deduplicate.",
+              "Known AI removal cleans that AI's state."
+            ],
+            "recommended_remediation": "Require an active AI target and bind acquire/release to a server-side turn or authorised AI capability."
+          }
+        ]
+      },
+      "extensions": {
+        "validatedRevision": "a784122aa18c6b7fbee1ae53d34b054a24d71f0b"
+      }
+    },
+    {
+      "ruleId": "privacy.routing-preference-disclosure",
+      "identity": {
+        "anchor": "full-routing-rows-in-public-snapshot"
+      },
+      "title": "Public room snapshots disclose every human's per-AI routing preferences",
+      "summary": "The unauthenticated room snapshot selects and serialises all routing rows, including who permits each AI to hear them and who listens to each AI. Join responses and control WebSockets reuse the same complete snapshot.",
+      "severity": {
+        "level": "medium",
+        "rationale": "A room-code holder can map display names and participant IDs to individual consent/listening choices that the binding product specification says are owner-only."
+      },
+      "confidence": {
+        "level": "high",
+        "rationale": "The public GET route, unrestricted routing query and returned contract are direct source facts, and the privacy requirement is explicit."
+      },
+      "taxonomy": {
+        "category": "sensitive-data-exposure",
+        "cwe": ["CWE-200"]
+      },
+      "locations": [
+        {
+          "path": "src/worker/index.ts",
+          "startLine": 117,
+          "endLine": 130,
+          "role": "unauthenticated source"
+        },
+        {
+          "path": "src/worker/room.ts",
+          "startLine": 466,
+          "endLine": 496,
+          "role": "WebSocket disclosure"
+        },
+        {
+          "path": "src/worker/room.ts",
+          "startLine": 820,
+          "endLine": 855,
+          "role": "unfiltered snapshot"
+        },
+        {
+          "path": "src/worker/room.ts",
+          "startLine": 991,
+          "endLine": 999,
+          "role": "routing serialisation"
+        }
+      ],
+      "codeEvidence": [
+        {
+          "id": "routing-snapshot",
+          "label": "Snapshot returns every routing row",
+          "path": "src/worker/room.ts",
+          "startLine": 820,
+          "endLine": 837,
+          "language": "typescript",
+          "role": "source evidence",
+          "code": "private snapshot(): RoomSnapshot {\n  const meta = this.assertActive();\n  const participants = this.ctx.storage.sql\n    .exec<ParticipantRow>(\"SELECT * FROM participants WHERE state != 'left' ORDER BY joined_at\")\n    .toArray()\n    .map(toParticipant);\n  const routing = this.ctx.storage.sql\n    .exec<RoutingRow>(\"SELECT * FROM routing ORDER BY updated_at\")\n    .toArray()\n    .map((row) => toRouting(row, this.routingEnforcement()));\n\n  return {\n    code: meta.code,\n    participants,\n    routing,",
+          "explanation": "The snapshot has no viewer context and therefore cannot filter detailed rows to their owner."
+        }
+      ],
+      "rootCause": {
+        "summary": "One viewer-independent RoomSnapshot is used for public HTTP, join and WebSocket responses even though routing preferences contain per-human private consent state.",
+        "evidenceRefs": ["routing-snapshot"]
+      },
+      "remediation": "Create separate public and participant-specific snapshots. Authenticate detailed routing reads, return only rows owned by the caller, and expose a server-computed aggregate 'Partial context' state for everyone else.",
+      "validation": {
+        "assertions": [
+          "GET by room code requires no participant credential.",
+          "snapshot executes SELECT * FROM routing.",
+          "toRouting exposes humanId, aiId, hearsMe and iHearIt."
+        ],
+        "counterEvidence": [
+          "The room code is high entropy and acts as a share capability.",
+          "Tokens and relay credentials are absent.",
+          "Room state expires after twenty minutes."
+        ],
+        "evidenceRefs": ["routing-snapshot"],
+        "limitations": [],
+        "method": "Offline source review of the exact authorised Git revision.",
+        "status": "validated",
+        "summary": "The source-to-sink path and missing control were traced directly; documented mitigations and external uncertainties were considered.",
+        "disposition": "reported"
+      },
+      "attackPath": {
+        "controls": [
+          "The room code is high entropy and acts as a share capability.",
+          "Tokens and relay credentials are absent.",
+          "Room state expires after twenty minutes."
+        ],
+        "evidenceRefs": ["routing-snapshot"],
+        "impact": {
+          "level": "medium",
+          "rationale": "Individual AI consent and listening choices are exposed to every invited room-code holder."
+        },
+        "likelihood": {
+          "level": "high",
+          "rationale": "high"
+        },
+        "limitations": [],
+        "preconditions": ["The attacker knows a valid room code."],
+        "steps": [
+          "Obtain an invited room link.",
+          "Request GET /api/rooms/:code.",
+          "Correlate participants with routing rows."
+        ],
+        "summary": "A person holding the room code calls the public snapshot endpoint and receives all participant identities and detailed routing rows."
+      },
+      "remediationTests": [
+        "Assert unauthenticated snapshots contain only public aggregate routing state.",
+        "Assert each authenticated human receives only their own detailed rows.",
+        "Assert WebSocket snapshots apply the same viewer-specific filtering."
+      ],
+      "preventiveControls": [
+        "Separate public/private response types.",
+        "Field-level privacy tests tied to the product specification.",
+        "Schema review for any future snapshot field."
+      ],
+      "provenance": {
+        "source": "local_plugin",
+        "candidateId": "control-routing-row-disclosure",
+        "originalCandidates": [
+          {
+            "rule": "Public room snapshots disclose every human's private per-AI routing row",
+            "cwe": "CWE-200",
+            "severity": "medium",
+            "confidence": "high",
+            "attacker": "Any room-code holder.",
+            "violated_security_invariant": "Each human may see only their own detailed routing row; others receive aggregate context.",
+            "source_to_sink": "Unauthenticated GET returns getSnapshot; snapshot selects every routing row and serialises humanId, aiId, hearsMe and iHearIt. The same full snapshot is returned at join and over every WebSocket.",
+            "impact": "A room-code holder can map names and IDs to each person's AI listening and consent choices, contrary to the product's row-visibility promise.",
+            "locations": [
+              {
+                "path": "src/worker/index.ts",
+                "lines": "117-130",
+                "role": "public_entrypoint"
+              },
+              {
+                "path": "src/worker/room.ts",
+                "lines": "466-496",
+                "role": "socket_disclosure"
+              },
+              {
+                "path": "src/worker/room.ts",
+                "lines": "820-855",
+                "role": "query"
+              },
+              {
+                "path": "src/worker/room.ts",
+                "lines": "991-999",
+                "role": "serialisation"
+              },
+              {
+                "path": "PRODUCT_SPEC_v1-demo_1.md",
+                "lines": "267-272",
+                "role": "privacy_requirement"
+              }
+            ],
+            "supporting_source_evidence": [
+              "HTTP snapshot has no credential.",
+              "SELECT * FROM routing is unrestricted.",
+              "Contract contains both private booleans and identifiers.",
+              "Spec promises owner-only row visibility."
+            ],
+            "counterevidence": [
+              "Room code is high entropy.",
+              "Tokens are not in snapshots.",
+              "Room data is ephemeral."
+            ],
+            "recommended_remediation": "Split public and participant-specific snapshots; authenticate detailed routing; return only the caller's rows; expose only server-computed aggregate context for others."
+          }
+        ]
+      },
+      "extensions": {
+        "validatedRevision": "a784122aa18c6b7fbee1ae53d34b054a24d71f0b"
+      }
+    },
+    {
+      "ruleId": "credential-exposure.websocket-query-bearer",
+      "identity": {
+        "anchor": "reusable-rejoin-token-in-websocket-url"
+      },
+      "title": "A reusable participant bearer is placed in the WebSocket query string",
+      "summary": "roomEventsUrl appends the participant's general rejoin token to the WebSocket URL. The Worker and Durable Object read that query value for authentication, and reclaim returns the same reusable token without consumption or rotation.",
+      "severity": {
+        "level": "medium",
+        "rationale": "If an intermediary, diagnostic or access log captures the handshake URL, its reader can replay the participant's general credential for sockets and mutation APIs during the room lifetime."
+      },
+      "confidence": {
+        "level": "medium",
+        "rationale": "URL placement and token reuse are direct source facts, while actual external query-string logging is deployment-dependent and was not established."
+      },
+      "taxonomy": {
+        "category": "credential-exposure",
+        "cwe": ["CWE-598"]
+      },
+      "locations": [
+        {
+          "path": "src/client/api.ts",
+          "startLine": 187,
+          "endLine": 198,
+          "role": "credential source"
+        },
+        {
+          "path": "src/worker/index.ts",
+          "startLine": 263,
+          "endLine": 280,
+          "role": "query authentication entrypoint"
+        },
+        {
+          "path": "src/worker/room.ts",
+          "startLine": 466,
+          "endLine": 496,
+          "role": "authentication sink"
+        },
+        {
+          "path": "src/worker/room.ts",
+          "startLine": 596,
+          "endLine": 630,
+          "role": "credential reuse"
+        }
+      ],
+      "codeEvidence": [
+        {
+          "id": "ws-query-token",
+          "label": "Client embeds reusable bearer in URL",
+          "path": "src/client/api.ts",
+          "startLine": 187,
+          "endLine": 198,
+          "language": "typescript",
+          "role": "source evidence",
+          "code": "/**\n * §8 link separation: the control-plane socket carries the participant token in\n * a query string, so this URL is a secret and never appears in telemetry or a\n * share link.\n */\nexport function roomEventsUrl(session: StoredSession): string {\n  const url = new URL(`/api/rooms/${session.code}/events`, location.href);\n  url.protocol = url.protocol === \"https:\" ? \"wss:\" : \"ws:\";\n  url.searchParams.set(\"participant\", session.participantId);\n  url.searchParams.set(\"token\", session.rejoinToken);\n  return url.toString();\n}",
+          "explanation": "The code explicitly treats the URL as secret but places the reusable general bearer in it."
+        }
+      ],
+      "rootCause": {
+        "summary": "The socket handshake reuses a general-purpose participant credential instead of exchanging it through an authenticated request for a purpose-bound, single-use socket ticket.",
+        "evidenceRefs": ["ws-query-token"]
+      },
+      "remediation": "Add an authenticated endpoint that mints a very short-lived, participant- and room-bound socket ticket. Consume it atomically on the first upgrade, never put the rejoin token in a URL, and rotate the rejoin credential after successful reclaim.",
+      "validation": {
+        "assertions": [
+          "The complete token is appended as token=.",
+          "The same token authenticates other participant mutations.",
+          "Reclaim does not consume or rotate it."
+        ],
+        "counterEvidence": [
+          "Application logs normalise to pathname and omit queries.",
+          "TLS protects transit.",
+          "The token is random, hashed at rest and bounded by leave or room expiry."
+        ],
+        "evidenceRefs": ["ws-query-token"],
+        "limitations": ["Cloudflare or proxy full-URL logging was not verified."],
+        "method": "Offline source review of the exact authorised Git revision.",
+        "status": "validated",
+        "summary": "The source-to-sink path and missing control were traced directly; documented mitigations and external uncertainties were considered.",
+        "disposition": "reported"
+      },
+      "attackPath": {
+        "controls": [
+          "Application logs normalise to pathname and omit queries.",
+          "TLS protects transit.",
+          "The token is random, hashed at rest and bounded by leave or room expiry."
+        ],
+        "evidenceRefs": ["ws-query-token"],
+        "impact": {
+          "level": "medium",
+          "rationale": "Replay permits participant impersonation and inherits the impact of every operation authorised by the bearer."
+        },
+        "likelihood": {
+          "level": "medium",
+          "rationale": "medium"
+        },
+        "limitations": ["Cloudflare or proxy full-URL logging was not verified."],
+        "preconditions": [
+          "At least one external system records full request URLs.",
+          "The participant remains active or inside the reconnect window."
+        ],
+        "steps": [
+          "An external component records the WebSocket request URL.",
+          "The attacker reads the token query parameter.",
+          "The attacker opens a socket or invokes HTTP mutations before expiry."
+        ],
+        "summary": "A party with access to handshake URLs obtains the query bearer and replays it as the participant."
+      },
+      "remediationTests": [
+        "Assert WebSocket URLs contain only a one-time ticket.",
+        "Reuse a consumed ticket and expect 401.",
+        "Reclaim twice and verify the old rejoin credential is invalid."
+      ],
+      "preventiveControls": [
+        "Secret-in-URL static check.",
+        "Purpose-bound credential service.",
+        "Redacted infrastructure logging policy."
+      ],
+      "provenance": {
+        "source": "local_plugin",
+        "candidateId": "baseline-websocket-query-token",
+        "originalCandidates": [
+          {
+            "rule": "A reusable participant bearer token is placed in the WebSocket URL query string",
+            "cwe": "CWE-598",
+            "severity": "medium",
+            "confidence": "high",
+            "attacker": "A party able to read handshake URLs from diagnostics, platform/proxy logs, monitoring or support artefacts.",
+            "violated_security_invariant": "Reusable authentication secrets must not be placed in URLs commonly recorded by infrastructure.",
+            "source_to_sink": "roomEventsUrl appends participant ID and reusable rejoin token; Worker and Durable Object authenticate with that query token; reclaim returns it unchanged.",
+            "impact": "A disclosed URL permits participant impersonation, event access and authenticated mutations.",
+            "locations": [
+              {
+                "path": "src/client/api.ts",
+                "lines": "187-197",
+                "role": "root_control"
+              },
+              {
+                "path": "src/worker/index.ts",
+                "lines": "263-280",
+                "role": "entrypoint"
+              },
+              {
+                "path": "src/worker/room.ts",
+                "lines": "466-496",
+                "role": "sink"
+              },
+              {
+                "path": "src/worker/room.ts",
+                "lines": "596-630",
+                "role": "reuse"
+              },
+              {
+                "path": "src/worker/room.ts",
+                "lines": "793-810",
+                "role": "authentication"
+              }
+            ],
+            "supporting_source_evidence": [
+              "The URL contains the bearer used for HTTP mutations.",
+              "No one-time socket ticket exists.",
+              "No rotation occurs on reclaim."
+            ],
+            "counterevidence": [
+              "WSS protects transit, the token is high entropy and only its hash is persisted.",
+              "Application logs omit queries and exports omit the token.",
+              "Platform URL logging is external and unverified."
+            ],
+            "recommended_remediation": "Exchange the main credential for a single-use short-expiry socket ticket and rotate the rejoin credential on reclaim."
+          }
+        ]
+      },
+      "extensions": {
+        "validatedRevision": "a784122aa18c6b7fbee1ae53d34b054a24d71f0b"
+      }
+    },
+    {
+      "ruleId": "resource-exhaustion.concurrent-control-sockets",
+      "identity": {
+        "anchor": "unbounded-sockets-per-participant"
+      },
+      "title": "One participant token can open unbounded concurrent control sockets",
+      "summary": "Every authenticated events upgrade creates and retains another WebSocket, sends a full snapshot and includes it in every later broadcast. The participant tag is never used to enforce a per-participant concurrency bound.",
+      "severity": {
+        "level": "medium",
+        "rationale": "A single participant can amplify Durable Object connection, serialisation and broadcast work until the control plane becomes unavailable during the demo."
+      },
+      "confidence": {
+        "level": "high",
+        "rationale": "The upgrade allocation and broadcast iteration are direct source paths; no local throttle, ticket consumption or concurrency check exists."
+      },
+      "taxonomy": {
+        "category": "resource-exhaustion",
+        "cwe": ["CWE-770"]
+      },
+      "locations": [
+        {
+          "path": "src/worker/index.ts",
+          "startLine": 263,
+          "endLine": 280,
+          "role": "entrypoint"
+        },
+        {
+          "path": "src/worker/room.ts",
+          "startLine": 466,
+          "endLine": 496,
+          "role": "socket allocation"
+        },
+        {
+          "path": "src/worker/room.ts",
+          "startLine": 969,
+          "endLine": 972,
+          "role": "broadcast amplification"
+        }
+      ],
+      "codeEvidence": [
+        {
+          "id": "socket-accept",
+          "label": "Each token replay allocates another socket",
+          "path": "src/worker/room.ts",
+          "startLine": 466,
+          "endLine": 496,
+          "language": "typescript",
+          "role": "source evidence",
+          "code": "async fetch(request: Request): Promise<Response> {\n  const url = new URL(request.url);\n  const participantId = url.searchParams.get(\"participant\") ?? \"\";\n  const rejoinToken = url.searchParams.get(\"token\") ?? \"\";\n  await this.assertParticipant(participantId, rejoinToken);\n\n  const pair = new WebSocketPair();\n  const client = pair[0];\n  const server = pair[1];\n  server.serializeAttachment({ participantId } satisfies SocketAttachment);\n  this.ctx.acceptWebSocket(server, [`participant:${participantId}`]);\n  server.send(JSON.stringify({ type: \"snapshot\", room: this.snapshot(), at: Date.now() }));\n  return new Response(null, { status: 101, webSocket: client });\n}",
+          "explanation": "The participant tag is recorded but not checked against existing sockets."
+        }
+      ],
+      "rootCause": {
+        "summary": "The reusable participant credential is accepted independently for every upgrade and no per-participant connection ownership or bounded reconnect policy is enforced.",
+        "evidenceRefs": ["socket-accept"]
+      },
+      "remediation": "Use single-use socket tickets, enforce one active socket or a small documented bound per participant, close or replace the older socket on reconnect, rate-limit upgrades and bound initial snapshot/broadcast work.",
+      "validation": {
+        "assertions": [
+          "The same credential can authenticate repeated upgrades.",
+          "Each upgrade serialises and sends a full snapshot.",
+          "broadcast sends to every retained socket."
+        ],
+        "counterEvidence": [
+          "A valid active participant credential is required.",
+          "Only ping messages are accepted from clients.",
+          "Room expiry closes sockets and platform quotas may cap absolute scale."
+        ],
+        "evidenceRefs": ["socket-accept"],
+        "limitations": ["Cloudflare connection ceilings were not inspected."],
+        "method": "Offline source review of the exact authorised Git revision.",
+        "status": "validated",
+        "summary": "The source-to-sink path and missing control were traced directly; documented mitigations and external uncertainties were considered.",
+        "disposition": "reported"
+      },
+      "attackPath": {
+        "controls": [
+          "A valid active participant credential is required.",
+          "Only ping messages are accepted from clients.",
+          "Room expiry closes sockets and platform quotas may cap absolute scale."
+        ],
+        "evidenceRefs": ["socket-accept"],
+        "impact": {
+          "level": "medium",
+          "rationale": "Control-plane resources and broadcast capacity are exhausted for the room."
+        },
+        "likelihood": {
+          "level": "high",
+          "rationale": "high"
+        },
+        "limitations": ["Cloudflare connection ceilings were not inspected."],
+        "preconditions": ["The attacker has one valid participant credential."],
+        "steps": [
+          "Join once.",
+          "Open many concurrent /events upgrades with the same credential.",
+          "Trigger or wait for room events.",
+          "Observe work amplified over all sockets."
+        ],
+        "summary": "A malicious participant replays their valid token across many WebSocket upgrades; later room events are multiplied across every retained socket."
+      },
+      "remediationTests": [
+        "Open a second socket for one participant and assert replacement or 429.",
+        "Burst upgrades and assert a documented Retry-After response.",
+        "Verify broadcasts target only the authorised active socket."
+      ],
+      "preventiveControls": [
+        "Per-participant socket registry.",
+        "Single-use upgrade tickets.",
+        "Connection and broadcast metrics with bounded degradation."
+      ],
+      "provenance": {
+        "source": "local_plugin",
+        "candidateId": "control-concurrent-websockets",
+        "originalCandidates": [
+          {
+            "rule": "A reusable participant token can open unbounded concurrent control sockets",
+            "cwe": "CWE-770",
+            "severity": "medium",
+            "confidence": "high",
+            "attacker": "A malicious participant or credential-replay attacker.",
+            "violated_security_invariant": "Control connections must be bounded per participant and room.",
+            "source_to_sink": "Every authenticated upgrade creates and retains a new WebSocket, sends a full snapshot and receives every later broadcast. No existing-socket check, ticket consumption, throttle or concurrency cap exists.",
+            "impact": "One participant can consume Durable Object socket resources and amplify full-snapshot and broadcast work across attacker sockets.",
+            "locations": [
+              {
+                "path": "src/worker/index.ts",
+                "lines": "263-280",
+                "role": "entrypoint"
+              },
+              {
+                "path": "src/worker/room.ts",
+                "lines": "466-496",
+                "role": "allocation_sink"
+              },
+              {
+                "path": "src/worker/room.ts",
+                "lines": "527-533",
+                "role": "message_control"
+              },
+              {
+                "path": "src/worker/room.ts",
+                "lines": "969-972",
+                "role": "amplification_sink"
+              }
+            ],
+            "supporting_source_evidence": [
+              "Participant tags are not used for limits.",
+              "No upgrade throttle exists.",
+              "Full snapshot size grows with membership/routing.",
+              "broadcast iterates all sockets."
+            ],
+            "counterevidence": [
+              "Valid active credential required.",
+              "Only ping client messages are accepted.",
+              "Room expiry closes sockets.",
+              "Platform quotas are external."
+            ],
+            "recommended_remediation": "Use single-use tickets; enforce one or a small bound of sockets per participant; rate-limit upgrades and bound initial snapshot/broadcast work."
+          }
+        ]
+      },
+      "extensions": {
+        "validatedRevision": "a784122aa18c6b7fbee1ae53d34b054a24d71f0b"
+      }
+    },
+    {
+      "ruleId": "resource-exhaustion.unthrottled-open-joins",
+      "identity": {
+        "anchor": "unbounded-join-allocation-per-room-code"
+      },
+      "title": "Unthrottled open-room joins permit unbounded participant and routing allocation",
+      "summary": "The open join path has no source- or room-level rate limit. Every non-reclaim join inserts a participant, seeds routing for every AI, broadcasts and serialises a complete snapshot; the Worker also fetched a snapshot immediately before joining.",
+      "severity": {
+        "level": "medium",
+        "rationale": "A room-code holder can grow participant and human-by-AI routing state and amplify snapshots/broadcasts fast enough to degrade or exhaust a room Durable Object."
+      },
+      "confidence": {
+        "level": "high",
+        "rationale": "The absence of a join limiter and the per-join allocations are explicit. The product's no-participant-cap rule does not prohibit velocity limits."
+      },
+      "taxonomy": {
+        "category": "resource-exhaustion",
+        "cwe": ["CWE-770"]
+      },
+      "locations": [
+        {
+          "path": "src/worker/index.ts",
+          "startLine": 132,
+          "endLine": 143,
+          "role": "unthrottled entrypoint"
+        },
+        {
+          "path": "src/worker/room.ts",
+          "startLine": 143,
+          "endLine": 180,
+          "role": "participant allocation"
+        },
+        {
+          "path": "src/worker/room.ts",
+          "startLine": 633,
+          "endLine": 660,
+          "role": "routing allocation"
+        },
+        {
+          "path": "src/worker/room.ts",
+          "startLine": 820,
+          "endLine": 855,
+          "role": "growing response"
+        }
+      ],
+      "codeEvidence": [
+        {
+          "id": "join-allocation",
+          "label": "Each request creates persistent participant state",
+          "path": "src/worker/room.ts",
+          "startLine": 148,
+          "endLine": 180,
+          "language": "typescript",
+          "role": "source evidence",
+          "code": "async join(displayName: string, rejoinToken?: string): Promise<RoomJoinResult> {\n  this.assertActive();\n  const now = Date.now();\n  if (rejoinToken) {\n    const reclaimed = await this.reclaim(displayName, rejoinToken, now);\n    if (reclaimed) return reclaimed;\n  }\n  const participantId = crypto.randomUUID();\n  const token = randomToken();\n  this.ctx.storage.sql.exec(\n    `INSERT INTO participants (id, display_name, role, state, joined_at, reconnect_until, rejoin_hash, simulated, address, wake_name, pipeline, last_active_at)\n     VALUES (?, ?, 'human', 'connected', ?, NULL, ?, 0, NULL, NULL, NULL, ?)`,\n    participantId, displayName, now, await sha256(token), now,\n  );\n  this.seedRoutingForHuman(participantId, now);\n  this.broadcast({ type: \"participant_changed\", participantId, state: \"connected\", at: now });\n  return { room: this.snapshot(), participant: this.participant(participantId), rejoinToken: token };\n}",
+          "explanation": "Every fresh join performs persistent writes, cross-product routing work, a broadcast and a growing snapshot."
+        }
+      ],
+      "rootCause": {
+        "summary": "Only room creation is throttled; open membership was implemented without a separate abuse-velocity and credential-issuance budget.",
+        "evidenceRefs": ["join-allocation"]
+      },
+      "remediation": "Add per-source and per-room token-bucket join limits with documented burst capacity and Retry-After. Rate-limit relay credential issuance separately, avoid duplicate snapshot serialisation, and budget routing-row creation while preserving the no-participant-count-cap requirement.",
+      "validation": {
+        "assertions": [
+          "No join limiter is invoked.",
+          "Each new human creates routing rows for all active AIs.",
+          "Every join broadcasts and returns the full snapshot."
+        ],
+        "counterEvidence": [
+          "The attacker must know a high-entropy room code.",
+          "Input lengths and room lifetime are bounded.",
+          "Membership intentionally has no count cap."
+        ],
+        "evidenceRefs": ["join-allocation"],
+        "limitations": ["Cloudflare object and request ceilings were not measured."],
+        "method": "Offline source review of the exact authorised Git revision.",
+        "status": "validated",
+        "summary": "The source-to-sink path and missing control were traced directly; documented mitigations and external uncertainties were considered.",
+        "disposition": "reported"
+      },
+      "attackPath": {
+        "controls": [
+          "The attacker must know a high-entropy room code.",
+          "Input lengths and room lifetime are bounded.",
+          "Membership intentionally has no count cap."
+        ],
+        "evidenceRefs": ["join-allocation"],
+        "impact": {
+          "level": "medium",
+          "rationale": "The room control plane slows or becomes unavailable without rejecting any individual join for participant count."
+        },
+        "likelihood": {
+          "level": "high",
+          "rationale": "high"
+        },
+        "limitations": ["Cloudflare object and request ceilings were not measured."],
+        "preconditions": ["The attacker knows the room code."],
+        "steps": [
+          "Obtain a valid room code.",
+          "Send many join requests without reclaim tokens.",
+          "Each request allocates participant and routing state.",
+          "Snapshot and broadcast work grows with accumulated state."
+        ],
+        "summary": "A room-code holder sends rapid fresh joins, causing persistent state and per-event work to grow faster than legitimate clients can be served."
+      },
+      "remediationTests": [
+        "Burst joins from one source and one room and assert rate-limited responses with Retry-After.",
+        "Verify legitimate joins resume after refill.",
+        "Verify the implementation never rejects solely because of total participant count."
+      ],
+      "preventiveControls": [
+        "Dedicated join and credential-issuance rate limits.",
+        "Per-room work-budget telemetry.",
+        "Load test for human-by-AI routing growth."
+      ],
+      "provenance": {
+        "source": "local_plugin",
+        "candidateId": "control-unthrottled-joins",
+        "originalCandidates": [
+          {
+            "rule": "Unthrottled open-room joins permit unbounded participant and routing allocation",
+            "cwe": "CWE-770",
+            "severity": "medium",
+            "confidence": "high",
+            "attacker": "A malicious holder of a valid room code.",
+            "violated_security_invariant": "Open membership remains uncapped but join and issuance rates and per-request work must be bounded.",
+            "source_to_sink": "Every non-reclaim join creates a token, participant, routing row per active AI, broadcast and complete snapshot. The route checks existence with one snapshot before join creates another.",
+            "impact": "A room-code holder can rapidly grow participant and human-by-AI routing state, snapshot size, broadcasts and credential responses.",
+            "locations": [
+              {
+                "path": "src/worker/index.ts",
+                "lines": "132-143",
+                "role": "entrypoint"
+              },
+              {
+                "path": "src/worker/room.ts",
+                "lines": "143-180",
+                "role": "allocation_sink"
+              },
+              {
+                "path": "src/worker/room.ts",
+                "lines": "633-660",
+                "role": "routing_growth"
+              },
+              {
+                "path": "src/worker/room.ts",
+                "lines": "820-855",
+                "role": "snapshot_growth"
+              }
+            ],
+            "supporting_source_evidence": [
+              "Only room creation is rate-limited.",
+              "Membership tests explicitly reject a count cap.",
+              "Each human seeds routing for every AI.",
+              "Join returns a full snapshot and relay credential."
+            ],
+            "counterevidence": [
+              "Room code is high entropy.",
+              "Inputs are bounded.",
+              "Rooms hard-stop at twenty minutes."
+            ],
+            "recommended_remediation": "Use per-source and per-room token-bucket join/issuance limits with burst capacity, avoid double snapshot serialisation and budget routing work without a participant-count cap."
+          }
+        ]
+      },
+      "extensions": {
+        "validatedRevision": "a784122aa18c6b7fbee1ae53d34b054a24d71f0b"
+      }
+    },
+    {
+      "ruleId": "resource-exhaustion.unbounded-json-body",
+      "identity": {
+        "anchor": "request-json-before-size-and-admission-controls"
+      },
+      "title": "Worker parses unbounded JSON bodies before rate limiting or authentication",
+      "summary": "readJsonObject calls request.json() after checking only Content-Type. Field validation, the room-creation limiter and participant authentication all occur after the entire attacker-controlled body has been buffered and parsed.",
+      "severity": {
+        "level": "medium",
+        "rationale": "Unauthenticated or invalid-credential callers can impose disproportionate Worker CPU and memory cost with bodies far larger than the expected sub-kilobyte schemas."
+      },
+      "confidence": {
+        "level": "high",
+        "rationale": "The ordering and absence of any declared-length or streaming byte bound are directly visible."
+      },
+      "taxonomy": {
+        "category": "resource-exhaustion",
+        "cwe": ["CWE-400"]
+      },
+      "locations": [
+        {
+          "path": "src/worker/validation.ts",
+          "startLine": 11,
+          "endLine": 25,
+          "role": "unbounded parser"
+        },
+        {
+          "path": "src/worker/index.ts",
+          "startLine": 98,
+          "endLine": 102,
+          "role": "late rate limit"
+        },
+        {
+          "path": "src/worker/index.ts",
+          "startLine": 146,
+          "endLine": 260,
+          "role": "late authentication routes"
+        }
+      ],
+      "codeEvidence": [
+        {
+          "id": "json-parser",
+          "label": "Whole body parsed without byte limit",
+          "path": "src/worker/validation.ts",
+          "startLine": 11,
+          "endLine": 25,
+          "language": "typescript",
+          "role": "source evidence",
+          "code": "export async function readJsonObject(request: Request): Promise<Record<string, unknown>> {\n  const contentType = request.headers.get(\"content-type\") ?? \"\";\n  if (!contentType.toLowerCase().includes(\"application/json\")) {\n    throw new HttpError(415, \"unsupported_media_type\", \"Expected an application/json request.\");\n  }\n  try {\n    const value: unknown = await request.json();\n    if (!value || typeof value !== \"object\" || Array.isArray(value)) {\n      throw new Error(\"body is not an object\");\n    }\n    return value as Record<string, unknown>;\n  } catch (error) {\n    throw new HttpError(400, \"invalid_json\", \"The request body is not valid JSON.\");\n  }\n}",
+          "explanation": "No application body ceiling is checked before the full parse."
+        }
+      ],
+      "rootCause": {
+        "summary": "The shared JSON helper treats platform request limits as the only byte bound and the route ordering performs cheap admission controls only after parsing.",
+        "evidenceRefs": ["json-parser"]
+      },
+      "remediation": "Enforce a small application-specific byte ceiling before JSON.parse using both declared Content-Length and a streaming counter. Run creation rate limiting before reading the body and authenticate mutations before parsing where feasible.",
+      "validation": {
+        "assertions": [
+          "No Content-Length ceiling, streamed counter or 413 path exists.",
+          "Creation parses before enforceCreationRateLimit.",
+          "Mutation bodies parse before Durable Object credential verification."
+        ],
+        "counterEvidence": [
+          "Non-JSON Content-Type is rejected.",
+          "Join checks room existence first.",
+          "Cloudflare limits make each request finite; fields are bounded after parsing."
+        ],
+        "evidenceRefs": ["json-parser"],
+        "limitations": ["No runtime memory or CPU threshold was measured."],
+        "method": "Offline source review of the exact authorised Git revision.",
+        "status": "validated",
+        "summary": "The source-to-sink path and missing control were traced directly; documented mitigations and external uncertainties were considered.",
+        "disposition": "reported"
+      },
+      "attackPath": {
+        "controls": [
+          "Non-JSON Content-Type is rejected.",
+          "Join checks room existence first.",
+          "Cloudflare limits make each request finite; fields are bounded after parsing."
+        ],
+        "evidenceRefs": ["json-parser"],
+        "impact": {
+          "level": "medium",
+          "rationale": "Repeated requests can consume isolate CPU/memory, increase cost and disrupt room control endpoints."
+        },
+        "likelihood": {
+          "level": "high",
+          "rationale": "high"
+        },
+        "limitations": ["No runtime memory or CPU threshold was measured."],
+        "preconditions": ["The request is within any external Cloudflare maximum."],
+        "steps": [
+          "Send application/json with a body much larger than the legitimate schema.",
+          "request.json allocates and parses the body.",
+          "Later rate or authentication checks reject only after the cost."
+        ],
+        "summary": "An unauthenticated caller sends oversized JSON to a public or credentialed route; the Worker buffers and parses it before the request is rate-limited or rejected."
+      },
+      "remediationTests": [
+        "Reject declared bodies above 8 KiB with 413 before parsing.",
+        "Stream a chunked body beyond the cap and assert termination.",
+        "Verify creation limiting runs before body consumption."
+      ],
+      "preventiveControls": [
+        "Central bounded JSON reader.",
+        "Route-order tests for admission controls.",
+        "Worker CPU and rejected-body-size telemetry without logging payloads."
+      ],
+      "provenance": {
+        "source": "local_plugin",
+        "candidateId": "baseline-unbounded-json-body",
+        "originalCandidates": [
+          {
+            "rule": "Untrusted JSON bodies are fully allocated and parsed before application size and rate controls",
+            "cwe": "CWE-400",
+            "severity": "medium",
+            "confidence": "high",
+            "attacker": "Any unauthenticated caller of room creation and callers reaching mutation routes.",
+            "violated_security_invariant": "Untrusted bodies must be bounded before whole-body allocation and cheap admission controls should precede parsing.",
+            "source_to_sink": "readJsonObject immediately awaits request.json(); field validation and the creation limiter run only after parsing.",
+            "impact": "Oversized or deeply structured bodies can consume Worker CPU/memory before rejection.",
+            "locations": [
+              {
+                "path": "src/worker/validation.ts",
+                "lines": "11-25",
+                "role": "root_control_sink"
+              },
+              {
+                "path": "src/worker/index.ts",
+                "lines": "98-101",
+                "role": "entrypoint"
+              },
+              {
+                "path": "src/worker/index.ts",
+                "lines": "132-260",
+                "role": "entrypoints"
+              }
+            ],
+            "supporting_source_evidence": [
+              "No Content-Length ceiling or bounded reader exists.",
+              "Field limits apply after parsing.",
+              "The create limiter runs after parsing."
+            ],
+            "counterevidence": [
+              "Only JSON is accepted and fields are bounded.",
+              "Cloudflare request/isolate limits contain blast radius.",
+              "Legitimate bodies are small."
+            ],
+            "recommended_remediation": "Reject oversized declared bodies, use a bounded reader when absent, apply admission controls before parsing and enforce shallow schemas."
+          }
+        ]
+      },
+      "extensions": {
+        "validatedRevision": "a784122aa18c6b7fbee1ae53d34b054a24d71f0b"
+      }
+    },
+    {
+      "ruleId": "resource-exhaustion.unbounded-playback-dedupe",
+      "identity": {
+        "anchor": "unbounded-object-ids-per-media-group"
+      },
+      "title": "Playback deduplication retains unbounded object identifiers per group",
+      "summary": "TrackPlayer records each group/object identifier before validating the audio envelope. PlaybackDeduplicator limits the number of groups to four but places every unique objectId in an uncapped Set, so one constant group grows for the player's lifetime.",
+      "severity": {
+        "level": "medium",
+        "rationale": "A malicious joined publisher can grow every automatically subscribed browser's heap indefinitely, including with malformed payloads that never reach playback."
+      },
+      "confidence": {
+        "level": "high",
+        "rationale": "The ordering and unbounded nested Set are direct source facts; normal 50-object cadence is not enforced."
+      },
+      "taxonomy": {
+        "category": "resource-exhaustion",
+        "cwe": ["CWE-770"]
+      },
+      "locations": [
+        {
+          "path": "src/client/session/RoomSession.ts",
+          "startLine": 776,
+          "endLine": 790,
+          "role": "untrusted object source"
+        },
+        {
+          "path": "src/client/audio/TrackPlayer.ts",
+          "startLine": 72,
+          "endLine": 87,
+          "role": "pre-validation retention"
+        },
+        {
+          "path": "src/client/audio/PlaybackDeduplicator.ts",
+          "startLine": 11,
+          "endLine": 59,
+          "role": "unbounded state sink"
+        }
+      ],
+      "codeEvidence": [
+        {
+          "id": "dedupe-set",
+          "label": "One group retains unlimited object IDs",
+          "path": "src/client/audio/PlaybackDeduplicator.ts",
+          "startLine": 21,
+          "endLine": 37,
+          "language": "typescript",
+          "role": "source evidence",
+          "code": "accept(participantId: string, groupId: number, objectId: number): boolean {\n  let groups = this.seen.get(participantId);\n  if (!groups) {\n    groups = new Map<number, Set<number>>();\n    this.seen.set(participantId, groups);\n  }\n  let objects = groups.get(groupId);\n  if (!objects) {\n    objects = new Set<number>();\n    groups.set(groupId, objects);\n    this.prune(groups);\n  }\n  if (objects.has(objectId)) return false;\n  objects.add(objectId);\n  return true;\n}",
+          "explanation": "The group-count pruning does not bound entries within the Set."
+        },
+        {
+          "id": "dedupe-before-parse",
+          "label": "Identifiers are retained before payload validation",
+          "path": "src/client/audio/TrackPlayer.ts",
+          "startLine": 72,
+          "endLine": 87,
+          "language": "typescript",
+          "role": "source evidence",
+          "code": "accept(groupId: number, objectId: number, payload: Uint8Array, now: number): void {\n  if (!this.dedupe.accept(this.participantId, groupId, objectId)) return;\n  let decoded: { metadata: AudioFrameMetadata; opusFrame: Uint8Array };\n  try {\n    decoded = decodeAudioObject(payload);\n  } catch (error) {\n    this.callbacks.onError?.(this.trackId, error instanceof Error ? error : new Error(\"Malformed audio object.\"));\n    return;\n  }\n}",
+          "explanation": "Malformed objects still consume deduplication memory."
+        }
+      ],
+      "rootCause": {
+        "summary": "A group-count limit was mistaken for a total memory bound; per-group cardinality, bytes, cadence and malformed-object budgets are absent.",
+        "evidenceRefs": ["dedupe-set", "dedupe-before-parse"]
+      },
+      "remediation": "Validate the envelope before retaining a dedupe key, cap identifiers per group and per track using expected cadence plus a burst margin, reject implausible progress and quarantine persistently malformed or over-budget tracks.",
+      "validation": {
+        "assertions": [
+          "One Set accepts unlimited unique object IDs.",
+          "A constant group never triggers group pruning.",
+          "Malformed payloads are retained before decode failure."
+        ],
+        "counterEvidence": [
+          "Closing or forgetting a player clears state.",
+          "Creating more than four groups prunes old groups.",
+          "External stream backpressure may reduce rate but does not cap retained entries."
+        ],
+        "evidenceRefs": ["dedupe-set", "dedupe-before-parse"],
+        "limitations": ["A live browser exhaustion threshold was not measured."],
+        "method": "Offline source review of the exact authorised Git revision.",
+        "status": "validated",
+        "summary": "The source-to-sink path and missing control were traced directly; documented mitigations and external uncertainties were considered.",
+        "disposition": "reported"
+      },
+      "attackPath": {
+        "controls": [
+          "Closing or forgetting a player clears state.",
+          "Creating more than four groups prunes old groups.",
+          "External stream backpressure may reduce rate but does not cap retained entries."
+        ],
+        "evidenceRefs": ["dedupe-set", "dedupe-before-parse"],
+        "impact": {
+          "level": "medium",
+          "rationale": "Victim tabs consume unbounded memory until audio/UI failure or termination."
+        },
+        "likelihood": {
+          "level": "high",
+          "rationale": "high"
+        },
+        "limitations": ["A live browser exhaustion threshold was not measured."],
+        "preconditions": ["The relay delivers the publisher's track to human subscribers."],
+        "steps": [
+          "Join as a human publisher.",
+          "Hold groupId constant and vary objectId.",
+          "Send valid or malformed objects at high rate.",
+          "Each subscribed TrackPlayer adds the ID to its Set."
+        ],
+        "summary": "A malicious human publishes a high-rate same-group stream on their own track; automatic subscribers retain every new object ID before rejecting or decoding the payload."
+      },
+      "remediationTests": [
+        "Feed thousands of unique IDs in one group and assert fixed retained cardinality.",
+        "Repeat with malformed payloads and assert no dedupe growth.",
+        "Exceed the budget and assert track quarantine/unsubscription."
+      ],
+      "preventiveControls": [
+        "Per-track object and byte budgets.",
+        "Monotonic identifier validation.",
+        "Media-abuse telemetry and quarantine state."
+      ],
+      "provenance": {
+        "source": "local_plugin",
+        "candidateId": "media-unbounded-playback-deduplication",
+        "originalCandidates": [
+          {
+            "rule": "Unbounded per-group playback deduplication retains attacker-controlled object identifiers",
+            "cwe": "CWE-770",
+            "severity": "medium",
+            "confidence": "high",
+            "attacker": "A malicious joined publisher using a modified client and the relay credential on its automatically subscribed human track, or a compromised relay.",
+            "violated_security_invariant": "Per-track receive state must have explicit object-count and byte bounds.",
+            "source_to_sink": "Relay group/object identifiers flow through MoqTransportAdapter and RoomSession to TrackPlayer.accept. PlaybackDeduplicator runs before envelope validation and adds every unique objectId to an unbounded Set. A constant groupId with varying objectId grows for TrackPlayer lifetime; repeated malformed objects do not quarantine the track.",
+            "impact": "A sustained same-group stream can grow the victim tab heap until UI/audio failure or tab termination.",
+            "locations": [
+              {
+                "path": "src/client/transport/MoqTransportAdapter.ts",
+                "lines": "455-469",
+                "role": "source"
+              },
+              {
+                "path": "src/client/session/RoomSession.ts",
+                "lines": "776-790",
+                "role": "entrypoint"
+              },
+              {
+                "path": "src/client/audio/TrackPlayer.ts",
+                "lines": "72-87",
+                "role": "ordering"
+              },
+              {
+                "path": "src/client/audio/PlaybackDeduplicator.ts",
+                "lines": "11-37",
+                "role": "unbounded_state"
+              },
+              {
+                "path": "src/client/audio/PlaybackDeduplicator.ts",
+                "lines": "54-59",
+                "role": "insufficient_control"
+              },
+              {
+                "path": "src/client/session/RoomSession.ts",
+                "lines": "742-745",
+                "role": "error_handling"
+              }
+            ],
+            "supporting_source_evidence": [
+              "Map<number, Set<number>> adds unbounded object IDs.",
+              "A single group never triggers four-group pruning.",
+              "Every other real human track is automatically subscribed.",
+              "No object-rate, byte-rate, malformed threshold or quarantine exists."
+            ],
+            "counterevidence": [
+              "Closing clears the map.",
+              "New distinct groups eventually prune older groups.",
+              "The session log is bounded.",
+              "External flow control is not a retained-entry cap."
+            ],
+            "recommended_remediation": "Validate before deduplication; add per-track object and byte budgets, per-group identifier caps, progress checks and quarantine."
+          }
+        ]
+      },
+      "extensions": {
+        "validatedRevision": "a784122aa18c6b7fbee1ae53d34b054a24d71f0b"
+      }
+    },
+    {
+      "ruleId": "resource-exhaustion.media-burst-sorting",
+      "identity": {
+        "anchor": "count-unbounded-jitter-and-decode-work"
+      },
+      "title": "Media bursts trigger count-unbounded sorting and decoder submission",
+      "summary": "Each valid frame entering AdaptiveJitterBuffer performs a linear duplicate scan, append, full sort and time-only prune. Arbitrarily many frames received within 200 ms survive, and TrackPlayer drains all eligible frames into AudioDecoder without a work or queue-depth budget.",
+      "severity": {
+        "level": "medium",
+        "rationale": "A malicious publisher can create superlinear main-thread work, retain many large frame copies and flood the decoder queue across automatically subscribed audience browsers."
+      },
+      "confidence": {
+        "level": "high",
+        "rationale": "The dynamic array operations and unlimited drain loop are direct source facts; the 200 ms time rule is not a count or byte bound."
+      },
+      "taxonomy": {
+        "category": "algorithmic-complexity",
+        "cwe": ["CWE-407"]
+      },
+      "locations": [
+        {
+          "path": "src/client/audio/AdaptiveJitterBuffer.ts",
+          "startLine": 36,
+          "endLine": 67,
+          "role": "algorithmic sink"
+        },
+        {
+          "path": "src/client/audio/TrackPlayer.ts",
+          "startLine": 120,
+          "endLine": 136,
+          "role": "unbounded drain"
+        },
+        {
+          "path": "src/client/audio/TrackPlayer.ts",
+          "startLine": 272,
+          "endLine": 283,
+          "role": "decoder queue sink"
+        },
+        {
+          "path": "src/client/session/RoomSession.ts",
+          "startLine": 776,
+          "endLine": 790,
+          "role": "untrusted source"
+        }
+      ],
+      "codeEvidence": [
+        {
+          "id": "jitter-sort",
+          "label": "Every insert scans, sorts and time-prunes an unbounded array",
+          "path": "src/client/audio/AdaptiveJitterBuffer.ts",
+          "startLine": 41,
+          "endLine": 66,
+          "language": "typescript",
+          "role": "source evidence",
+          "code": "push(frame: BufferedFrame<T>): void {\n  if (this.cancelledGroups.has(frame.groupId)) return;\n  if (this.frames.some((candidate) => candidate.sequence === frame.sequence)) return;\n  this.lastArrivalAt = frame.receivedAt;\n  this.frames.push(frame);\n  this.frames.sort((left, right) => left.sequence - right.sequence);\n  const staleBefore = frame.receivedAt - this.maximumMs;\n  const retained = this.frames.filter((candidate) => candidate.receivedAt >= staleBefore);\n  this.frames = retained;\n}",
+          "explanation": "Many unique frames with near-identical receipt times evade stale pruning while causing repeated whole-array work."
+        },
+        {
+          "id": "decoder-drain",
+          "label": "All eligible frames are submitted without a budget",
+          "path": "src/client/audio/TrackPlayer.ts",
+          "startLine": 128,
+          "endLine": 136,
+          "language": "typescript",
+          "role": "source evidence",
+          "code": "drain(now: number): void {\n  for (;;) {\n    const next = this.buffer.pull(now);\n    if (!next) break;\n    this.concealGapBefore(next.metadata.sequence);\n    this.lastPlayedSequence = next.metadata.sequence;\n    this.decodeFrame(next.metadata, next.frame);\n  }\n}",
+          "explanation": "There is no per-drain frame count, time budget or AudioDecoder queue check."
+        }
+      ],
+      "rootCause": {
+        "summary": "Latency-only pruning was implemented without maximum frame count, byte count, cadence validation or decoder-work budgets, and an array-sort structure amplifies attacker-controlled bursts.",
+        "evidenceRefs": ["jitter-sort", "decoder-drain"]
+      },
+      "remediation": "Use a bounded sequence-indexed ring or heap, cap buffered objects and bytes, validate cadence/sequence/frame size, reject excess before sorting, limit work per drain, gate AudioDecoder.decode on decodeQueueSize and quarantine persistent offenders.",
+      "validation": {
+        "assertions": [
+          "The buffer has no maximum frames or bytes.",
+          "Every insert executes some plus sort plus filter.",
+          "drain loops until no eligible frame remains and decodeFrame does not inspect decodeQueueSize."
+        ],
+        "counterEvidence": [
+          "Frames older than 200 ms relative to a newer arrival are pruned.",
+          "Individual payload length, cancellation groups, concealment and mixer ring are bounded.",
+          "External Web Streams or relay flow control may reduce bursts."
+        ],
+        "evidenceRefs": ["jitter-sort", "decoder-drain"],
+        "limitations": ["The browser threshold and external relay backpressure were not measured."],
+        "method": "Offline source review of the exact authorised Git revision.",
+        "status": "validated",
+        "summary": "The source-to-sink path and missing control were traced directly; documented mitigations and external uncertainties were considered.",
+        "disposition": "reported"
+      },
+      "attackPath": {
+        "controls": [
+          "Frames older than 200 ms relative to a newer arrival are pruned.",
+          "Individual payload length, cancellation groups, concealment and mixer ring are bounded.",
+          "External Web Streams or relay flow control may reduce bursts."
+        ],
+        "evidenceRefs": ["jitter-sort", "decoder-drain"],
+        "impact": {
+          "level": "medium",
+          "rationale": "Main-thread stalls, decoder overload, audible failure or tab termination disrupt the demonstration."
+        },
+        "likelihood": {
+          "level": "high",
+          "rationale": "high"
+        },
+        "limitations": ["The browser threshold and external relay backpressure were not measured."],
+        "preconditions": ["The relay delivers the attacker's own track to automatic subscribers."],
+        "steps": [
+          "Publish unique valid audio envelopes far above 20 ms cadence.",
+          "Automatic human subscriptions deliver the burst.",
+          "Jitter insertion repeatedly scans and sorts.",
+          "Drain submits accumulated frames without queue limits."
+        ],
+        "summary": "A joined malicious publisher sends many unique valid objects inside one receipt-time window; every subscriber repeatedly sorts the burst and then submits it to the decoder."
+      },
+      "remediationTests": [
+        "Insert a burst beyond the expected cadence and assert fixed frame/byte bounds.",
+        "Assert excess objects are dropped before sort.",
+        "Drive decodeQueueSize high and assert decode work is deferred or dropped.",
+        "Measure CPU and heap under an adversarial burst."
+      ],
+      "preventiveControls": [
+        "Bounded receive-pipeline invariants.",
+        "Per-track cadence and byte telemetry.",
+        "Algorithmic-complexity regression tests."
+      ],
+      "provenance": {
+        "source": "local_plugin",
+        "candidateId": "media-jitter-decoder-burst",
+        "originalCandidates": [
+          {
+            "rule": "Count-unbounded jitter insertion and decoder submission permit algorithmic media-burst denial of service",
+            "cwe": "CWE-407",
+            "severity": "medium",
+            "confidence": "high",
+            "attacker": "A malicious joined publisher sending valid unique envelopes far above the expected cadence, or a compromised relay.",
+            "violated_security_invariant": "The latency target must also impose count, byte and decode-work limits.",
+            "source_to_sink": "AdaptiveJitterBuffer scans, appends, sorts and time-filters a count-unbounded array on each valid object. Frames inside the 200 ms arrival window survive. drain submits all eligible frames to AudioDecoder without a work budget or decodeQueueSize check.",
+            "impact": "A short burst can cause superlinear main-thread work, retain many copied payloads and flood the decoder, causing audio/UI failure.",
+            "locations": [
+              {
+                "path": "src/client/audio/TrackPlayer.ts",
+                "lines": "120-125",
+                "role": "copy_sink"
+              },
+              {
+                "path": "src/client/audio/AdaptiveJitterBuffer.ts",
+                "lines": "41-67",
+                "role": "algorithmic_sink"
+              },
+              {
+                "path": "src/client/audio/TrackPlayer.ts",
+                "lines": "128-136",
+                "role": "unbounded_drain"
+              },
+              {
+                "path": "src/client/audio/TrackPlayer.ts",
+                "lines": "272-283",
+                "role": "decoder_sink"
+              },
+              {
+                "path": "src/client/audio/frame.ts",
+                "lines": "28-50",
+                "role": "limited_control"
+              }
+            ],
+            "supporting_source_evidence": [
+              "The 200 ms threshold is not a count bound.",
+              "Unique sequences with near-identical receive times survive.",
+              "One payload can be 65,535 bytes plus header.",
+              "No decoder-queue or inbound-rate degradation metric exists."
+            ],
+            "counterevidence": [
+              "Older frames are removed.",
+              "Mixer ring, cancelled groups, concealment and decoded AudioData lifetime are bounded.",
+              "External backpressure is not an application guarantee."
+            ],
+            "recommended_remediation": "Use a bounded sequence structure; cap objects/bytes; validate cadence and frame size; budget drains; gate decoder queue; quarantine persistent offenders."
+          }
+        ]
+      },
+      "extensions": {
+        "validatedRevision": "a784122aa18c6b7fbee1ae53d34b054a24d71f0b"
+      }
+    },
+    {
+      "ruleId": "resource-exhaustion.unknown-room-durable-object",
+      "identity": {
+        "anchor": "unknown-room-probe-persists-sqlite-schema"
+      },
+      "title": "Unknown room-code probes initialise persistent SQLite Durable Objects",
+      "summary": "Any syntactically valid room code is mapped with getByName before existence is known. Constructing that Room always runs migrate, creating tables and schema_meta even though no room_meta row or cleanup alarm exists.",
+      "severity": {
+        "level": "medium",
+        "rationale": "An unauthenticated caller can generate unlimited valid-looking codes and create persistent object state outside the room-creation limiter, causing storage, billing or availability pressure."
+      },
+      "confidence": {
+        "level": "high",
+        "rationale": "The deterministic namespace mapping, constructor migration and persistent SQL writes are direct source facts; only the platform's precise cost is external."
+      },
+      "taxonomy": {
+        "category": "resource-exhaustion",
+        "cwe": ["CWE-770"]
+      },
+      "locations": [
+        {
+          "path": "src/worker/index.ts",
+          "startLine": 117,
+          "endLine": 130,
+          "role": "public probe entrypoint"
+        },
+        {
+          "path": "src/worker/index.ts",
+          "startLine": 313,
+          "endLine": 320,
+          "role": "Durable Object mapping"
+        },
+        {
+          "path": "src/worker/room.ts",
+          "startLine": 106,
+          "endLine": 112,
+          "role": "constructor sink"
+        },
+        {
+          "path": "src/worker/room.ts",
+          "startLine": 535,
+          "endLine": 594,
+          "role": "persistent schema writes"
+        }
+      ],
+      "codeEvidence": [
+        {
+          "id": "do-constructor",
+          "label": "Every object construction migrates SQLite",
+          "path": "src/worker/room.ts",
+          "startLine": 106,
+          "endLine": 112,
+          "language": "typescript",
+          "role": "source evidence",
+          "code": "export class Room extends DurableObject<Env> {\n  constructor(ctx: DurableObjectState, env: Env) {\n    super(ctx, env);\n    ctx.blockConcurrencyWhile(async () => {\n      this.migrate();\n    });\n  }\n}",
+          "explanation": "Unknown-room lookup invokes the same constructor as real room creation."
+        },
+        {
+          "id": "do-schema-write",
+          "label": "Migration writes schema metadata",
+          "path": "src/worker/room.ts",
+          "startLine": 535,
+          "endLine": 593,
+          "language": "typescript",
+          "role": "source evidence",
+          "code": "private migrate(): void {\n  const sql = this.ctx.storage.sql;\n  sql.exec(\"CREATE TABLE IF NOT EXISTS schema_meta (version INTEGER NOT NULL)\");\n  const current = sql.exec<{ version: number }>(\"SELECT version FROM schema_meta LIMIT 1\").toArray()[0]?.version ?? 0;\n  if (current === SCHEMA_VERSION) return;\n  // creates room_meta, participants, routing, floor_queue and rate_events\n  sql.exec(\"DELETE FROM schema_meta\");\n  sql.exec(\"INSERT INTO schema_meta (version) VALUES (?)\", SCHEMA_VERSION);\n}",
+          "explanation": "The unknown object receives persistent SQLite schema state even though the room is never initialised."
+        }
+      ],
+      "rootCause": {
+        "summary": "Room-code existence is checked only after resolving the attacker-selected code into a stateful Durable Object whose constructor performs persistent migration.",
+        "evidenceRefs": ["do-constructor", "do-schema-write"]
+      },
+      "remediation": "Validate a signed room capability or check a rate-limited room-code registry before getByName. Make unknown-room lookup non-writing and schedule cleanup or deletion for abandoned allocations.",
+      "validation": {
+        "assertions": [
+          "The route regex accepts arbitrary valid-looking 20-character codes.",
+          "getByName is invoked before getSnapshot can return null.",
+          "The constructor always runs migrate and writes schema_meta.",
+          "No expiry alarm exists without room_meta."
+        ],
+        "counterEvidence": [
+          "No room_meta, participant or relay credential is created.",
+          "Each schema is small.",
+          "Cloudflare storage lifecycle and billing are external."
+        ],
+        "evidenceRefs": ["do-constructor", "do-schema-write"],
+        "limitations": ["The precise platform billing and quota impact was not verified."],
+        "method": "Offline source review of the exact authorised Git revision.",
+        "status": "validated",
+        "summary": "The source-to-sink path and missing control were traced directly; documented mitigations and external uncertainties were considered.",
+        "disposition": "reported"
+      },
+      "attackPath": {
+        "controls": [
+          "No room_meta, participant or relay credential is created.",
+          "Each schema is small.",
+          "Cloudflare storage lifecycle and billing are external."
+        ],
+        "evidenceRefs": ["do-constructor", "do-schema-write"],
+        "impact": {
+          "level": "medium",
+          "rationale": "Large numbers of persistent empty objects can consume account resources outside the intended creation budget."
+        },
+        "likelihood": {
+          "level": "high",
+          "rationale": "high"
+        },
+        "limitations": ["The precise platform billing and quota impact was not verified."],
+        "preconditions": [
+          "The platform materialises Durable Objects on the observed getByName/fetch/RPC path as represented by this source."
+        ],
+        "steps": [
+          "Generate a random 20-character code.",
+          "Request the public snapshot route.",
+          "Worker resolves getByName.",
+          "Room constructor migrates persistent SQLite state.",
+          "getSnapshot returns null and HTTP returns 404."
+        ],
+        "summary": "An unauthenticated caller probes many random valid-looking room codes; each name resolves to a new Room and its constructor writes a SQLite schema before returning 404."
+      },
+      "remediationTests": [
+        "Probe an unknown valid-looking code and assert no persistent object/schema allocation.",
+        "Flood unique unknown codes and assert registry/verification rejects before getByName.",
+        "Verify abandoned allocations receive cleanup."
+      ],
+      "preventiveControls": [
+        "Stateless signed room-code verification.",
+        "Rate-limited room registry.",
+        "Metrics for unknown-code probes and object creation."
+      ],
+      "provenance": {
+        "source": "local_plugin",
+        "candidateId": "control-arbitrary-room-do-initialisation",
+        "originalCandidates": [
+          {
+            "rule": "Arbitrary room-code probes force persistent SQLite Durable Object initialisation outside the creation limiter",
+            "cwe": "CWE-770",
+            "severity": "medium",
+            "confidence": "high",
+            "attacker": "An unauthenticated remote caller.",
+            "violated_security_invariant": "Only rate-limited room creation should allocate persistent room objects; unknown lookups must stay cheap and read-only.",
+            "source_to_sink": "Any syntactically valid 20-character code maps through getByName to a Room. The constructor runs migrate, creating SQLite tables and schema_meta before getSnapshot returns null. No room metadata or alarm cleans the uninitialised object.",
+            "impact": "Attackers can generate unlimited codes and create persistent SQLite-backed object schemas outside the creation limiter, causing storage, billing or availability pressure.",
+            "locations": [
+              {
+                "path": "src/worker/index.ts",
+                "lines": "117-130",
+                "role": "public_entrypoint"
+              },
+              {
+                "path": "src/worker/index.ts",
+                "lines": "313-320",
+                "role": "namespace_mapping"
+              },
+              {
+                "path": "src/worker/room.ts",
+                "lines": "106-112",
+                "role": "constructor"
+              },
+              {
+                "path": "src/worker/room.ts",
+                "lines": "247-251",
+                "role": "lookup"
+              },
+              {
+                "path": "src/worker/room.ts",
+                "lines": "535-594",
+                "role": "persistent_sink"
+              }
+            ],
+            "supporting_source_evidence": [
+              "Path accepts arbitrary 20-character codes.",
+              "getByName deterministically maps them.",
+              "Constructor always migrates and writes schema metadata.",
+              "No alarm exists without room_meta."
+            ],
+            "counterevidence": [
+              "Lookup returns 404 and creates no room_meta/participants/credentials.",
+              "Exact Cloudflare billing effect is external.",
+              "Each schema is small."
+            ],
+            "recommended_remediation": "Check existence in a rate-limited registry or validate signed room codes before getByName; make uninitialised lookup non-writing; expire abandoned allocations."
+          }
+        ]
+      },
+      "extensions": {
+        "validatedRevision": "a784122aa18c6b7fbee1ae53d34b054a24d71f0b"
+      }
+    },
+    {
+      "ruleId": "privacy.narrow-read-only-microphone",
+      "identity": {
+        "anchor": "read-only-view-starts-microphone-publication"
+      },
+      "title": "Narrow read-only clients still start microphone capture and publication",
+      "summary": "The narrow layout is implemented as labels and CSS-hidden controls, but useRoomSession starts the same full RoomSession. RoomSession.start unconditionally invokes startPublishing, which requests getUserMedia and publishes frames when transport is live.",
+      "severity": {
+        "level": "medium",
+        "rationale": "A user told that the room is read-only can have microphone capture begin after joining and, where permission already exists and relay transport succeeds, transmit audio contrary to the product's mobile publishing boundary."
+      },
+      "confidence": {
+        "level": "medium",
+        "rationale": "The getUserMedia and publication setup path is explicit. Actual narrow-browser relay publication was not reproduced and browser permission remains authoritative."
+      },
+      "taxonomy": {
+        "category": "privacy-violation",
+        "cwe": ["CWE-359"]
+      },
+      "locations": [
+        {
+          "path": "src/client/pages/RoomPage.tsx",
+          "startLine": 173,
+          "endLine": 241,
+          "role": "read-only claim"
+        },
+        {
+          "path": "src/client/styles.css",
+          "startLine": 855,
+          "endLine": 954,
+          "role": "presentation-only control"
+        },
+        {
+          "path": "src/client/hooks/useRoomSession.ts",
+          "startLine": 80,
+          "endLine": 80,
+          "role": "full session creation"
+        },
+        {
+          "path": "src/client/session/RoomSession.ts",
+          "startLine": 241,
+          "endLine": 262,
+          "role": "capture trigger"
+        },
+        {
+          "path": "src/client/audio/CaptureController.ts",
+          "startLine": 59,
+          "endLine": 72,
+          "role": "microphone sink"
+        }
+      ],
+      "codeEvidence": [
+        {
+          "id": "session-capture",
+          "label": "Every room session starts publication",
+          "path": "src/client/session/RoomSession.ts",
+          "startLine": 241,
+          "endLine": 262,
+          "language": "typescript",
+          "role": "source evidence",
+          "code": "/**\n * Applies a room snapshot the caller already fetched, starts microphone\n * capture, then opens the control channel and evaluates transport.\n */\nasync start(room: RoomSnapshot): Promise<void> {\n  this.startedAt = this.now();\n  this.applyRoom(room);\n  this.openControlChannel();\n  void this.devices.start();\n  void this.runNetworkProbe(room);\n  // The room entry action expresses the user's intent to join live audio.\n  // Browser permission remains authoritative; denial becomes listen-only.\n  void this.startPublishing();\n  await this.openTransport();\n}",
+          "explanation": "No viewport or read-only policy prevents microphone startup."
+        },
+        {
+          "id": "microphone-request",
+          "label": "CaptureController requests the microphone",
+          "path": "src/client/audio/CaptureController.ts",
+          "startLine": 59,
+          "endLine": 72,
+          "language": "typescript",
+          "role": "source evidence",
+          "code": "const support = inspectCaptureSupport();\nif (!support.available) throw new Error(support.reason);\nthis.stream = await navigator.mediaDevices.getUserMedia({\n  audio: {\n    channelCount: 1,\n    sampleRate: CAPTURE_SAMPLE_RATE,\n    echoCancellation: true,\n    noiseSuppression: true,\n    autoGainControl: true,\n  },\n  video: false,\n});",
+          "explanation": "Read-only presentation does not stop the privacy-sensitive API call."
+        }
+      ],
+      "rootCause": {
+        "summary": "Read-only capability is represented only in responsive presentation; it is not a session policy consumed by capture and publication code.",
+        "evidenceRefs": ["session-capture", "microphone-request"]
+      },
+      "remediation": "Determine read-only mode before starting RoomSession, skip getUserMedia and publication entirely, stop capture if the configuration becomes read-only, and require a fresh explicit opt-in before enabling publishing.",
+      "validation": {
+        "assertions": [
+          "Narrow UI says read-only and hides controls.",
+          "RoomSession.start always calls startPublishing.",
+          "CaptureController requests getUserMedia and live sessions publish encoded frames."
+        ],
+        "counterEvidence": [
+          "The user explicitly joins.",
+          "Browser permission denial produces listen-only.",
+          "Relay transport is trace-unverified and unsupported devices may fail capture."
+        ],
+        "evidenceRefs": ["session-capture", "microphone-request"],
+        "limitations": ["A real narrow browser with pre-granted permission was not exercised."],
+        "method": "Offline source review of the exact authorised Git revision.",
+        "status": "validated",
+        "summary": "The source-to-sink path and missing control were traced directly; documented mitigations and external uncertainties were considered.",
+        "disposition": "reported"
+      },
+      "attackPath": {
+        "controls": [
+          "The user explicitly joins.",
+          "Browser permission denial produces listen-only.",
+          "Relay transport is trace-unverified and unsupported devices may fail capture."
+        ],
+        "evidenceRefs": ["session-capture", "microphone-request"],
+        "impact": {
+          "level": "medium",
+          "rationale": "Unexpected microphone capture and potential transmission violate the stated read-only privacy expectation."
+        },
+        "likelihood": {
+          "level": "medium",
+          "rationale": "medium"
+        },
+        "limitations": ["A real narrow browser with pre-granted permission was not exercised."],
+        "preconditions": [
+          "The browser supports capture; publication additionally requires permission and live relay acceptance."
+        ],
+        "steps": [
+          "Open or join on a narrow viewport.",
+          "RoomPage renders read-only labels.",
+          "useRoomSession starts RoomSession.",
+          "startPublishing calls getUserMedia.",
+          "If transport is live, publishFrame sends audio objects."
+        ],
+        "summary": "A user joins on a narrow screen, sees a read-only room, but the full session still requests and starts microphone capture; live transport then publishes frames."
+      },
+      "remediationTests": [
+        "On a narrow viewport, assert navigator.mediaDevices.getUserMedia is never called.",
+        "Assert no publication is created in read-only mode.",
+        "Transition into read-only and assert active capture and publication close.",
+        "Require explicit user opt-in before transitioning to publishing mode."
+      ],
+      "preventiveControls": [
+        "Explicit capability model for publish versus read-only.",
+        "Privacy API tests across viewport/configuration matrix.",
+        "Visible microphone state driven by actual capture state."
+      ],
+      "provenance": {
+        "source": "local_plugin",
+        "candidateId": "remaining-narrow-capture",
+        "originalCandidates": [
+          {
+            "rule": "Narrow read-only clients still start microphone capture and publication",
+            "cwe": "CWE-359",
+            "severity": "medium",
+            "confidence": "medium",
+            "attacker": "A room inviter or participant inducing a narrow-screen user to join where microphone permission may already exist.",
+            "violated_security_invariant": "Narrow screens are read-only and must not capture or publish audio.",
+            "source_to_sink": "Entry does not block by viewport. CSS and RoomPage only present/hide controls as read-only, while useRoomSession creates a full RoomSession. RoomSession.start unconditionally starts publication; CaptureController requests microphone media and encoded frames publish once transport is live.",
+            "impact": "A narrow-screen user can have microphone capture start despite a read-only label; if permission is already granted and relay accepts, their audio is published.",
+            "locations": [
+              {
+                "path": "src/client/pages/RoomPage.tsx",
+                "lines": "173-173",
+                "role": "read_only_claim"
+              },
+              {
+                "path": "src/client/pages/RoomPage.tsx",
+                "lines": "241-241",
+                "role": "read_only_claim"
+              },
+              {
+                "path": "src/client/styles.css",
+                "lines": "855-954",
+                "role": "presentation_only_control"
+              },
+              {
+                "path": "src/client/hooks/useRoomSession.ts",
+                "lines": "80-80",
+                "role": "session_start"
+              },
+              {
+                "path": "src/client/session/RoomSession.ts",
+                "lines": "259-262",
+                "role": "publication_start"
+              },
+              {
+                "path": "src/client/audio/CaptureController.ts",
+                "lines": "63-63",
+                "role": "privacy_sink"
+              },
+              {
+                "path": "AGENTS.md",
+                "lines": "138-138",
+                "role": "requirement"
+              }
+            ],
+            "supporting_source_evidence": [
+              "RoomSession automatically starts publication on entry.",
+              "Encoded frames are wired to publishFrame.",
+              "Join buttons are not capability/viewport-gated."
+            ],
+            "counterevidence": [
+              "Browser permission is authoritative.",
+              "User explicitly joins.",
+              "Relay acceptance is unverified.",
+              "Unsupported capture may fail to listen-only."
+            ],
+            "recommended_remediation": "Make read-only an explicit policy before session start; skip getUserMedia and publication; stop capture on transition; require fresh opt-in to publish."
+          }
+        ]
+      },
+      "extensions": {
+        "validatedRevision": "a784122aa18c6b7fbee1ae53d34b054a24d71f0b"
+      }
+    },
+    {
+      "ruleId": "authorization.activity-target-spoofing",
+      "identity": {
+        "anchor": "arbitrary-target-last-active-update"
+      },
+      "title": "Any participant can spoof another participant's activity",
+      "summary": "POST /active accepts a caller-selected targetId. markActive authenticates the caller but updates last_active_at for any matching participant without binding the target to the caller or a verified received track.",
+      "severity": {
+        "level": "low",
+        "rationale": "A joined attendee can falsify audience-visible recency and participant ordering. The impact is limited to presentation integrity and does not directly change media routing or local degradation state."
+      },
+      "confidence": {
+        "level": "high",
+        "rationale": "The arbitrary target parameter and unrestricted update are explicit, while participant IDs are present in room snapshots."
+      },
+      "taxonomy": {
+        "category": "object-authorization",
+        "cwe": ["CWE-639"]
+      },
+      "locations": [
+        {
+          "path": "src/worker/index.ts",
+          "startLine": 255,
+          "endLine": 260,
+          "role": "entrypoint"
+        },
+        {
+          "path": "src/worker/room.ts",
+          "startLine": 455,
+          "endLine": 464,
+          "role": "arbitrary-target sink"
+        },
+        {
+          "path": "src/client/room/participantLayout.ts",
+          "startLine": 27,
+          "endLine": 47,
+          "role": "visible impact"
+        }
+      ],
+      "codeEvidence": [
+        {
+          "id": "activity-update",
+          "label": "Authenticated caller selects any target",
+          "path": "src/worker/room.ts",
+          "startLine": 455,
+          "endLine": 464,
+          "language": "typescript",
+          "role": "source evidence",
+          "code": "/** Audio object arrival is the source of truth for \"connected\" (§6.2). */\nasync markActive(credential: ParticipantCredential, participantId: string): Promise<void> {\n  await this.assertParticipant(credential.participantId, credential.rejoinToken);\n  if (!this.meta()) return;\n  this.ctx.storage.sql.exec(\n    \"UPDATE participants SET last_active_at = ? WHERE id = ?\",\n    Date.now(),\n    participantId,\n  );\n}",
+          "explanation": "Authentication proves only the caller; it does not authorise the caller-selected target."
+        }
+      ],
+      "rootCause": {
+        "summary": "The activity endpoint trusts a client assertion about who produced audio instead of deriving recency from an authenticated publication or track-observation capability.",
+        "evidenceRefs": ["activity-update"]
+      },
+      "remediation": "Remove the public arbitrary-target mutation. Derive activity from authenticated publication events, or require a capability proving the caller observed an authorised target track, and rate-limit reports.",
+      "validation": {
+        "assertions": [
+          "Any valid participant credential passes authentication.",
+          "The target does not need to equal the caller.",
+          "Snapshots reveal valid target IDs and layout uses lastActiveAt."
+        ],
+        "counterEvidence": [
+          "Unknown IDs cause a no-op.",
+          "No immediate broadcast occurs.",
+          "Local degradation uses locally observed object time."
+        ],
+        "evidenceRefs": ["activity-update"],
+        "limitations": [],
+        "method": "Offline source review of the exact authorised Git revision.",
+        "status": "validated",
+        "summary": "The source-to-sink path and missing control were traced directly; documented mitigations and external uncertainties were considered.",
+        "disposition": "reported"
+      },
+      "attackPath": {
+        "controls": [
+          "Unknown IDs cause a no-op.",
+          "No immediate broadcast occurs.",
+          "Local degradation uses locally observed object time."
+        ],
+        "evidenceRefs": ["activity-update"],
+        "impact": {
+          "level": "low",
+          "rationale": "Audience-facing activity indicators can be manipulated, undermining demonstration integrity."
+        },
+        "likelihood": {
+          "level": "high",
+          "rationale": "high"
+        },
+        "limitations": [],
+        "preconditions": ["The attacker has an active participant credential."],
+        "steps": [
+          "Join the room.",
+          "Read participant IDs from the snapshot.",
+          "POST /active with another participant's targetId.",
+          "Later snapshots reorder or highlight the target as recently active."
+        ],
+        "summary": "A joined participant repeatedly calls /active for another known participant ID, updating shared recency without observing audio."
+      },
+      "remediationTests": [
+        "Assert callers cannot update another participant's recency.",
+        "Verify recency updates are tied to authenticated publication or authorised observation.",
+        "Rate-limit repeated activity reports."
+      ],
+      "preventiveControls": [
+        "Object-level authorisation for target mutations.",
+        "Server-derived activity when the transport supports it.",
+        "Cross-participant negative tests."
+      ],
+      "provenance": {
+        "source": "local_plugin",
+        "candidateId": "control-activity-target-spoofing",
+        "originalCandidates": [
+          {
+            "rule": "Caller-selected activity targets allow participant recency spoofing",
+            "cwe": "CWE-639",
+            "severity": "low",
+            "confidence": "high",
+            "attacker": "Any joined participant.",
+            "violated_security_invariant": "lastActiveAt must represent observed audio arrival from the actual publisher.",
+            "source_to_sink": "POST /active accepts targetId; markActive authenticates the caller but updates any matching participant without binding the target to caller or observed track.",
+            "impact": "A participant can make known participants appear recently active and alter audience-visible prominence.",
+            "locations": [
+              {
+                "path": "src/worker/index.ts",
+                "lines": "255-260",
+                "role": "entrypoint"
+              },
+              {
+                "path": "src/worker/room.ts",
+                "lines": "455-464",
+                "role": "sink"
+              },
+              {
+                "path": "src/worker/room.ts",
+                "lines": "975-988",
+                "role": "snapshot"
+              },
+              {
+                "path": "src/client/room/participantLayout.ts",
+                "lines": "27-47",
+                "role": "impact"
+              }
+            ],
+            "supporting_source_evidence": [
+              "API accepts an asserted target.",
+              "Snapshots reveal participant IDs.",
+              "Layout sorts by lastActiveAt."
+            ],
+            "counterevidence": [
+              "Unknown IDs no-op.",
+              "No immediate broadcast.",
+              "Local degradation uses locally observed time."
+            ],
+            "recommended_remediation": "Remove arbitrary-target mutation and derive activity from authenticated publication or a capability proving the observed track."
+          }
+        ]
+      },
+      "extensions": {
+        "validatedRevision": "a784122aa18c6b7fbee1ae53d34b054a24d71f0b"
+      }
+    }
+  ],
+  "coverage": {
+    "completeness": "partial",
+    "surfaces": [
+      {
+        "id": "surface_baseline_audit",
+        "label": "Independent baseline security audit",
+        "disposition": "needs_follow_up",
+        "receiptRefs": [],
+        "riskArea": "Repository-wide baseline review",
+        "notes": "Reviewed 47 of 93 authorised files and returned six pending candidates; no separate receipt file was created."
+      },
+      {
+        "id": "surface_media_resource_investigation",
+        "label": "Media and request-resource boundary investigation",
+        "disposition": "needs_follow_up",
+        "receiptRefs": [],
+        "riskArea": "Untrusted relay objects, browser media buffers, relay authorisation and Worker body parsing",
+        "notes": "Focused source review returned four pending candidates; captured before parent merge or validation."
+      },
+      {
+        "id": "surface_control_boundary_investigation",
+        "label": "Control-plane authorisation and abuse-boundary investigation",
+        "disposition": "needs_follow_up",
+        "receiptRefs": [],
+        "riskArea": "Relay credentials, presenter and AI authority, routing privacy, WebSocket and Durable Object resource boundaries",
+        "notes": "Focused source review returned eleven pending candidates; captured before parent merge, deduplication or validation."
+      },
+      {
+        "id": "surface_remaining_inventory_review",
+        "label": "Remaining authorised inventory review",
+        "disposition": "needs_follow_up",
+        "receiptRefs": [],
+        "riskArea": "Previously uncovered client UI, capture, tests, documentation, generated types, lockfile and design assets",
+        "notes": "Completed review of the outstanding inventory. Returned eight pending candidates, mostly independent corroboration of existing control/media candidates, plus one narrow read-only capture candidate."
+      },
+      {
+        "id": "surface_validation_01",
+        "label": "Validated finding: Room creation and joining disclose a relay-wide publish/subscribe bearer",
+        "disposition": "reported",
+        "receiptRefs": [],
+        "riskArea": "broken-access-control",
+        "notes": "Validated by source trace at revision a784122aa18c6b7fbee1ae53d34b054a24d71f0b; merged candidate IDs: baseline-relay-wide-credential, media-relay-wide-credential, control-relay-credential-create, control-relay-credential-join."
+      },
+      {
+        "id": "surface_validation_02",
+        "label": "Validated finding: Any joined human can execute presenter and AI lifecycle controls",
+        "disposition": "reported",
+        "receiptRefs": [],
+        "riskArea": "missing-authorization",
+        "notes": "Validated by source trace at revision a784122aa18c6b7fbee1ae53d34b054a24d71f0b; merged candidate IDs: baseline-presenter-global-controls, control-presenter-simulation-authorisation, control-ai-lifecycle-authorisation, remaining-ai-creation-authorisation, remaining-ai-removal-authorisation, remaining-ai-pipeline-authorisation, remaining-presenter-client-only, remaining-ai-to-ai-authorisation."
+      },
+      {
+        "id": "surface_validation_03",
+        "label": "Validated finding: Unvalidated AI identifiers can wedge or pre-empt the global floor",
+        "disposition": "reported",
+        "receiptRefs": [],
+        "riskArea": "improper-input-validation",
+        "notes": "Validated by source trace at revision a784122aa18c6b7fbee1ae53d34b054a24d71f0b; merged candidate IDs: control-floor-target-validation."
+      },
+      {
+        "id": "surface_validation_04",
+        "label": "Validated finding: Public room snapshots disclose every human's per-AI routing preferences",
+        "disposition": "reported",
+        "receiptRefs": [],
+        "riskArea": "sensitive-data-exposure",
+        "notes": "Validated by source trace at revision a784122aa18c6b7fbee1ae53d34b054a24d71f0b; merged candidate IDs: control-routing-row-disclosure."
+      },
+      {
+        "id": "surface_validation_05",
+        "label": "Validated finding: A reusable participant bearer is placed in the WebSocket query string",
+        "disposition": "reported",
+        "receiptRefs": [],
+        "riskArea": "credential-exposure",
+        "notes": "Validated by source trace at revision a784122aa18c6b7fbee1ae53d34b054a24d71f0b; merged candidate IDs: baseline-websocket-query-token, control-websocket-query-token."
+      },
+      {
+        "id": "surface_validation_06",
+        "label": "Validated finding: One participant token can open unbounded concurrent control sockets",
+        "disposition": "reported",
+        "receiptRefs": [],
+        "riskArea": "resource-exhaustion",
+        "notes": "Validated by source trace at revision a784122aa18c6b7fbee1ae53d34b054a24d71f0b; merged candidate IDs: control-concurrent-websockets."
+      },
+      {
+        "id": "surface_validation_07",
+        "label": "Validated finding: Unthrottled open-room joins permit unbounded participant and routing allocation",
+        "disposition": "reported",
+        "receiptRefs": [],
+        "riskArea": "resource-exhaustion",
+        "notes": "Validated by source trace at revision a784122aa18c6b7fbee1ae53d34b054a24d71f0b; merged candidate IDs: control-unthrottled-joins, baseline-join-websocket-resource-limits."
+      },
+      {
+        "id": "surface_validation_08",
+        "label": "Validated finding: Worker parses unbounded JSON bodies before rate limiting or authentication",
+        "disposition": "reported",
+        "receiptRefs": [],
+        "riskArea": "resource-exhaustion",
+        "notes": "Validated by source trace at revision a784122aa18c6b7fbee1ae53d34b054a24d71f0b; merged candidate IDs: baseline-unbounded-json-body, media-unbounded-json-body."
+      },
+      {
+        "id": "surface_validation_09",
+        "label": "Validated finding: Playback deduplication retains unbounded object identifiers per group",
+        "disposition": "reported",
+        "receiptRefs": [],
+        "riskArea": "resource-exhaustion",
+        "notes": "Validated by source trace at revision a784122aa18c6b7fbee1ae53d34b054a24d71f0b; merged candidate IDs: media-unbounded-playback-deduplication, remaining-playback-deduplication."
+      },
+      {
+        "id": "surface_validation_10",
+        "label": "Validated finding: Media bursts trigger count-unbounded sorting and decoder submission",
+        "disposition": "reported",
+        "receiptRefs": [],
+        "riskArea": "algorithmic-complexity",
+        "notes": "Validated by source trace at revision a784122aa18c6b7fbee1ae53d34b054a24d71f0b; merged candidate IDs: media-jitter-decoder-burst, remaining-jitter-cardinality, baseline-inbound-media-budget."
+      },
+      {
+        "id": "surface_validation_11",
+        "label": "Validated finding: Unknown room-code probes initialise persistent SQLite Durable Objects",
+        "disposition": "reported",
+        "receiptRefs": [],
+        "riskArea": "resource-exhaustion",
+        "notes": "Validated by source trace at revision a784122aa18c6b7fbee1ae53d34b054a24d71f0b; merged candidate IDs: control-arbitrary-room-do-initialisation."
+      },
+      {
+        "id": "surface_validation_12",
+        "label": "Validated finding: Narrow read-only clients still start microphone capture and publication",
+        "disposition": "reported",
+        "receiptRefs": [],
+        "riskArea": "privacy-violation",
+        "notes": "Validated by source trace at revision a784122aa18c6b7fbee1ae53d34b054a24d71f0b; merged candidate IDs: remaining-narrow-capture."
+      },
+      {
+        "id": "surface_validation_13",
+        "label": "Validated finding: Any participant can spoof another participant's activity",
+        "disposition": "reported",
+        "receiptRefs": [],
+        "riskArea": "object-authorization",
+        "notes": "Validated by source trace at revision a784122aa18c6b7fbee1ae53d34b054a24d71f0b; merged candidate IDs: control-activity-target-spoofing."
+      },
+      {
+        "id": "surface_rejected_baseline_inbound_media_budget",
+        "label": "Merged duplicate candidate: Inbound media objects have no per-track object-count or byte budget",
+        "disposition": "rejected",
+        "receiptRefs": [],
+        "riskArea": "Duplicate candidate reconciliation",
+        "notes": "Rejected as a separate finding after source validation because it describes the same broken control, attack path and effective remediation as resource-exhaustion.unbounded-playback-dedupe, resource-exhaustion.media-burst-sorting. Its evidence remains represented by the validated finding locations and this closure surface.",
+        "candidateId": "baseline-inbound-media-budget",
+        "originalEvidence": [
+          "Unique IDs in one group are not count-bounded.",
+          "Four retained groups do not cap IDs per group.",
+          "A 200 ms rule does not cap a burst.",
+          "Per-insert sorting creates superlinear CPU work."
+        ],
+        "counterEvidence": [
+          "Malformed frames are rejected and one payload is capped at 65,535 bytes.",
+          "Old jitter frames, old groups and the mixer ring are bounded.",
+          "WebTransport flow control does not establish application budgets."
+        ],
+        "mergedIntoRuleIds": [
+          "resource-exhaustion.unbounded-playback-dedupe",
+          "resource-exhaustion.media-burst-sorting"
+        ]
+      },
+      {
+        "id": "surface_rejected_remaining_jitter_cardinality",
+        "label": "Merged duplicate candidate: Time-window pruning does not bound jitter-buffer burst cardinality",
+        "disposition": "rejected",
+        "receiptRefs": [],
+        "riskArea": "Duplicate candidate reconciliation",
+        "notes": "Rejected as a separate finding after source validation because it describes the same broken control, attack path and effective remediation as resource-exhaustion.media-burst-sorting. Its evidence remains represented by the validated finding locations and this closure surface.",
+        "candidateId": "remaining-jitter-cardinality",
+        "originalEvidence": [
+          "Automatic human subscriptions exist.",
+          "Normal tests send one frame per 20 ms and small sets."
+        ],
+        "counterEvidence": [
+          "Older frames, cancellation groups and per-frame length are bounded.",
+          "External relay flow control is unverified."
+        ],
+        "mergedIntoRuleIds": ["resource-exhaustion.media-burst-sorting"]
+      }
+    ],
+    "explicitExclusions": [],
+    "deferred": [
+      {
+        "id": "remaining-playback-deduplication",
+        "reason": "Remaining-inventory candidate awaiting parent source validation and deduplication.",
+        "paths": [
+          "src/client/audio/PlaybackDeduplicator.ts",
+          "src/client/audio/TrackPlayer.ts",
+          "src/client/session/RoomSession.ts",
+          "test/invariants.test.ts"
+        ],
+        "surfaceIds": ["surface_remaining_inventory_review"],
+        "candidate": {
+          "rule": "Playback deduplication is unbounded within a single object group",
+          "cwe": "CWE-770",
+          "severity": "medium",
+          "confidence": "high",
+          "attacker": "A malicious publisher sending unique object IDs.",
+          "violated_security_invariant": "Reload deduplication requires a fixed bound, including malformed objects.",
+          "source_to_sink": "PlaybackDeduplicator retains four group maps but each Set is uncapped. TrackPlayer records IDs before parsing payloads, so malformed unique objects grow the Set. Pruning only limits group count.",
+          "impact": "A constant group with unique IDs grows victim memory indefinitely even when payloads are rejected.",
+          "locations": [
+            {
+              "path": "src/client/audio/PlaybackDeduplicator.ts",
+              "lines": "15-54",
+              "role": "unbounded_state"
+            },
+            {
+              "path": "src/client/audio/TrackPlayer.ts",
+              "lines": "73-87",
+              "role": "ordering"
+            },
+            {
+              "path": "src/client/session/RoomSession.ts",
+              "lines": "783-790",
+              "role": "source"
+            },
+            {
+              "path": "test/invariants.test.ts",
+              "lines": "412-412",
+              "role": "missing_cardinality_test"
+            }
+          ],
+          "supporting_source_evidence": [
+            "Malformed payloads consume state before decodeAudioObject.",
+            "Normal mapping expects 50 objects/group but does not enforce it."
+          ],
+          "counterevidence": ["Four groups are retained.", "Close/forget clears state."],
+          "recommended_remediation": "Validate before deduplication; cap IDs per group; reject excess; add thousands-of-IDs tests."
+        }
+      },
+      {
+        "id": "media-unbounded-json-body",
+        "reason": "Focused investigation candidate awaiting parent source validation.",
+        "paths": ["src/worker/validation.ts", "src/worker/index.ts"],
+        "surfaceIds": ["surface_media_resource_investigation"],
+        "candidate": {
+          "rule": "Worker parses unbounded JSON bodies before rate limiting or participant authentication",
+          "cwe": "CWE-400",
+          "severity": "medium",
+          "confidence": "high",
+          "attacker": "An unauthenticated creator or a caller targeting room mutation routes.",
+          "violated_security_invariant": "Public routes must reject bodies larger than their small schema before buffering and parsing.",
+          "source_to_sink": "readJsonObject checks only Content-Type then calls request.json. Field validation, creation rate limiting and participant authentication occur later.",
+          "impact": "Repeated oversized JSON forces disproportionate Worker CPU and memory before rejection, risking cost and demo disruption.",
+          "locations": [
+            {
+              "path": "src/worker/validation.ts",
+              "lines": "11-25",
+              "role": "root_control_sink"
+            },
+            {
+              "path": "src/worker/index.ts",
+              "lines": "98-102",
+              "role": "public_entrypoint"
+            },
+            {
+              "path": "src/worker/index.ts",
+              "lines": "146-260",
+              "role": "mutation_entrypoints"
+            },
+            {
+              "path": "src/worker/index.ts",
+              "lines": "327-340",
+              "role": "late_limiter"
+            }
+          ],
+          "supporting_source_evidence": [
+            "No Content-Length check, streaming counter or 413 response exists.",
+            "Legitimate fields are tiny.",
+            "Creation limiter runs after parse."
+          ],
+          "counterevidence": [
+            "Content-Type is checked.",
+            "Join checks room existence.",
+            "Platform limits make each request finite but do not supply a small app bound."
+          ],
+          "recommended_remediation": "Enforce a small declared and streamed byte limit before JSON.parse; rate-limit creation first; authenticate mutations before parsing where feasible."
+        }
+      },
+      {
+        "id": "baseline-join-websocket-resource-limits",
+        "reason": "Independent baseline candidate awaiting parent source validation.",
+        "paths": ["src/worker/index.ts", "src/worker/room.ts", "test/room-service.test.ts"],
+        "surfaceIds": ["surface_baseline_audit"],
+        "candidate": {
+          "rule": "Room joins and control WebSockets have no per-room or per-credential resource limits",
+          "cwe": "CWE-770",
+          "severity": "medium",
+          "confidence": "high",
+          "attacker": "A malicious room-code holder or participant replaying their credential.",
+          "violated_security_invariant": "Open membership must not permit one source or credential to allocate unbounded room state and sockets.",
+          "source_to_sink": "Only creation is rate-limited; every join inserts participant/routing state and broadcasts. Every valid socket is accepted and the same credential can open many sockets receiving all broadcasts.",
+          "impact": "Attackers can create quadratic routing work or broadcast amplification, exhausting Durable Object resources.",
+          "locations": [
+            {
+              "path": "src/worker/index.ts",
+              "lines": "132-143",
+              "role": "entrypoint"
+            },
+            {
+              "path": "src/worker/index.ts",
+              "lines": "327-339",
+              "role": "limited_control"
+            },
+            {
+              "path": "src/worker/room.ts",
+              "lines": "143-180",
+              "role": "state_sink"
+            },
+            {
+              "path": "src/worker/room.ts",
+              "lines": "466-496",
+              "role": "socket_sink"
+            },
+            {
+              "path": "src/worker/room.ts",
+              "lines": "969-971",
+              "role": "amplification_sink"
+            }
+          ],
+          "supporting_source_evidence": [
+            "No join velocity or socket-per-credential limit exists.",
+            "Participant insertion adds routing work.",
+            "A credential is replayable across concurrent sockets."
+          ],
+          "counterevidence": [
+            "Room codes are non-guessable.",
+            "Rooms expire, creation is limited and Cloudflare has ceilings.",
+            "Product forbids a participant-count admission cap."
+          ],
+          "recommended_remediation": "Rate-limit abusive join velocity without a count cap; bound sockets per participant; add mutation budgets, backpressure and visible degradation."
+        }
+      },
+      {
+        "id": "control-websocket-query-token",
+        "reason": "Focused investigation candidate awaiting parent source validation.",
+        "paths": [
+          "src/client/api.ts",
+          "src/worker/index.ts",
+          "src/worker/room.ts",
+          "src/client/hooks/useRoomSession.ts"
+        ],
+        "surfaceIds": ["surface_control_boundary_investigation"],
+        "candidate": {
+          "rule": "A reusable participant bearer is placed in the WebSocket query string instead of a single-use socket ticket",
+          "cwe": "CWE-598",
+          "severity": "medium",
+          "confidence": "medium",
+          "attacker": "A reader of external access, proxy or diagnostic logs that record the handshake URL.",
+          "violated_security_invariant": "WebSocket handshakes must use short-lived single-use tickets, not the general reusable credential.",
+          "source_to_sink": "roomEventsUrl appends participant ID and rejoin token; Worker and Durable Object read and authenticate it. The same token authorises mutations, reclaim returns it unchanged and it is not consumed.",
+          "impact": "If an external system records the URL, a log reader can replay the credential for sockets, identity reclaim, routing and global operations guarded only by assertHuman.",
+          "locations": [
+            {
+              "path": "src/client/api.ts",
+              "lines": "187-198",
+              "role": "source"
+            },
+            {
+              "path": "src/worker/index.ts",
+              "lines": "263-280",
+              "role": "entrypoint"
+            },
+            {
+              "path": "src/worker/room.ts",
+              "lines": "466-496",
+              "role": "sink"
+            },
+            {
+              "path": "src/worker/room.ts",
+              "lines": "596-630",
+              "role": "reuse"
+            },
+            {
+              "path": "src/worker/room.ts",
+              "lines": "793-810",
+              "role": "authentication"
+            },
+            {
+              "path": "src/client/hooks/useRoomSession.ts",
+              "lines": "61-78",
+              "role": "storage"
+            }
+          ],
+          "supporting_source_evidence": [
+            "Full bearer is appended as token=.",
+            "No independent token expiry or consumption exists.",
+            "Reclaim returns the same token and can act while connected."
+          ],
+          "counterevidence": [
+            "Application logs omit query strings.",
+            "External full-URL logging is unverified.",
+            "Token is random, hashed at rest and bounded by leave/room expiry."
+          ],
+          "recommended_remediation": "Mint and atomically consume a short-lived socket ticket; never put the rejoin credential in a URL; rotate it after reclaim."
+        }
+      },
+      {
+        "id": "control-presenter-simulation-authorisation",
+        "reason": "Focused investigation candidate awaiting parent source validation.",
+        "paths": [
+          "src/worker/index.ts",
+          "src/worker/room.ts",
+          "src/client/pages/EntryPage.tsx",
+          "src/client/pages/RoomPage.tsx",
+          "PRODUCT_SPEC_v1-demo_1.md"
+        ],
+        "surfaceIds": ["surface_control_boundary_investigation"],
+        "candidate": {
+          "rule": "Any joined human can perform presenter-only simulation and AI-to-AI safety mutations",
+          "cwe": "CWE-862",
+          "severity": "high",
+          "confidence": "high",
+          "attacker": "An ordinary joined human with their own credential.",
+          "violated_security_invariant": "Presenter-only controls must require a server-verifiable presenter or owner capability.",
+          "source_to_sink": "Presenter and AI-to-AI routes use ordinary participant credentials. configurePresenter, setAiToAi, recordAiToAiTurn and resetAiToAiTurns call assertHuman, which only verifies any active human. presenterMode is sessionStorage UI state.",
+          "impact": "A participant can reconfigure simulation, enable/disable scripted responses and AI-to-AI, exhaust or reset safety turn counters and disrupt the demo.",
+          "locations": [
+            {
+              "path": "src/worker/index.ts",
+              "lines": "218-252",
+              "role": "entrypoints"
+            },
+            {
+              "path": "src/worker/room.ts",
+              "lines": "383-452",
+              "role": "sinks"
+            },
+            {
+              "path": "src/worker/room.ts",
+              "lines": "785-810",
+              "role": "root_control"
+            },
+            {
+              "path": "src/client/pages/EntryPage.tsx",
+              "lines": "41-63",
+              "role": "client_only_control"
+            },
+            {
+              "path": "src/client/pages/RoomPage.tsx",
+              "lines": "278-302",
+              "role": "client_only_control"
+            },
+            {
+              "path": "PRODUCT_SPEC_v1-demo_1.md",
+              "lines": "230-237",
+              "role": "security_requirement"
+            }
+          ],
+          "supporting_source_evidence": [
+            "Spec names these as presenter actions.",
+            "No creator/presenter role is stored.",
+            "sessionStorage is never verified as authority."
+          ],
+          "counterevidence": [
+            "Attacker needs a valid human credential.",
+            "Simulation counts and AI-to-AI turns are bounded; room expires."
+          ],
+          "recommended_remediation": "Persist a creator/presenter capability and require it for presenter and AI-to-AI administration; record turn progression from a trusted orchestration path."
+        }
+      },
+      {
+        "id": "control-ai-lifecycle-authorisation",
+        "reason": "Focused investigation candidate awaiting parent source validation.",
+        "paths": ["src/worker/index.ts", "src/worker/room.ts", "test/room-service.test.ts"],
+        "surfaceIds": ["surface_control_boundary_investigation"],
+        "candidate": {
+          "rule": "Any joined human can create, remove or falsify global AI state",
+          "cwe": "CWE-862",
+          "severity": "high",
+          "confidence": "high",
+          "attacker": "An ordinary joined human.",
+          "violated_security_invariant": "AI lifecycle and pipeline state must be controlled by presenter or trusted AI orchestration credentials.",
+          "source_to_sink": "addAi, removeAi and setAiPipeline all authorise through assertHuman. No owner, presenter, per-AI or cost authority exists.",
+          "impact": "A participant can add unbounded AI identities, remove legitimate AIs and routing/floor state, or forge AI pipeline state visible to all clients.",
+          "locations": [
+            {
+              "path": "src/worker/index.ts",
+              "lines": "167-204",
+              "role": "entrypoints"
+            },
+            {
+              "path": "src/worker/room.ts",
+              "lines": "183-245",
+              "role": "lifecycle_sinks"
+            },
+            {
+              "path": "src/worker/room.ts",
+              "lines": "314-330",
+              "role": "pipeline_sink"
+            },
+            {
+              "path": "src/worker/room.ts",
+              "lines": "785-810",
+              "role": "root_control"
+            },
+            {
+              "path": "test/room-service.test.ts",
+              "lines": "387-409",
+              "role": "missing_authorisation_test"
+            }
+          ],
+          "supporting_source_evidence": [
+            "Tests require only any valid token.",
+            "No AI ownership or presenter role exists.",
+            "Role predicates protect row types, not which human may control them."
+          ],
+          "counterevidence": [
+            "A valid human credential is required.",
+            "SQL limits removal/pipeline changes to AI rows.",
+            "Room lifetime bounds persistence."
+          ],
+          "recommended_remediation": "Require owner/presenter authority for AI lifecycle, per-AI worker capability for pipeline changes, and an explicit AI creation/cost budget."
+        }
+      },
+      {
+        "id": "remaining-ai-creation-authorisation",
+        "reason": "Remaining-inventory candidate awaiting parent source validation and deduplication.",
+        "paths": ["src/worker/index.ts", "src/worker/room.ts", "PRODUCT_SPEC_v1-demo_1.md"],
+        "surfaceIds": ["surface_remaining_inventory_review"],
+        "candidate": {
+          "rule": "Any joined human can create unbounded room-wide AI participants",
+          "cwe": "CWE-862",
+          "severity": "medium",
+          "confidence": "high",
+          "attacker": "Any ordinary human who joins with the room code.",
+          "violated_security_invariant": "Open membership does not grant AI lifecycle or room-wide resource authority.",
+          "source_to_sink": "Open join issues an ordinary credential; POST /ai accepts it; addAi checks only assertHuman then creates AI and routing rows for every human without presenter check, rate limit or idempotency.",
+          "impact": "An attendee can expand AI and routing state and distort room composition for the room lifetime.",
+          "locations": [
+            {
+              "path": "src/worker/index.ts",
+              "lines": "132-143",
+              "role": "credential_source"
+            },
+            {
+              "path": "src/worker/index.ts",
+              "lines": "167-181",
+              "role": "entrypoint"
+            },
+            {
+              "path": "src/worker/room.ts",
+              "lines": "187-219",
+              "role": "allocation_sink"
+            },
+            {
+              "path": "src/worker/room.ts",
+              "lines": "785-810",
+              "role": "root_control"
+            },
+            {
+              "path": "PRODUCT_SPEC_v1-demo_1.md",
+              "lines": "360-377",
+              "role": "requirement"
+            }
+          ],
+          "supporting_source_evidence": [
+            "Anyone with a valid link may join.",
+            "Each AI seeds routing for every human.",
+            "Spec requires lifecycle/cost controls."
+          ],
+          "counterevidence": [
+            "Valid token required.",
+            "Room lifetime bounds persistence.",
+            "No participant-count cap is intentional.",
+            "Live AI cost is not implemented."
+          ],
+          "recommended_remediation": "Require presenter or trusted AI-worker authority; add per-room/principal mutation rates, idempotency and documented AI-cost ceiling."
+        }
+      },
+      {
+        "id": "remaining-ai-removal-authorisation",
+        "reason": "Remaining-inventory candidate awaiting parent source validation and deduplication.",
+        "paths": ["src/worker/index.ts", "src/worker/room.ts"],
+        "surfaceIds": ["surface_remaining_inventory_review"],
+        "candidate": {
+          "rule": "Any joined human can remove any AI from the room",
+          "cwe": "CWE-862",
+          "severity": "medium",
+          "confidence": "high",
+          "attacker": "Any ordinary joined human.",
+          "violated_security_invariant": "Only the presenter or trusted lifecycle service terminates a room-wide AI.",
+          "source_to_sink": "Snapshots reveal AI IDs. DELETE /ai accepts arbitrary aiId and ordinary credential; removeAi checks only assertHuman then marks the AI left, deletes routing and releases floor.",
+          "impact": "An attendee can terminate any AI and interrupt the room-wide demo.",
+          "locations": [
+            {
+              "path": "src/worker/index.ts",
+              "lines": "126-130",
+              "role": "target_disclosure"
+            },
+            {
+              "path": "src/worker/index.ts",
+              "lines": "183-191",
+              "role": "entrypoint"
+            },
+            {
+              "path": "src/worker/room.ts",
+              "lines": "229-245",
+              "role": "sink"
+            },
+            {
+              "path": "src/worker/room.ts",
+              "lines": "785-810",
+              "role": "root_control"
+            }
+          ],
+          "supporting_source_evidence": [
+            "Operation is independently reachable.",
+            "Removal also changes floor state."
+          ],
+          "counterevidence": [
+            "Target restricted to AI rows.",
+            "Record is marked left.",
+            "Valid token required."
+          ],
+          "recommended_remediation": "Require presenter or trusted lifecycle authority and negative-test a second ordinary human."
+        }
+      },
+      {
+        "id": "remaining-ai-pipeline-authorisation",
+        "reason": "Remaining-inventory candidate awaiting parent source validation and deduplication.",
+        "paths": ["src/worker/index.ts", "src/worker/room.ts"],
+        "surfaceIds": ["surface_remaining_inventory_review"],
+        "candidate": {
+          "rule": "Any joined human can falsify any AI pipeline state",
+          "cwe": "CWE-862",
+          "severity": "medium",
+          "confidence": "high",
+          "attacker": "Any ordinary joined human.",
+          "violated_security_invariant": "AI pipeline state must come from trusted AI or presenter authority.",
+          "source_to_sink": "POST /ai-pipeline accepts target/state; setAiPipeline checks only assertHuman, updates the AI row and broadcasts.",
+          "impact": "An attendee can falsify listening, thinking, speaking, interrupted or unavailable state for every client.",
+          "locations": [
+            {
+              "path": "src/worker/index.ts",
+              "lines": "192-204",
+              "role": "entrypoint"
+            },
+            {
+              "path": "src/worker/room.ts",
+              "lines": "314-330",
+              "role": "sink"
+            },
+            {
+              "path": "src/worker/room.ts",
+              "lines": "785-810",
+              "role": "root_control"
+            }
+          ],
+          "supporting_source_evidence": [
+            "Parser validates enum but not authority.",
+            "Broadcast updates shared room state."
+          ],
+          "counterevidence": [
+            "Valid token required.",
+            "Target update restricted to AI rows.",
+            "No live AI worker exists."
+          ],
+          "recommended_remediation": "Reserve updates for per-AI worker credentials with an authorised presenter override."
+        }
+      },
+      {
+        "id": "remaining-presenter-client-only",
+        "reason": "Remaining-inventory candidate awaiting parent source validation and deduplication.",
+        "paths": [
+          "src/client/pages/RoomPage.tsx",
+          "src/client/api.ts",
+          "src/worker/room.ts",
+          "PRODUCT_SPEC_v1-demo_1.md"
+        ],
+        "surfaceIds": ["surface_remaining_inventory_review"],
+        "candidate": {
+          "rule": "Client-only presenter mode does not protect presenter simulation controls",
+          "cwe": "CWE-862",
+          "severity": "medium",
+          "confidence": "high",
+          "attacker": "Any ordinary joined human calling the endpoint directly or setting sessionStorage.",
+          "violated_security_invariant": "Presenter simulation must be server-authorised.",
+          "source_to_sink": "RoomPage derives presenter UI solely from sessionStorage; configurePresenter sends only the ordinary credential; the server checks only assertHuman and reconciles the simulated cast.",
+          "impact": "An attendee can reshape simulated humans/AIs and scripted response mode during the demo.",
+          "locations": [
+            {
+              "path": "src/client/pages/RoomPage.tsx",
+              "lines": "22-28",
+              "role": "client_only_control"
+            },
+            {
+              "path": "src/client/pages/RoomPage.tsx",
+              "lines": "278-295",
+              "role": "entrypoint"
+            },
+            {
+              "path": "src/client/api.ts",
+              "lines": "170-185",
+              "role": "request"
+            },
+            {
+              "path": "src/worker/room.ts",
+              "lines": "436-452",
+              "role": "sink"
+            },
+            {
+              "path": "PRODUCT_SPEC_v1-demo_1.md",
+              "lines": "230-237",
+              "role": "requirement"
+            }
+          ],
+          "supporting_source_evidence": [
+            "Tests reject only invalid credentials.",
+            "Server clamps counts but has no presenter distinction."
+          ],
+          "counterevidence": [
+            "Simulation is labelled.",
+            "Counts are bounded.",
+            "Valid human token required."
+          ],
+          "recommended_remediation": "Mint and verify a presenter capability; keep sessionStorage as UI preference; negative-test another valid human."
+        }
+      },
+      {
+        "id": "remaining-ai-to-ai-authorisation",
+        "reason": "Remaining-inventory candidate awaiting parent source validation and deduplication.",
+        "paths": [
+          "src/client/pages/RoomPage.tsx",
+          "src/client/api.ts",
+          "src/worker/room.ts",
+          "PRODUCT_SPEC_v1-demo_1.md"
+        ],
+        "surfaceIds": ["surface_remaining_inventory_review"],
+        "candidate": {
+          "rule": "Any joined human can enable or disable room-wide AI-to-AI exchange",
+          "cwe": "CWE-862",
+          "severity": "medium",
+          "confidence": "high",
+          "attacker": "Any ordinary joined human.",
+          "violated_security_invariant": "AI-to-AI exchange is a presenter action because it changes global behaviour and loop/cost risk.",
+          "source_to_sink": "Client hides the control with sessionStorage, but setAiToAi sends only the ordinary credential and Room.setAiToAi checks only assertHuman before writing global state.",
+          "impact": "An attendee can change room-wide AI-to-AI policy and future automated exchange behaviour.",
+          "locations": [
+            {
+              "path": "src/client/pages/RoomPage.tsx",
+              "lines": "293-302",
+              "role": "client_only_control"
+            },
+            {
+              "path": "src/client/api.ts",
+              "lines": "151-169",
+              "role": "request"
+            },
+            {
+              "path": "src/worker/room.ts",
+              "lines": "383-398",
+              "role": "sink"
+            },
+            {
+              "path": "PRODUCT_SPEC_v1-demo_1.md",
+              "lines": "230-237",
+              "role": "requirement"
+            }
+          ],
+          "supporting_source_evidence": [
+            "Every human receives the accepted credential shape.",
+            "Existing test exercises only creator."
+          ],
+          "counterevidence": [
+            "Disabled by default.",
+            "Turns are capped.",
+            "No live AI pipeline exists."
+          ],
+          "recommended_remediation": "Require server-issued presenter authority and preserve the turn cap as defence in depth."
+        }
+      },
+      {
+        "id": "media-relay-wide-credential",
+        "reason": "Focused investigation candidate awaiting parent source validation.",
+        "paths": [
+          "src/worker/index.ts",
+          "src/worker/relayCredential.ts",
+          "src/client/transport/MoqTransportAdapter.ts",
+          "src/shared/tracks.ts",
+          "wrangler.jsonc"
+        ],
+        "surfaceIds": ["surface_media_resource_investigation"],
+        "candidate": {
+          "rule": "A static relay-wide credential is returned to every participant without room, publisher or subscription scope",
+          "cwe": "CWE-284",
+          "severity": "high",
+          "confidence": "medium",
+          "attacker": "Any unauthenticated room creator or joined human using a modified MOQT client.",
+          "violated_security_invariant": "Relay credentials must bind participant, room, own publication and authorised subscriptions.",
+          "source_to_sink": "Public create and join return one configured token. The adapter authenticates with it and accepts caller-selected track addresses; track names are deterministic and routing is cooperative.",
+          "impact": "A holder can attempt relay namespace publication or subscription outside client routing; actual collision/spoofing depends on external relay semantics.",
+          "locations": [
+            {
+              "path": "src/worker/index.ts",
+              "lines": "98-114",
+              "role": "source"
+            },
+            {
+              "path": "src/worker/index.ts",
+              "lines": "132-143",
+              "role": "source"
+            },
+            {
+              "path": "src/worker/index.ts",
+              "lines": "289-304",
+              "role": "root_control"
+            },
+            {
+              "path": "src/worker/relayCredential.ts",
+              "lines": "1-12",
+              "role": "implementation"
+            },
+            {
+              "path": "src/client/transport/MoqTransportAdapter.ts",
+              "lines": "361-471",
+              "role": "sink"
+            },
+            {
+              "path": "src/shared/tracks.ts",
+              "lines": "17-40",
+              "role": "namespace"
+            },
+            {
+              "path": "wrangler.jsonc",
+              "lines": "23-30",
+              "role": "counterevidence"
+            }
+          ],
+          "supporting_source_evidence": [
+            "One environment secret is used without claim minting.",
+            "Creation is public.",
+            "Adapter operations are not reconciled to routing.",
+            "Routing is cooperative."
+          ],
+          "counterevidence": [
+            "Credential is omitted from snapshots and held in memory.",
+            "Identifiers are high entropy.",
+            "Ordinary client restricts itself.",
+            "Relay acceptance, ACLs, expiry and collision semantics are unverified."
+          ],
+          "recommended_remediation": "Mint short-lived per-room and participant credentials for own publication and server-authorised subscriptions; otherwise keep transport unavailable or add enforcement."
+        }
+      },
+      {
+        "id": "control-relay-credential-create",
+        "reason": "Focused investigation candidate awaiting parent source validation.",
+        "paths": [
+          "src/worker/index.ts",
+          "src/worker/relayCredential.ts",
+          "src/worker/env.ts",
+          "src/client/transport/MoqTransportAdapter.ts"
+        ],
+        "surfaceIds": ["surface_control_boundary_investigation"],
+        "candidate": {
+          "rule": "Unauthenticated room creation discloses a Worker-wide relay publish/subscribe bearer",
+          "cwe": "CWE-522",
+          "severity": "high",
+          "confidence": "high",
+          "attacker": "An unauthenticated room creator.",
+          "violated_security_invariant": "A Worker relay secret must not become an unscoped end-user bearer.",
+          "source_to_sink": "POST /api/rooms returns relayCredential(env); that returns MOQ_RELAY_TOKEN unchanged; the client places it in the WebTransport URL and can call publish, subscribe and subscribeNamespace with caller-selected addresses.",
+          "impact": "If the relay accepts the documented authority, any creator can bypass room routing and attempt arbitrary publication or subscription; external cross-room semantics remain unverified.",
+          "locations": [
+            {
+              "path": "src/worker/index.ts",
+              "lines": "98-114",
+              "role": "source"
+            },
+            {
+              "path": "src/worker/index.ts",
+              "lines": "289-304",
+              "role": "root_control"
+            },
+            {
+              "path": "src/worker/relayCredential.ts",
+              "lines": "1-13",
+              "role": "implementation"
+            },
+            {
+              "path": "src/worker/env.ts",
+              "lines": "21-24",
+              "role": "secret"
+            },
+            {
+              "path": "src/client/transport/MoqTransportAdapter.ts",
+              "lines": "361-483",
+              "role": "sink"
+            },
+            {
+              "path": "src/client/transport/MoqTransportAdapter.ts",
+              "lines": "532-540",
+              "role": "transport_auth"
+            }
+          ],
+          "supporting_source_evidence": [
+            "No minting, claims, room binding, participant binding or expiry exists.",
+            "Worker comments describe publish and subscribe authority.",
+            "Adapter accepts arbitrary track and namespace arguments."
+          ],
+          "counterevidence": [
+            "Creation is throttled.",
+            "Responses are no-store and logs/rendering redact the token.",
+            "Relay acceptance, expiry and enforcement are trace-unverified."
+          ],
+          "recommended_remediation": "Never return the Worker-wide secret; mint short-lived per-room, participant, role and namespace credentials, or keep transport unavailable until enforcement exists."
+        }
+      },
+      {
+        "id": "control-relay-credential-join",
+        "reason": "Focused investigation candidate awaiting parent source validation.",
+        "paths": [
+          "src/worker/index.ts",
+          "src/worker/room.ts",
+          "src/shared/tracks.ts",
+          "src/client/transport/MoqTransportAdapter.ts"
+        ],
+        "surfaceIds": ["surface_control_boundary_investigation"],
+        "candidate": {
+          "rule": "Open-room joining independently discloses the same relay-wide bearer without an issuance throttle",
+          "cwe": "CWE-522",
+          "severity": "high",
+          "confidence": "high",
+          "attacker": "A holder of a valid room code.",
+          "violated_security_invariant": "Open joining must not grant relay authority beyond the participant's permitted tracks and issuance must be throttled.",
+          "source_to_sink": "POST /api/rooms/:code/join returns the same Worker token without a join or issuance limiter, together with snapshot identifiers used by deterministic track names.",
+          "impact": "A room-code holder can obtain the bearer and target namespace inputs, then attempt routing bypass, unauthorised subscription or publication subject to relay semantics.",
+          "locations": [
+            {
+              "path": "src/worker/index.ts",
+              "lines": "117-143",
+              "role": "entrypoint"
+            },
+            {
+              "path": "src/worker/index.ts",
+              "lines": "289-304",
+              "role": "root_control"
+            },
+            {
+              "path": "src/worker/room.ts",
+              "lines": "143-180",
+              "role": "join"
+            },
+            {
+              "path": "src/shared/tracks.ts",
+              "lines": "17-36",
+              "role": "namespace"
+            },
+            {
+              "path": "src/client/transport/MoqTransportAdapter.ts",
+              "lines": "361-483",
+              "role": "sink"
+            }
+          ],
+          "supporting_source_evidence": [
+            "Join requires only room-code knowledge.",
+            "Every join receives the same credential.",
+            "Snapshot and deterministic naming expose namespace inputs.",
+            "No issuance budget exists."
+          ],
+          "counterevidence": [
+            "Room codes are high entropy and rooms last at most twenty minutes.",
+            "Credential is absent from public snapshots and logs.",
+            "Relay acceptance and undocumented scope are unverified."
+          ],
+          "recommended_remediation": "Mint a scoped credential after a controlled join; rate-limit issuance per source and room without imposing a participant-count cap."
+        }
+      }
+    ],
+    "openQuestions": [
+      {
+        "question": "Deployed relay credential scope, acceptance, expiry and enforcement are outside the authorised source snapshot."
+      },
+      {
+        "question": "Cloudflare or intermediary handling of WebSocket query strings is not established by repository source."
+      },
+      {
+        "question": "The pinned moqtail dependency implementation and deployed relay parser are outside the authorised inventory."
+      },
+      {
+        "question": "Runtime thresholds for the unbounded deduplication and jitter/decoder paths remain unmeasured; source establishes missing application bounds."
+      },
+      {
+        "question": "External relay acceptance and WebSocket query logging remain runtime/deployment questions; source-backed control defects are pending parent validation."
+      },
+      {
+        "question": "Narrow-screen publication requires runtime confirmation because relay transport is trace-unverified, but source proves that the read-only label does not prevent getUserMedia or publication setup."
+      }
+    ]
+  }
+}

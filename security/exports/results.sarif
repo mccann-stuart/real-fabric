@@ -1,0 +1,1369 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/os/schemas/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "automationDetails": {
+        "id": "57e664f1-aa19-4e8c-a020-d7ef4fe380bc"
+      },
+      "properties": {
+        "codexSecuritySchemaVersion": "1.0",
+        "codexSecurityTargetKind": "git_revision"
+      },
+      "results": [
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "message": {
+                "text": "entrypoint"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/worker/index.ts"
+                },
+                "region": {
+                  "endLine": 216,
+                  "startLine": 207
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "state sink"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/worker/room.ts"
+                },
+                "region": {
+                  "endLine": 381,
+                  "startLine": 336
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "unconstrained queue schema"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/worker/room.ts"
+                },
+                "region": {
+                  "endLine": 589,
+                  "startLine": 586
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "evidence:floor-write"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/worker/room.ts"
+                },
+                "region": {
+                  "endLine": 360,
+                  "startLine": 336
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Unvalidated AI identifiers can wedge or pre-empt the global floor\n\nrequestFloor stores an arbitrary caller-supplied aiId as the floor holder or queue entry without proving that it names an active AI. releaseFloor likewise needs only the supplied holder ID.\n\nSeverity: medium\n\nCategory: Improper input validation\n\nWeaknesses: CWE-20\n\nRemediation:\nResolve aiId to an active role='ai' participant before every floor operation. Bind acquisition and release to an authorised AI or server-issued turn capability, reject stale requests and constrain the queue to active AI rows.\n\nRemediation tests:\n- Reject nonexistent, human, left and simulated-disallowed targets.\n- Require a valid turn capability to release the holder.\n- Verify queue rows reference active AI participants after lifecycle changes.\n\nPreventive controls:\n- Foreign-key or application invariant for floor targets.\n- Capability-bound floor API.\n- Invariant tests for every participant state transition."
+          },
+          "partialFingerprints": {
+            "codexSecurity/v1": "codex-security/v1:sha256:85142a083bcec2c22fe955966dab407cf63aaea1dd81361478491264e6283f43"
+          },
+          "properties": {
+            "category": "improper-input-validation",
+            "confidence": "high",
+            "findingId": "csf_14d72c1c67523dcbfa629247",
+            "occurrenceId": "occ_10905c1fd4f736a6543124d7",
+            "severity": "medium"
+          },
+          "ruleId": "input-validation.ai-floor-target",
+          "ruleIndex": 4
+        },
+        {
+          "level": "error",
+          "locations": [
+            {
+              "message": {
+                "text": "public source"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/worker/index.ts"
+                },
+                "region": {
+                  "endLine": 114,
+                  "startLine": 98
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "missing scoping control"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/worker/index.ts"
+                },
+                "region": {
+                  "endLine": 304,
+                  "startLine": 289
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "secret passthrough"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/worker/relayCredential.ts"
+                },
+                "region": {
+                  "endLine": 13,
+                  "startLine": 10
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "privileged relay sink"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/client/transport/MoqTransportAdapter.ts"
+                },
+                "region": {
+                  "endLine": 483,
+                  "startLine": 361
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Room creation and joining disclose a relay-wide publish/subscribe bearer\n\nThe public create route and open join route return the same configured MOQ_RELAY_TOKEN to browsers. The adapter then authenticates relay operations with that bearer without room, participant, track, action or expiry claims.\n\nSeverity: high\n\nCategory: Broken access control\n\nWeaknesses: CWE-522\n\nRemediation:\nReplace the shared browser-visible token with short-lived credentials scoped to one opaque room and participant, authorising only the participant's publication track and server-approved subscriptions. If the relay cannot enforce that scope, keep live transport unavailable or add an enforcing relay boundary, then rotate the shared secret.\n\nRemediation tests:\n- Verify create and join return distinct short-lived credentials.\n- Attempt publication outside the participant's own namespace and assert relay denial.\n- Toggle routing consent and assert a revoked subscription is rejected at the relay.\n\nPreventive controls:\n- Automated check forbidding Worker secret passthrough into API responses.\n- Credential claims and expiry audit logging without token values.\n- Live relay acceptance tests for namespace ownership and revocation."
+          },
+          "partialFingerprints": {
+            "codexSecurity/v1": "codex-security/v1:sha256:44c315ef0cf9393c45af51058562e5fc6aa4eeacf46f9907bc8861f71ebf9899"
+          },
+          "properties": {
+            "category": "broken-access-control",
+            "confidence": "medium",
+            "findingId": "csf_2a93aec13acf3bde269a810c",
+            "occurrenceId": "occ_42faffe2e4ceda7217fb6d37",
+            "severity": "high"
+          },
+          "ruleId": "access-control.relay-wide-browser-bearer",
+          "ruleIndex": 0
+        },
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "message": {
+                "text": "unthrottled entrypoint"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/worker/index.ts"
+                },
+                "region": {
+                  "endLine": 143,
+                  "startLine": 132
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "participant allocation"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/worker/room.ts"
+                },
+                "region": {
+                  "endLine": 180,
+                  "startLine": 143
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "routing allocation"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/worker/room.ts"
+                },
+                "region": {
+                  "endLine": 660,
+                  "startLine": 633
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "growing response"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/worker/room.ts"
+                },
+                "region": {
+                  "endLine": 855,
+                  "startLine": 820
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "evidence:join-allocation"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/worker/room.ts"
+                },
+                "region": {
+                  "endLine": 180,
+                  "startLine": 148
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Unthrottled open-room joins permit unbounded participant and routing allocation\n\nThe open join path has no source- or room-level rate limit. Every non-reclaim join inserts a participant, seeds routing for every AI, broadcasts and serialises a complete snapshot; the Worker also fetched a snapshot immediately before joining.\n\nSeverity: medium\n\nCategory: Resource exhaustion\n\nWeaknesses: CWE-770\n\nRemediation:\nAdd per-source and per-room token-bucket join limits with documented burst capacity and Retry-After. Rate-limit relay credential issuance separately, avoid duplicate snapshot serialisation, and budget routing-row creation while preserving the no-participant-count-cap requirement.\n\nRemediation tests:\n- Burst joins from one source and one room and assert rate-limited responses with Retry-After.\n- Verify legitimate joins resume after refill.\n- Verify the implementation never rejects solely because of total participant count.\n\nPreventive controls:\n- Dedicated join and credential-issuance rate limits.\n- Per-room work-budget telemetry.\n- Load test for human-by-AI routing growth."
+          },
+          "partialFingerprints": {
+            "codexSecurity/v1": "codex-security/v1:sha256:d9195d81c37f99ef2329f4df3162511708783e94914c4c8f19f5195d0b0de8bf"
+          },
+          "properties": {
+            "category": "resource-exhaustion",
+            "confidence": "high",
+            "findingId": "csf_151e9c838cea65a975baa20d",
+            "occurrenceId": "occ_4791b074c4422e58f3f71d66",
+            "severity": "medium"
+          },
+          "ruleId": "resource-exhaustion.unthrottled-open-joins",
+          "ruleIndex": 12
+        },
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "message": {
+                "text": "entrypoint"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/worker/index.ts"
+                },
+                "region": {
+                  "endLine": 280,
+                  "startLine": 263
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "socket allocation"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/worker/room.ts"
+                },
+                "region": {
+                  "endLine": 496,
+                  "startLine": 466
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "broadcast amplification"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/worker/room.ts"
+                },
+                "region": {
+                  "endLine": 972,
+                  "startLine": 969
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "One participant token can open unbounded concurrent control sockets\n\nEvery authenticated events upgrade creates and retains another WebSocket, sends a full snapshot and includes it in every later broadcast. The participant tag is never used to enforce a per-participant concurrency bound.\n\nSeverity: medium\n\nCategory: Resource exhaustion\n\nWeaknesses: CWE-770\n\nRemediation:\nUse single-use socket tickets, enforce one active socket or a small documented bound per participant, close or replace the older socket on reconnect, rate-limit upgrades and bound initial snapshot/broadcast work.\n\nRemediation tests:\n- Open a second socket for one participant and assert replacement or 429.\n- Burst upgrades and assert a documented Retry-After response.\n- Verify broadcasts target only the authorised active socket.\n\nPreventive controls:\n- Per-participant socket registry.\n- Single-use upgrade tickets.\n- Connection and broadcast metrics with bounded degradation."
+          },
+          "partialFingerprints": {
+            "codexSecurity/v1": "codex-security/v1:sha256:83827ef8845200c3df6144dd8a84180c87956c0eb4c4afb28b7760acaf77cdfa"
+          },
+          "properties": {
+            "category": "resource-exhaustion",
+            "confidence": "high",
+            "findingId": "csf_1b8059f7dac5ac4a7e0a7331",
+            "occurrenceId": "occ_53c2c7847bec4c0a267115b4",
+            "severity": "medium"
+          },
+          "ruleId": "resource-exhaustion.concurrent-control-sockets",
+          "ruleIndex": 7
+        },
+        {
+          "level": "note",
+          "locations": [
+            {
+              "message": {
+                "text": "entrypoint"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/worker/index.ts"
+                },
+                "region": {
+                  "endLine": 260,
+                  "startLine": 255
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "arbitrary-target sink"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/worker/room.ts"
+                },
+                "region": {
+                  "endLine": 464,
+                  "startLine": 455
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "visible impact"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/client/room/participantLayout.ts"
+                },
+                "region": {
+                  "endLine": 47,
+                  "startLine": 27
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Any participant can spoof another participant's activity\n\nPOST /active accepts a caller-selected targetId. markActive authenticates the caller but updates last_active_at for any matching participant without binding the target to the caller or a verified received track.\n\nSeverity: low\n\nCategory: Object authorization\n\nWeaknesses: CWE-639\n\nRemediation:\nRemove the public arbitrary-target mutation. Derive activity from authenticated publication events, or require a capability proving the caller observed an authorised target track, and rate-limit reports.\n\nRemediation tests:\n- Assert callers cannot update another participant's recency.\n- Verify recency updates are tied to authenticated publication or authorised observation.\n- Rate-limit repeated activity reports.\n\nPreventive controls:\n- Object-level authorisation for target mutations.\n- Server-derived activity when the transport supports it.\n- Cross-participant negative tests."
+          },
+          "partialFingerprints": {
+            "codexSecurity/v1": "codex-security/v1:sha256:520504b34402e1c5fc131eb83676c29144f9781b886bd2b139e31994b319e5ec"
+          },
+          "properties": {
+            "category": "object-authorization",
+            "confidence": "high",
+            "findingId": "csf_0f1a426fd71d8e017856644a",
+            "occurrenceId": "occ_55a7608a0ea893b49b885a40",
+            "severity": "low"
+          },
+          "ruleId": "authorization.activity-target-spoofing",
+          "ruleIndex": 1
+        },
+        {
+          "level": "error",
+          "locations": [
+            {
+              "message": {
+                "text": "global mutation entrypoints"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/worker/index.ts"
+                },
+                "region": {
+                  "endLine": 252,
+                  "startLine": 167
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "AI lifecycle sinks"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/worker/room.ts"
+                },
+                "region": {
+                  "endLine": 245,
+                  "startLine": 187
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "pipeline and presenter sinks"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/worker/room.ts"
+                },
+                "region": {
+                  "endLine": 452,
+                  "startLine": 314
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "insufficient authorisation guard"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/worker/room.ts"
+                },
+                "region": {
+                  "endLine": 810,
+                  "startLine": 785
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "evidence:global-ai-add"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/worker/room.ts"
+                },
+                "region": {
+                  "endLine": 219,
+                  "startLine": 187
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "evidence:global-human-guard"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/worker/room.ts"
+                },
+                "region": {
+                  "endLine": 790,
+                  "startLine": 785
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Any joined human can execute presenter and AI lifecycle controls\n\nAll AI creation, removal, pipeline, presenter-simulation and AI-to-AI administration methods authorise through assertHuman, which distinguishes only human from AI. The server stores no creator, presenter, owner or per-AI worker authority.\n\nSeverity: high\n\nCategory: Missing authorization\n\nWeaknesses: CWE-862\n\nRemediation:\nPersist a room owner/presenter capability at creation, support deliberate delegation, require it for presenter and AI lifecycle administration, and issue per-AI worker credentials for pipeline heartbeats. Add per-room AI mutation and cost budgets without capping ordinary human membership.\n\nRemediation tests:\n- Create a room, join a second human, and assert 403 for every global presenter/AI operation.\n- Assert a valid presenter capability succeeds and can be revoked.\n- Assert per-AI credentials can update only their bound AI pipeline.\n\nPreventive controls:\n- Central authorisation policy for room-global actions.\n- Negative cross-participant tests for every new RPC.\n- Explicit AI lifecycle and cost budgets."
+          },
+          "partialFingerprints": {
+            "codexSecurity/v1": "codex-security/v1:sha256:6b70d9a4774bc43acba5d90af5ff7f1b9499fc93d1e5c9c436be92d501c4b734"
+          },
+          "properties": {
+            "category": "missing-authorization",
+            "confidence": "high",
+            "findingId": "csf_12ac2b0454fc23e9e9f28562",
+            "occurrenceId": "occ_57f4644d89a3c6cc07e5a3ae",
+            "severity": "high"
+          },
+          "ruleId": "authorization.any-human-global-room-control",
+          "ruleIndex": 2
+        },
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "message": {
+                "text": "unauthenticated source"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/worker/index.ts"
+                },
+                "region": {
+                  "endLine": 130,
+                  "startLine": 117
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "WebSocket disclosure"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/worker/room.ts"
+                },
+                "region": {
+                  "endLine": 496,
+                  "startLine": 466
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "unfiltered snapshot"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/worker/room.ts"
+                },
+                "region": {
+                  "endLine": 855,
+                  "startLine": 820
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "routing serialisation"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/worker/room.ts"
+                },
+                "region": {
+                  "endLine": 999,
+                  "startLine": 991
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "evidence:routing-snapshot"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/worker/room.ts"
+                },
+                "region": {
+                  "endLine": 837,
+                  "startLine": 820
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Public room snapshots disclose every human's per-AI routing preferences\n\nThe unauthenticated room snapshot selects and serialises all routing rows, including who permits each AI to hear them and who listens to each AI. Join responses and control WebSockets reuse the same complete snapshot.\n\nSeverity: medium\n\nCategory: Sensitive data exposure\n\nWeaknesses: CWE-200\n\nRemediation:\nCreate separate public and participant-specific snapshots. Authenticate detailed routing reads, return only rows owned by the caller, and expose a server-computed aggregate 'Partial context' state for everyone else.\n\nRemediation tests:\n- Assert unauthenticated snapshots contain only public aggregate routing state.\n- Assert each authenticated human receives only their own detailed rows.\n- Assert WebSocket snapshots apply the same viewer-specific filtering.\n\nPreventive controls:\n- Separate public/private response types.\n- Field-level privacy tests tied to the product specification.\n- Schema review for any future snapshot field."
+          },
+          "partialFingerprints": {
+            "codexSecurity/v1": "codex-security/v1:sha256:376cd941430793c37603ad96617c271f739bee185f52bccdcc4348eab3659cef"
+          },
+          "properties": {
+            "category": "sensitive-data-exposure",
+            "confidence": "high",
+            "findingId": "csf_e44f66df4509e7d36e767410",
+            "occurrenceId": "occ_610ac951d071cf6db2d27656",
+            "severity": "medium"
+          },
+          "ruleId": "privacy.routing-preference-disclosure",
+          "ruleIndex": 6
+        },
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "message": {
+                "text": "public probe entrypoint"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/worker/index.ts"
+                },
+                "region": {
+                  "endLine": 130,
+                  "startLine": 117
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "Durable Object mapping"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/worker/index.ts"
+                },
+                "region": {
+                  "endLine": 320,
+                  "startLine": 313
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "constructor sink"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/worker/room.ts"
+                },
+                "region": {
+                  "endLine": 112,
+                  "startLine": 106
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "persistent schema writes"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/worker/room.ts"
+                },
+                "region": {
+                  "endLine": 594,
+                  "startLine": 535
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "evidence:do-schema-write"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/worker/room.ts"
+                },
+                "region": {
+                  "endLine": 593,
+                  "startLine": 535
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Unknown room-code probes initialise persistent SQLite Durable Objects\n\nAny syntactically valid room code is mapped with getByName before existence is known. Constructing that Room always runs migrate, creating tables and schema_meta even though no room_meta row or cleanup alarm exists.\n\nSeverity: medium\n\nCategory: Resource exhaustion\n\nWeaknesses: CWE-770\n\nRemediation:\nValidate a signed room capability or check a rate-limited room-code registry before getByName. Make unknown-room lookup non-writing and schedule cleanup or deletion for abandoned allocations.\n\nRemediation tests:\n- Probe an unknown valid-looking code and assert no persistent object/schema allocation.\n- Flood unique unknown codes and assert registry/verification rejects before getByName.\n- Verify abandoned allocations receive cleanup.\n\nPreventive controls:\n- Stateless signed room-code verification.\n- Rate-limited room registry.\n- Metrics for unknown-code probes and object creation."
+          },
+          "partialFingerprints": {
+            "codexSecurity/v1": "codex-security/v1:sha256:371d0e676a57d4b8f4c1a3703f1bb0a3706d691bc7c0be3bfd09d3c9330f764f"
+          },
+          "properties": {
+            "category": "resource-exhaustion",
+            "confidence": "high",
+            "findingId": "csf_ea7acaa4ea415119a44719bd",
+            "occurrenceId": "occ_6d1d44d960bcbb572e413220",
+            "severity": "medium"
+          },
+          "ruleId": "resource-exhaustion.unknown-room-durable-object",
+          "ruleIndex": 11
+        },
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "message": {
+                "text": "algorithmic sink"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/client/audio/AdaptiveJitterBuffer.ts"
+                },
+                "region": {
+                  "endLine": 67,
+                  "startLine": 36
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "unbounded drain"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/client/audio/TrackPlayer.ts"
+                },
+                "region": {
+                  "endLine": 136,
+                  "startLine": 120
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "decoder queue sink"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/client/audio/TrackPlayer.ts"
+                },
+                "region": {
+                  "endLine": 283,
+                  "startLine": 272
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "untrusted source"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/client/session/RoomSession.ts"
+                },
+                "region": {
+                  "endLine": 790,
+                  "startLine": 776
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "evidence:jitter-sort"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/client/audio/AdaptiveJitterBuffer.ts"
+                },
+                "region": {
+                  "endLine": 66,
+                  "startLine": 41
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "evidence:decoder-drain"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/client/audio/TrackPlayer.ts"
+                },
+                "region": {
+                  "endLine": 136,
+                  "startLine": 128
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Media bursts trigger count-unbounded sorting and decoder submission\n\nEach valid frame entering AdaptiveJitterBuffer performs a linear duplicate scan, append, full sort and time-only prune. Arbitrarily many frames received within 200 ms survive, and TrackPlayer drains all eligible frames into AudioDecoder without a work or queue-depth budget.\n\nSeverity: medium\n\nCategory: Algorithmic complexity\n\nWeaknesses: CWE-407\n\nRemediation:\nUse a bounded sequence-indexed ring or heap, cap buffered objects and bytes, validate cadence/sequence/frame size, reject excess before sorting, limit work per drain, gate AudioDecoder.decode on decodeQueueSize and quarantine persistent offenders.\n\nRemediation tests:\n- Insert a burst beyond the expected cadence and assert fixed frame/byte bounds.\n- Assert excess objects are dropped before sort.\n- Drive decodeQueueSize high and assert decode work is deferred or dropped.\n- Measure CPU and heap under an adversarial burst.\n\nPreventive controls:\n- Bounded receive-pipeline invariants.\n- Per-track cadence and byte telemetry.\n- Algorithmic-complexity regression tests."
+          },
+          "partialFingerprints": {
+            "codexSecurity/v1": "codex-security/v1:sha256:a2879fae6dc99f5a821173920ad6811eb030ef3d236634eb6a1f50f868fb931b"
+          },
+          "properties": {
+            "category": "algorithmic-complexity",
+            "confidence": "high",
+            "findingId": "csf_afd815d8978da58593d09646",
+            "occurrenceId": "occ_711350dfa1c4cfa381040b51",
+            "severity": "medium"
+          },
+          "ruleId": "resource-exhaustion.media-burst-sorting",
+          "ruleIndex": 8
+        },
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "message": {
+                "text": "credential source"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/client/api.ts"
+                },
+                "region": {
+                  "endLine": 198,
+                  "startLine": 187
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "query authentication entrypoint"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/worker/index.ts"
+                },
+                "region": {
+                  "endLine": 280,
+                  "startLine": 263
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "authentication sink"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/worker/room.ts"
+                },
+                "region": {
+                  "endLine": 496,
+                  "startLine": 466
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "credential reuse"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/worker/room.ts"
+                },
+                "region": {
+                  "endLine": 630,
+                  "startLine": 596
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "A reusable participant bearer is placed in the WebSocket query string\n\nroomEventsUrl appends the participant's general rejoin token to the WebSocket URL. The Worker and Durable Object read that query value for authentication, and reclaim returns the same reusable token without consumption or rotation.\n\nSeverity: medium\n\nCategory: Credential exposure\n\nWeaknesses: CWE-598\n\nRemediation:\nAdd an authenticated endpoint that mints a very short-lived, participant- and room-bound socket ticket. Consume it atomically on the first upgrade, never put the rejoin token in a URL, and rotate the rejoin credential after successful reclaim.\n\nRemediation tests:\n- Assert WebSocket URLs contain only a one-time ticket.\n- Reuse a consumed ticket and expect 401.\n- Reclaim twice and verify the old rejoin credential is invalid.\n\nPreventive controls:\n- Secret-in-URL static check.\n- Purpose-bound credential service.\n- Redacted infrastructure logging policy."
+          },
+          "partialFingerprints": {
+            "codexSecurity/v1": "codex-security/v1:sha256:2efe91d978067ba8e9e113977230d98961c92d4734cf8f69aced59f2be8a7836"
+          },
+          "properties": {
+            "category": "credential-exposure",
+            "confidence": "medium",
+            "findingId": "csf_7a711dde7959c68ea241cc17",
+            "occurrenceId": "occ_790669ff9a50f0c5bfbf3328",
+            "severity": "medium"
+          },
+          "ruleId": "credential-exposure.websocket-query-bearer",
+          "ruleIndex": 3
+        },
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "message": {
+                "text": "read-only claim"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/client/pages/RoomPage.tsx"
+                },
+                "region": {
+                  "endLine": 241,
+                  "startLine": 173
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "presentation-only control"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/client/styles.css"
+                },
+                "region": {
+                  "endLine": 954,
+                  "startLine": 855
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "full session creation"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/client/hooks/useRoomSession.ts"
+                },
+                "region": {
+                  "endLine": 80,
+                  "startLine": 80
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "capture trigger"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/client/session/RoomSession.ts"
+                },
+                "region": {
+                  "endLine": 262,
+                  "startLine": 241
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "microphone sink"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/client/audio/CaptureController.ts"
+                },
+                "region": {
+                  "endLine": 72,
+                  "startLine": 59
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Narrow read-only clients still start microphone capture and publication\n\nThe narrow layout is implemented as labels and CSS-hidden controls, but useRoomSession starts the same full RoomSession. RoomSession.start unconditionally invokes startPublishing, which requests getUserMedia and publishes frames when transport is live.\n\nSeverity: medium\n\nCategory: Privacy violation\n\nWeaknesses: CWE-359\n\nRemediation:\nDetermine read-only mode before starting RoomSession, skip getUserMedia and publication entirely, stop capture if the configuration becomes read-only, and require a fresh explicit opt-in before enabling publishing.\n\nRemediation tests:\n- On a narrow viewport, assert navigator.mediaDevices.getUserMedia is never called.\n- Assert no publication is created in read-only mode.\n- Transition into read-only and assert active capture and publication close.\n- Require explicit user opt-in before transitioning to publishing mode.\n\nPreventive controls:\n- Explicit capability model for publish versus read-only.\n- Privacy API tests across viewport/configuration matrix.\n- Visible microphone state driven by actual capture state."
+          },
+          "partialFingerprints": {
+            "codexSecurity/v1": "codex-security/v1:sha256:c1e98b2cb7011d18a77000b6a87bad858fa0a83d92a172cbfbe6f3d13cbe6664"
+          },
+          "properties": {
+            "category": "privacy-violation",
+            "confidence": "medium",
+            "findingId": "csf_97bf4061f412aea2aab7421c",
+            "occurrenceId": "occ_bc0884960b1a354bfec27a78",
+            "severity": "medium"
+          },
+          "ruleId": "privacy.narrow-read-only-microphone",
+          "ruleIndex": 5
+        },
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "message": {
+                "text": "untrusted object source"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/client/session/RoomSession.ts"
+                },
+                "region": {
+                  "endLine": 790,
+                  "startLine": 776
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "pre-validation retention"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/client/audio/TrackPlayer.ts"
+                },
+                "region": {
+                  "endLine": 87,
+                  "startLine": 72
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "unbounded state sink"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/client/audio/PlaybackDeduplicator.ts"
+                },
+                "region": {
+                  "endLine": 59,
+                  "startLine": 11
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "evidence:dedupe-set"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/client/audio/PlaybackDeduplicator.ts"
+                },
+                "region": {
+                  "endLine": 37,
+                  "startLine": 21
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Playback deduplication retains unbounded object identifiers per group\n\nTrackPlayer records each group/object identifier before validating the audio envelope. PlaybackDeduplicator limits the number of groups to four but places every unique objectId in an uncapped Set, so one constant group grows for the player's lifetime.\n\nSeverity: medium\n\nCategory: Resource exhaustion\n\nWeaknesses: CWE-770\n\nRemediation:\nValidate the envelope before retaining a dedupe key, cap identifiers per group and per track using expected cadence plus a burst margin, reject implausible progress and quarantine persistently malformed or over-budget tracks.\n\nRemediation tests:\n- Feed thousands of unique IDs in one group and assert fixed retained cardinality.\n- Repeat with malformed payloads and assert no dedupe growth.\n- Exceed the budget and assert track quarantine/unsubscription.\n\nPreventive controls:\n- Per-track object and byte budgets.\n- Monotonic identifier validation.\n- Media-abuse telemetry and quarantine state."
+          },
+          "partialFingerprints": {
+            "codexSecurity/v1": "codex-security/v1:sha256:598fb33e7b11e8e961bb168de2690497d9a54c8d687c5ba77a8fb11bfde2d0b2"
+          },
+          "properties": {
+            "category": "resource-exhaustion",
+            "confidence": "high",
+            "findingId": "csf_74345bf3b506a679083421a1",
+            "occurrenceId": "occ_bf1b0d0a4fd450b3135f1d97",
+            "severity": "medium"
+          },
+          "ruleId": "resource-exhaustion.unbounded-playback-dedupe",
+          "ruleIndex": 10
+        },
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "message": {
+                "text": "unbounded parser"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/worker/validation.ts"
+                },
+                "region": {
+                  "endLine": 25,
+                  "startLine": 11
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "late rate limit"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/worker/index.ts"
+                },
+                "region": {
+                  "endLine": 102,
+                  "startLine": 98
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "late authentication routes"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/worker/index.ts"
+                },
+                "region": {
+                  "endLine": 260,
+                  "startLine": 146
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Worker parses unbounded JSON bodies before rate limiting or authentication\n\nreadJsonObject calls request.json() after checking only Content-Type. Field validation, the room-creation limiter and participant authentication all occur after the entire attacker-controlled body has been buffered and parsed.\n\nSeverity: medium\n\nCategory: Resource exhaustion\n\nWeaknesses: CWE-400\n\nRemediation:\nEnforce a small application-specific byte ceiling before JSON.parse using both declared Content-Length and a streaming counter. Run creation rate limiting before reading the body and authenticate mutations before parsing where feasible.\n\nRemediation tests:\n- Reject declared bodies above 8 KiB with 413 before parsing.\n- Stream a chunked body beyond the cap and assert termination.\n- Verify creation limiting runs before body consumption.\n\nPreventive controls:\n- Central bounded JSON reader.\n- Route-order tests for admission controls.\n- Worker CPU and rejected-body-size telemetry without logging payloads."
+          },
+          "partialFingerprints": {
+            "codexSecurity/v1": "codex-security/v1:sha256:62ebebdc250e93132a5d0151d93e25e69aa269307716d8ffc31486ec86846118"
+          },
+          "properties": {
+            "category": "resource-exhaustion",
+            "confidence": "high",
+            "findingId": "csf_6c56b471814633d2a3880651",
+            "occurrenceId": "occ_d743f1ea39f46d142e56270c",
+            "severity": "medium"
+          },
+          "ruleId": "resource-exhaustion.unbounded-json-body",
+          "ruleIndex": 9
+        }
+      ],
+      "tool": {
+        "driver": {
+          "name": "Codex Security",
+          "rules": [
+            {
+              "fullDescription": {
+                "text": "Access control: Relay wide browser bearer. Categories: Broken access control. Weaknesses: CWE-522."
+              },
+              "help": {
+                "markdown": "Access control: Relay wide browser bearer. Categories: Broken access control. Weaknesses: CWE-522.\n\n## Remediation\n\nReplace the shared browser-visible token with short-lived credentials scoped to one opaque room and participant, authorising only the participant's publication track and server-approved subscriptions. If the relay cannot enforce that scope, keep live transport unavailable or add an enforcing relay boundary, then rotate the shared secret.",
+                "text": "Access control: Relay wide browser bearer. Categories: Broken access control. Weaknesses: CWE-522.\n\nRemediation:\n\nReplace the shared browser-visible token with short-lived credentials scoped to one opaque room and participant, authorising only the participant's publication track and server-approved subscriptions. If the relay cannot enforce that scope, keep live transport unavailable or add an enforcing relay boundary, then rotate the shared secret."
+              },
+              "id": "access-control.relay-wide-browser-bearer",
+              "name": "Access control: Relay wide browser bearer",
+              "properties": {
+                "security-severity": "8.0",
+                "tags": [
+                  "broken-access-control",
+                  "external/cwe/cwe-522",
+                  "security"
+                ]
+              },
+              "shortDescription": {
+                "text": "Access control: Relay wide browser bearer"
+              }
+            },
+            {
+              "fullDescription": {
+                "text": "Authorization: Activity target spoofing. Categories: Object authorization. Weaknesses: CWE-639."
+              },
+              "help": {
+                "markdown": "Authorization: Activity target spoofing. Categories: Object authorization. Weaknesses: CWE-639.\n\n## Remediation\n\nRemove the public arbitrary-target mutation. Derive activity from authenticated publication events, or require a capability proving the caller observed an authorised target track, and rate-limit reports.",
+                "text": "Authorization: Activity target spoofing. Categories: Object authorization. Weaknesses: CWE-639.\n\nRemediation:\n\nRemove the public arbitrary-target mutation. Derive activity from authenticated publication events, or require a capability proving the caller observed an authorised target track, and rate-limit reports."
+              },
+              "id": "authorization.activity-target-spoofing",
+              "name": "Authorization: Activity target spoofing",
+              "properties": {
+                "security-severity": "2.0",
+                "tags": [
+                  "external/cwe/cwe-639",
+                  "object-authorization",
+                  "security"
+                ]
+              },
+              "shortDescription": {
+                "text": "Authorization: Activity target spoofing"
+              }
+            },
+            {
+              "fullDescription": {
+                "text": "Authorization: Any human global room control. Categories: Missing authorization. Weaknesses: CWE-862."
+              },
+              "help": {
+                "markdown": "Authorization: Any human global room control. Categories: Missing authorization. Weaknesses: CWE-862.\n\n## Remediation\n\nPersist a room owner/presenter capability at creation, support deliberate delegation, require it for presenter and AI lifecycle administration, and issue per-AI worker credentials for pipeline heartbeats. Add per-room AI mutation and cost budgets without capping ordinary human membership.",
+                "text": "Authorization: Any human global room control. Categories: Missing authorization. Weaknesses: CWE-862.\n\nRemediation:\n\nPersist a room owner/presenter capability at creation, support deliberate delegation, require it for presenter and AI lifecycle administration, and issue per-AI worker credentials for pipeline heartbeats. Add per-room AI mutation and cost budgets without capping ordinary human membership."
+              },
+              "id": "authorization.any-human-global-room-control",
+              "name": "Authorization: Any human global room control",
+              "properties": {
+                "security-severity": "8.0",
+                "tags": [
+                  "external/cwe/cwe-862",
+                  "missing-authorization",
+                  "security"
+                ]
+              },
+              "shortDescription": {
+                "text": "Authorization: Any human global room control"
+              }
+            },
+            {
+              "fullDescription": {
+                "text": "Credential exposure: Websocket query bearer. Categories: Credential exposure. Weaknesses: CWE-598."
+              },
+              "help": {
+                "markdown": "Credential exposure: Websocket query bearer. Categories: Credential exposure. Weaknesses: CWE-598.\n\n## Remediation\n\nAdd an authenticated endpoint that mints a very short-lived, participant- and room-bound socket ticket. Consume it atomically on the first upgrade, never put the rejoin token in a URL, and rotate the rejoin credential after successful reclaim.",
+                "text": "Credential exposure: Websocket query bearer. Categories: Credential exposure. Weaknesses: CWE-598.\n\nRemediation:\n\nAdd an authenticated endpoint that mints a very short-lived, participant- and room-bound socket ticket. Consume it atomically on the first upgrade, never put the rejoin token in a URL, and rotate the rejoin credential after successful reclaim."
+              },
+              "id": "credential-exposure.websocket-query-bearer",
+              "name": "Credential exposure: Websocket query bearer",
+              "properties": {
+                "security-severity": "5.0",
+                "tags": [
+                  "credential-exposure",
+                  "external/cwe/cwe-598",
+                  "security"
+                ]
+              },
+              "shortDescription": {
+                "text": "Credential exposure: Websocket query bearer"
+              }
+            },
+            {
+              "fullDescription": {
+                "text": "Input validation: Ai floor target. Categories: Improper input validation. Weaknesses: CWE-20."
+              },
+              "help": {
+                "markdown": "Input validation: Ai floor target. Categories: Improper input validation. Weaknesses: CWE-20.\n\n## Remediation\n\nResolve aiId to an active role='ai' participant before every floor operation. Bind acquisition and release to an authorised AI or server-issued turn capability, reject stale requests and constrain the queue to active AI rows.",
+                "text": "Input validation: Ai floor target. Categories: Improper input validation. Weaknesses: CWE-20.\n\nRemediation:\n\nResolve aiId to an active role='ai' participant before every floor operation. Bind acquisition and release to an authorised AI or server-issued turn capability, reject stale requests and constrain the queue to active AI rows."
+              },
+              "id": "input-validation.ai-floor-target",
+              "name": "Input validation: Ai floor target",
+              "properties": {
+                "security-severity": "5.0",
+                "tags": [
+                  "external/cwe/cwe-020",
+                  "improper-input-validation",
+                  "security"
+                ]
+              },
+              "shortDescription": {
+                "text": "Input validation: Ai floor target"
+              }
+            },
+            {
+              "fullDescription": {
+                "text": "Privacy: Narrow read only microphone. Categories: Privacy violation. Weaknesses: CWE-359."
+              },
+              "help": {
+                "markdown": "Privacy: Narrow read only microphone. Categories: Privacy violation. Weaknesses: CWE-359.\n\n## Remediation\n\nDetermine read-only mode before starting RoomSession, skip getUserMedia and publication entirely, stop capture if the configuration becomes read-only, and require a fresh explicit opt-in before enabling publishing.",
+                "text": "Privacy: Narrow read only microphone. Categories: Privacy violation. Weaknesses: CWE-359.\n\nRemediation:\n\nDetermine read-only mode before starting RoomSession, skip getUserMedia and publication entirely, stop capture if the configuration becomes read-only, and require a fresh explicit opt-in before enabling publishing."
+              },
+              "id": "privacy.narrow-read-only-microphone",
+              "name": "Privacy: Narrow read only microphone",
+              "properties": {
+                "security-severity": "5.0",
+                "tags": [
+                  "external/cwe/cwe-359",
+                  "privacy-violation",
+                  "security"
+                ]
+              },
+              "shortDescription": {
+                "text": "Privacy: Narrow read only microphone"
+              }
+            },
+            {
+              "fullDescription": {
+                "text": "Privacy: Routing preference disclosure. Categories: Sensitive data exposure. Weaknesses: CWE-200."
+              },
+              "help": {
+                "markdown": "Privacy: Routing preference disclosure. Categories: Sensitive data exposure. Weaknesses: CWE-200.\n\n## Remediation\n\nCreate separate public and participant-specific snapshots. Authenticate detailed routing reads, return only rows owned by the caller, and expose a server-computed aggregate 'Partial context' state for everyone else.",
+                "text": "Privacy: Routing preference disclosure. Categories: Sensitive data exposure. Weaknesses: CWE-200.\n\nRemediation:\n\nCreate separate public and participant-specific snapshots. Authenticate detailed routing reads, return only rows owned by the caller, and expose a server-computed aggregate 'Partial context' state for everyone else."
+              },
+              "id": "privacy.routing-preference-disclosure",
+              "name": "Privacy: Routing preference disclosure",
+              "properties": {
+                "security-severity": "5.0",
+                "tags": [
+                  "external/cwe/cwe-200",
+                  "security",
+                  "sensitive-data-exposure"
+                ]
+              },
+              "shortDescription": {
+                "text": "Privacy: Routing preference disclosure"
+              }
+            },
+            {
+              "fullDescription": {
+                "text": "Resource exhaustion: Concurrent control sockets. Categories: Resource exhaustion. Weaknesses: CWE-770."
+              },
+              "help": {
+                "markdown": "Resource exhaustion: Concurrent control sockets. Categories: Resource exhaustion. Weaknesses: CWE-770.\n\n## Remediation\n\nUse single-use socket tickets, enforce one active socket or a small documented bound per participant, close or replace the older socket on reconnect, rate-limit upgrades and bound initial snapshot/broadcast work.",
+                "text": "Resource exhaustion: Concurrent control sockets. Categories: Resource exhaustion. Weaknesses: CWE-770.\n\nRemediation:\n\nUse single-use socket tickets, enforce one active socket or a small documented bound per participant, close or replace the older socket on reconnect, rate-limit upgrades and bound initial snapshot/broadcast work."
+              },
+              "id": "resource-exhaustion.concurrent-control-sockets",
+              "name": "Resource exhaustion: Concurrent control sockets",
+              "properties": {
+                "security-severity": "5.0",
+                "tags": [
+                  "external/cwe/cwe-770",
+                  "resource-exhaustion",
+                  "security"
+                ]
+              },
+              "shortDescription": {
+                "text": "Resource exhaustion: Concurrent control sockets"
+              }
+            },
+            {
+              "fullDescription": {
+                "text": "Resource exhaustion: Media burst sorting. Categories: Algorithmic complexity. Weaknesses: CWE-407."
+              },
+              "help": {
+                "markdown": "Resource exhaustion: Media burst sorting. Categories: Algorithmic complexity. Weaknesses: CWE-407.\n\n## Remediation\n\nUse a bounded sequence-indexed ring or heap, cap buffered objects and bytes, validate cadence/sequence/frame size, reject excess before sorting, limit work per drain, gate AudioDecoder.decode on decodeQueueSize and quarantine persistent offenders.",
+                "text": "Resource exhaustion: Media burst sorting. Categories: Algorithmic complexity. Weaknesses: CWE-407.\n\nRemediation:\n\nUse a bounded sequence-indexed ring or heap, cap buffered objects and bytes, validate cadence/sequence/frame size, reject excess before sorting, limit work per drain, gate AudioDecoder.decode on decodeQueueSize and quarantine persistent offenders."
+              },
+              "id": "resource-exhaustion.media-burst-sorting",
+              "name": "Resource exhaustion: Media burst sorting",
+              "properties": {
+                "security-severity": "5.0",
+                "tags": [
+                  "algorithmic-complexity",
+                  "external/cwe/cwe-407",
+                  "security"
+                ]
+              },
+              "shortDescription": {
+                "text": "Resource exhaustion: Media burst sorting"
+              }
+            },
+            {
+              "fullDescription": {
+                "text": "Resource exhaustion: Unbounded json body. Categories: Resource exhaustion. Weaknesses: CWE-400."
+              },
+              "help": {
+                "markdown": "Resource exhaustion: Unbounded json body. Categories: Resource exhaustion. Weaknesses: CWE-400.\n\n## Remediation\n\nEnforce a small application-specific byte ceiling before JSON.parse using both declared Content-Length and a streaming counter. Run creation rate limiting before reading the body and authenticate mutations before parsing where feasible.",
+                "text": "Resource exhaustion: Unbounded json body. Categories: Resource exhaustion. Weaknesses: CWE-400.\n\nRemediation:\n\nEnforce a small application-specific byte ceiling before JSON.parse using both declared Content-Length and a streaming counter. Run creation rate limiting before reading the body and authenticate mutations before parsing where feasible."
+              },
+              "id": "resource-exhaustion.unbounded-json-body",
+              "name": "Resource exhaustion: Unbounded json body",
+              "properties": {
+                "security-severity": "5.0",
+                "tags": [
+                  "external/cwe/cwe-400",
+                  "resource-exhaustion",
+                  "security"
+                ]
+              },
+              "shortDescription": {
+                "text": "Resource exhaustion: Unbounded json body"
+              }
+            },
+            {
+              "fullDescription": {
+                "text": "Resource exhaustion: Unbounded playback dedupe. Categories: Resource exhaustion. Weaknesses: CWE-770."
+              },
+              "help": {
+                "markdown": "Resource exhaustion: Unbounded playback dedupe. Categories: Resource exhaustion. Weaknesses: CWE-770.\n\n## Remediation\n\nValidate the envelope before retaining a dedupe key, cap identifiers per group and per track using expected cadence plus a burst margin, reject implausible progress and quarantine persistently malformed or over-budget tracks.",
+                "text": "Resource exhaustion: Unbounded playback dedupe. Categories: Resource exhaustion. Weaknesses: CWE-770.\n\nRemediation:\n\nValidate the envelope before retaining a dedupe key, cap identifiers per group and per track using expected cadence plus a burst margin, reject implausible progress and quarantine persistently malformed or over-budget tracks."
+              },
+              "id": "resource-exhaustion.unbounded-playback-dedupe",
+              "name": "Resource exhaustion: Unbounded playback dedupe",
+              "properties": {
+                "security-severity": "5.0",
+                "tags": [
+                  "external/cwe/cwe-770",
+                  "resource-exhaustion",
+                  "security"
+                ]
+              },
+              "shortDescription": {
+                "text": "Resource exhaustion: Unbounded playback dedupe"
+              }
+            },
+            {
+              "fullDescription": {
+                "text": "Resource exhaustion: Unknown room durable object. Categories: Resource exhaustion. Weaknesses: CWE-770."
+              },
+              "help": {
+                "markdown": "Resource exhaustion: Unknown room durable object. Categories: Resource exhaustion. Weaknesses: CWE-770.\n\n## Remediation\n\nValidate a signed room capability or check a rate-limited room-code registry before getByName. Make unknown-room lookup non-writing and schedule cleanup or deletion for abandoned allocations.",
+                "text": "Resource exhaustion: Unknown room durable object. Categories: Resource exhaustion. Weaknesses: CWE-770.\n\nRemediation:\n\nValidate a signed room capability or check a rate-limited room-code registry before getByName. Make unknown-room lookup non-writing and schedule cleanup or deletion for abandoned allocations."
+              },
+              "id": "resource-exhaustion.unknown-room-durable-object",
+              "name": "Resource exhaustion: Unknown room durable object",
+              "properties": {
+                "security-severity": "5.0",
+                "tags": [
+                  "external/cwe/cwe-770",
+                  "resource-exhaustion",
+                  "security"
+                ]
+              },
+              "shortDescription": {
+                "text": "Resource exhaustion: Unknown room durable object"
+              }
+            },
+            {
+              "fullDescription": {
+                "text": "Resource exhaustion: Unthrottled open joins. Categories: Resource exhaustion. Weaknesses: CWE-770."
+              },
+              "help": {
+                "markdown": "Resource exhaustion: Unthrottled open joins. Categories: Resource exhaustion. Weaknesses: CWE-770.\n\n## Remediation\n\nAdd per-source and per-room token-bucket join limits with documented burst capacity and Retry-After. Rate-limit relay credential issuance separately, avoid duplicate snapshot serialisation, and budget routing-row creation while preserving the no-participant-count-cap requirement.",
+                "text": "Resource exhaustion: Unthrottled open joins. Categories: Resource exhaustion. Weaknesses: CWE-770.\n\nRemediation:\n\nAdd per-source and per-room token-bucket join limits with documented burst capacity and Retry-After. Rate-limit relay credential issuance separately, avoid duplicate snapshot serialisation, and budget routing-row creation while preserving the no-participant-count-cap requirement."
+              },
+              "id": "resource-exhaustion.unthrottled-open-joins",
+              "name": "Resource exhaustion: Unthrottled open joins",
+              "properties": {
+                "security-severity": "5.0",
+                "tags": [
+                  "external/cwe/cwe-770",
+                  "resource-exhaustion",
+                  "security"
+                ]
+              },
+              "shortDescription": {
+                "text": "Resource exhaustion: Unthrottled open joins"
+              }
+            }
+          ],
+          "version": "0.1.22"
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

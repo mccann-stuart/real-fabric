@@ -5,9 +5,15 @@ import { AdaptiveJitterBuffer } from "../src/client/audio/AdaptiveJitterBuffer";
 import { DegradationLadder, describeStep } from "../src/client/audio/DegradationLadder";
 import { DriftEstimator, MAXIMUM_CORRECTION_RATIO } from "../src/client/audio/DriftEstimator";
 import { PlaybackDeduplicator } from "../src/client/audio/PlaybackDeduplicator";
+import { prioritiseFailureCodes } from "../src/client/components/FailureBanner";
 import { buildEdges } from "../src/client/components/SubscriptionGraph";
 import { DEMO_STEPS, DemoRunner, evaluateStep } from "../src/client/presenter/DemoScript";
 import { COMPACT_THRESHOLD, layoutParticipants } from "../src/client/room/participantLayout";
+import {
+  microphoneAction,
+  punctuateReason,
+  representedFailureCodes,
+} from "../src/client/room/roomPresentation";
 import { ReconnectionPolicy, TERMINAL_AFTER_MS } from "../src/client/session/ReconnectionPolicy";
 import { SessionTelemetry } from "../src/client/telemetry/SessionTelemetry";
 import {
@@ -18,10 +24,26 @@ import {
   type Participant,
   type RoutingPreference,
 } from "../src/shared/contracts";
-import { ALL_FAILURE_CODES, allFailureStates } from "../src/shared/failures";
+import { ALL_FAILURE_CODES, allFailureStates, failureState } from "../src/shared/failures";
 import { formatMeasurement, measured, notExposed } from "../src/shared/measurement";
-import { matchConfiguration, PINNED_CONFIGURATION } from "../src/shared/pinnedConfiguration";
-import { audioTrack, fanOut, parseTrackName, presenceTrack } from "../src/shared/tracks";
+import {
+  currentUserAgentFacts,
+  describePin,
+  describeTargets,
+  IOS_SAFARI_CONFIGURATION,
+  matchConfiguration,
+  PINNED_CONFIGURATION,
+  type PinnedConfiguration,
+} from "../src/shared/pinnedConfiguration";
+import {
+  audioTrack,
+  fanOut,
+  parseTrackName,
+  participantNamespace,
+  presenceTrack,
+  roomNamespace,
+  trackKey,
+} from "../src/shared/tracks";
 
 function human(id: string, overrides: Partial<Participant> = {}): Participant {
   return {
@@ -65,8 +87,14 @@ function routing(overrides: Partial<RoutingPreference> = {}): RoutingPreference 
 
 describe("H2 — one independent track per participant, no mixing upstream", () => {
   it("addresses humans and AIs identically and opaquely", () => {
-    expect(audioTrack("room1", "p1")).toEqual({ namespace: "demo/room1", name: "audio/p1" });
-    expect(presenceTrack("room1", "p1")).toEqual({ namespace: "demo/room1", name: "presence/p1" });
+    expect(audioTrack("room1", "p1")).toEqual({
+      namespace: "demo/room1/p1",
+      name: "audio/p1",
+    });
+    expect(presenceTrack("room1", "p1")).toEqual({
+      namespace: "demo/room1/p1",
+      name: "presence/p1",
+    });
     // §6.2: a human and an AI are indistinguishable at the relay, and neither
     // carries a display name.
     const asHuman = audioTrack("room1", "participant-1");
@@ -76,6 +104,32 @@ describe("H2 — one independent track per participant, no mixing upstream", () 
     );
     expect(`${asHuman.namespace} ${asHuman.name}`).not.toMatch(/\b(human|ai|bot|agent)\b/i);
     expect(parseTrackName("audio/p1")).toEqual({ kind: "audio", participantId: "p1" });
+  });
+
+  it("prefixes room identifiers with demo/ to form room namespace", () => {
+    expect(roomNamespace("room1")).toBe("demo/room1");
+    expect(roomNamespace("")).toBe("demo/");
+    expect(roomNamespace("550e8400-e29b-41d4-a716-446655440000")).toBe(
+      "demo/550e8400-e29b-41d4-a716-446655440000",
+    );
+    expect(roomNamespace("stage/room-1")).toBe("demo/stage/room-1");
+  });
+
+  it("gives each publisher a distinct namespace under the room prefix", () => {
+    expect(participantNamespace("room1", "p1")).toBe("demo/room1/p1");
+    expect(audioTrack("room1", "p1").namespace).not.toBe(audioTrack("room1", "p2").namespace);
+    expect(audioTrack("room1", "p1").namespace.startsWith("demo/room1/")).toBe(true);
+  });
+
+  it("combines namespace and name into a single track key string", () => {
+    expect(trackKey({ namespace: "demo/room1/p1", name: "audio/p1" })).toBe(
+      "demo/room1/p1/audio/p1",
+    );
+    expect(trackKey(audioTrack("room1", "p1"))).toBe("demo/room1/p1/audio/p1");
+    expect(trackKey(presenceTrack("room1", "p1"))).toBe("demo/room1/p1/presence/p1");
+    expect(trackKey({ namespace: "", name: "" })).toBe("/");
+    expect(trackKey({ namespace: "ns", name: "" })).toBe("ns/");
+    expect(trackKey({ namespace: "", name: "name" })).toBe("/name");
   });
 
   it("keeps the uplink at one track regardless of audience size", () => {
@@ -91,7 +145,8 @@ describe("H3 — one pinned browser, others warned", () => {
       brands: [{ brand: "Google Chrome", version: "141" }],
       platform: "macOS",
     });
-    expect(match.tested).toBe(true);
+    expect(match.status).toBe("provisional");
+    expect(match.liveAudioEligible).toBe(true);
   });
 
   it("rejects a different browser, an older version and another platform", () => {
@@ -99,25 +154,146 @@ describe("H3 — one pinned browser, others warned", () => {
       userAgent: "Mozilla/5.0 (Macintosh) Chrome/141.0.0.0 Edg/141.0.0.0",
       platform: "macOS",
     });
-    expect(edge.tested).toBe(false);
+    expect(edge.liveAudioEligible).toBe(false);
 
     const old = matchConfiguration({
       userAgent: "Mozilla/5.0 (Macintosh) Chrome/120.0.0.0",
       platform: "macOS",
     });
-    expect(old.tested).toBe(false);
-    if (!old.tested) expect(old.reason).toContain(String(PINNED_CONFIGURATION.minimumMajorVersion));
+    expect(old.liveAudioEligible).toBe(false);
+    expect(old.reasons.join(" ")).toContain(String(PINNED_CONFIGURATION.minimumMajorVersion));
 
     const windows = matchConfiguration({
       userAgent: "Mozilla/5.0 (Windows NT 10.0) Chrome/141.0.0.0",
       platform: "Windows",
     });
-    expect(windows.tested).toBe(false);
+    expect(windows.liveAudioEligible).toBe(false);
   });
 
   it("does not present a provisional pin as a decision", () => {
     expect(PINNED_CONFIGURATION.status).toBe("provisional");
     expect(PINNED_CONFIGURATION.note).toMatch(/Gate 2/);
+  });
+
+  describe("describePin & describeTargets", () => {
+    it("describes the pinned configuration using default argument", () => {
+      expect(describePin()).toBe("Google Chrome 141+ on macOS");
+    });
+
+    it("describes the default desktop pinned configuration explicitly", () => {
+      expect(describePin(PINNED_CONFIGURATION)).toBe("Google Chrome 141+ on macOS");
+    });
+
+    it("describes the iOS Safari configuration", () => {
+      expect(describePin(IOS_SAFARI_CONFIGURATION)).toBe("Safari 27+ on iPhone iOS 27+");
+    });
+
+    it("handles custom configuration with platform major version floor", () => {
+      const customPin: PinnedConfiguration = {
+        browser: "Google Chrome",
+        minimumMajorVersion: 140,
+        platform: "macOS",
+        minimumPlatformMajorVersion: 15,
+        device: "desktop",
+        status: "provisional",
+        note: "Custom pin test.",
+      };
+      expect(describePin(customPin)).toBe("Google Chrome 140+ on macOS 15+");
+    });
+
+    it("handles custom iPhone configuration without platform major version floor", () => {
+      const customIphonePin: PinnedConfiguration = {
+        browser: "Safari",
+        minimumMajorVersion: 26,
+        platform: "iOS",
+        device: "iPhone",
+        status: "provisional",
+        note: "Custom iPhone pin test.",
+      };
+      expect(describePin(customIphonePin)).toBe("Safari 26+ on iPhone iOS");
+    });
+
+    it("describes all configured targets", () => {
+      expect(describeTargets()).toBe("Google Chrome 141+ on macOS; Safari 27+ on iPhone iOS 27+");
+    });
+  });
+
+  it("extracts user agent facts from the global navigator object", () => {
+    const originalNavigator = globalThis.navigator;
+
+    try {
+      // 1. Legacy browser without userAgentData
+      Object.defineProperty(globalThis, "navigator", {
+        value: { userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)" },
+        configurable: true,
+        writable: true,
+      });
+      expect(currentUserAgentFacts()).toEqual({
+        userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+      });
+
+      // 2. Modern browser with brands and platform in userAgentData
+      const mockBrands = [{ brand: "Google Chrome", version: "141" }];
+      Object.defineProperty(globalThis, "navigator", {
+        value: {
+          userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/141.0.0.0",
+          userAgentData: {
+            brands: mockBrands,
+            platform: "macOS",
+          },
+        },
+        configurable: true,
+        writable: true,
+      });
+      const facts = currentUserAgentFacts();
+      expect(facts).toEqual({
+        userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/141.0.0.0",
+        brands: mockBrands,
+        platform: "macOS",
+      });
+      expect(matchConfiguration(facts)).toMatchObject({
+        status: "provisional",
+        liveAudioEligible: true,
+      });
+
+      // 3. Modern browser with userAgentData having only brands
+      Object.defineProperty(globalThis, "navigator", {
+        value: {
+          userAgent: "Mozilla/5.0 Chrome/141.0.0.0",
+          userAgentData: {
+            brands: mockBrands,
+          },
+        },
+        configurable: true,
+        writable: true,
+      });
+      expect(currentUserAgentFacts()).toEqual({
+        userAgent: "Mozilla/5.0 Chrome/141.0.0.0",
+        brands: mockBrands,
+      });
+
+      // 4. Modern browser with userAgentData having only platform
+      Object.defineProperty(globalThis, "navigator", {
+        value: {
+          userAgent: "Mozilla/5.0 Chrome/141.0.0.0",
+          userAgentData: {
+            platform: "macOS",
+          },
+        },
+        configurable: true,
+        writable: true,
+      });
+      expect(currentUserAgentFacts()).toEqual({
+        userAgent: "Mozilla/5.0 Chrome/141.0.0.0",
+        platform: "macOS",
+      });
+    } finally {
+      Object.defineProperty(globalThis, "navigator", {
+        value: originalNavigator,
+        configurable: true,
+        writable: true,
+      });
+    }
   });
 });
 
@@ -250,10 +426,11 @@ describe("H7 — no cap, visible degradation", () => {
     const third = ladder.evaluate(strained);
     expect(third.step).toBe(3);
     expect(third.unsubscribed.length).toBeGreaterThan(0);
-    // The specification fixes this wording.
+    // Synthetic protection thresholds must not masquerade as measured capacity.
     expect(third.announcement).toBe(
-      `audio paused for ${third.unsubscribed.length} participants — beyond measured capacity`,
+      `audio paused for ${third.unsubscribed.length} participants — capacity protection engaged`,
     );
+    expect(describeStep(3, 1)).toBe("audio paused for 1 participant — capacity protection engaged");
   });
 
   it("unsubscribes the least recently active first", () => {
@@ -299,6 +476,70 @@ describe("H7 — no cap, visible degradation", () => {
 
   it("says nothing at step zero and never invents a cap", () => {
     expect(describeStep(0, 0)).toBeNull();
+  });
+});
+
+describe("room status presentation", () => {
+  it("offers exactly one state-derived microphone action", () => {
+    expect(microphoneAction({ name: "idle" }, false)).toEqual({
+      disabled: false,
+      label: "Start microphone",
+      visible: true,
+    });
+    expect(microphoneAction({ name: "idle" }, false, { name: "awaiting_audio_start" })).toEqual({
+      disabled: false,
+      label: "Start audio",
+      visible: true,
+    });
+    expect(
+      microphoneAction({ name: "resume_required", reason: "hidden" }, false, {
+        name: "resume_required",
+        reason: "hidden",
+      }),
+    ).toEqual({ disabled: false, label: "Resume audio", visible: true });
+    expect(
+      microphoneAction(
+        { name: "listen_only", failure: "microphone_denied", reason: "Denied" },
+        false,
+        { name: "live" },
+      ),
+    ).toEqual({ disabled: false, label: "Try microphone again", visible: true });
+    expect(
+      microphoneAction({ name: "opening_publication" }, false, {
+        name: "blocked",
+        failure: "relay_auth_unavailable",
+      }).visible,
+    ).toBe(false);
+    expect(
+      microphoneAction(
+        { name: "listen_only", failure: "relay_request_refused", reason: "Refused" },
+        false,
+        { name: "blocked", failure: "relay_request_refused" },
+      ).label,
+    ).toBe("Try microphone again");
+    expect(microphoneAction({ name: "publishing" }, true).visible).toBe(false);
+  });
+
+  it("does not duplicate failures already represented in the status rail", () => {
+    const represented = representedFailureCodes(
+      { name: "listen_only", failure: "relay_request_refused", reason: "Refused" },
+      true,
+    );
+    expect(represented).toEqual(["relay_request_refused", "beyond_measured_capacity"]);
+    expect(
+      prioritiseFailureCodes(
+        ["audio_behind", "relay_request_refused", "participant_disconnected"],
+        represented,
+      ),
+    ).toEqual(["audio_behind", "participant_disconnected"]);
+  });
+
+  it("orders the remaining failure rail by severity and punctuates technical reasons", () => {
+    expect(
+      prioritiseFailureCodes(["audio_behind", "participant_disconnected", "udp_blocked"]),
+    ).toEqual(["udp_blocked", "audio_behind", "participant_disconnected"]);
+    expect(punctuateReason("The relay refused publication")).toBe("The relay refused publication.");
+    expect(punctuateReason("Already complete.")).toBe("Already complete.");
   });
 });
 
@@ -437,6 +678,25 @@ describe("H13 — ten minutes without unbounded growth or uncorrected drift", ()
     const estimator = new DriftEstimator("t3");
     estimator.observe(0, 0);
     expect(estimator.skewPpm().exposed).toBe(false);
+  });
+});
+
+describe("failureState", () => {
+  it("returns the exact failure state matching the given code", () => {
+    for (const code of ALL_FAILURE_CODES) {
+      const state = failureState(code);
+      expect(state.code).toBe(code);
+      expect(typeof state.title).toBe("string");
+      expect(state.title.length).toBeGreaterThan(0);
+      expect(typeof state.experience).toBe("string");
+      expect(state.experience.length).toBeGreaterThan(0);
+      expect(typeof state.behaviour).toBe("string");
+      expect(state.behaviour.length).toBeGreaterThan(0);
+      expect(typeof state.recovery).toBe("string");
+      expect(state.recovery.length).toBeGreaterThan(0);
+      expect(["blocking", "degraded", "transient"]).toContain(state.severity);
+      expect(typeof state.blocksPublication).toBe("boolean");
+    }
   });
 });
 

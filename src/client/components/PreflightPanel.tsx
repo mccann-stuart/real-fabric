@@ -4,20 +4,23 @@ import type { ProbeState } from "../transport/NetworkProbe";
 import { FailureBanner } from "./FailureBanner";
 import { StatusLight } from "./StatusLight";
 
-const CHECKS: Array<
-  [
-    keyof Pick<
-      CapabilityReport,
-      "secureContext" | "webTransport" | "opus" | "microphone" | "relay"
-    >,
-    string,
-  ]
-> = [
+const REQUIRED_CHECKS: Array<[keyof CapabilityReport, string]> = [
   ["secureContext", "Secure context"],
   ["webTransport", "WebTransport"],
-  ["opus", "WebCodecs Opus"],
+  ["webTransportReliability", "UDP-capable reliability"],
+  ["opusEncoder", "Opus encoder"],
+  ["opusDecoder", "Opus decoder"],
+  ["capture", "20 ms audio capture"],
+  ["playout", "AudioWorklet playout"],
   ["microphone", "Microphone"],
   ["relay", "Relay configuration"],
+];
+
+const OPTIONAL_CHECKS: Array<[keyof CapabilityReport, string]> = [
+  ["audioSession", "Audio Session hint"],
+  ["wakeLock", "Screen Wake Lock"],
+  ["dtx", "Opus DTX"],
+  ["lowLatencyCongestionControl", "Low-latency congestion"],
 ];
 
 /** The probe has its own vocabulary; map it onto the shared status light. */
@@ -51,7 +54,7 @@ export function PreflightPanel({
         <span>MOQT draft {PINNED_MOQT_DRAFT} · no fallback</span>
       </div>
       <div className="preflight-grid">
-        {CHECKS.map(([key, label]) => (
+        {REQUIRED_CHECKS.map(([key, label]) => (
           <div className="preflight-check" key={key}>
             <strong>{label}</strong>
             <StatusLight state={report[key] as CheckState} />
@@ -63,7 +66,19 @@ export function PreflightPanel({
           <StatusLight state={probeLight(report.network.state)} />
         </div>
       </div>
+      <fieldset className="preflight-grid preflight-grid--optional">
+        <legend className="sr-only">Optional enhancements</legend>
+        {OPTIONAL_CHECKS.map(([key, label]) => (
+          <div className="preflight-check" key={key}>
+            <strong>{label}</strong>
+            <StatusLight state={report[key] as CheckState} />
+          </div>
+        ))}
+      </fieldset>
       <p className="preflight-reason">{report.relayReason}</p>
+      <p className="preflight-reason">{report.codecReason}</p>
+      <p className="preflight-reason">{report.captureReason}</p>
+      <p className="preflight-reason">{report.playoutReason}</p>
       <p className="preflight-reason">{report.network.detail}</p>
       {report.network.remediation ? (
         <p className="preflight-reason">{report.network.remediation}</p>
