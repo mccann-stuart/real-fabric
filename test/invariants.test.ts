@@ -37,6 +37,7 @@ import {
   parseTrackName,
   participantNamespace,
   presenceTrack,
+  roomNamespace,
   trackKey,
 } from "../src/shared/tracks";
 
@@ -99,6 +100,15 @@ describe("H2 — one independent track per participant, no mixing upstream", () 
     );
     expect(`${asHuman.namespace} ${asHuman.name}`).not.toMatch(/\b(human|ai|bot|agent)\b/i);
     expect(parseTrackName("audio/p1")).toEqual({ kind: "audio", participantId: "p1" });
+  });
+
+  it("prefixes room identifiers with demo/ to form room namespace", () => {
+    expect(roomNamespace("room1")).toBe("demo/room1");
+    expect(roomNamespace("")).toBe("demo/");
+    expect(roomNamespace("550e8400-e29b-41d4-a716-446655440000")).toBe(
+      "demo/550e8400-e29b-41d4-a716-446655440000",
+    );
+    expect(roomNamespace("stage/room-1")).toBe("demo/stage/room-1");
   });
 
   it("gives each publisher a distinct namespace under the room prefix", () => {
