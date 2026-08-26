@@ -89,6 +89,31 @@ export function inspectCaptureSupport(
   };
 }
 
+/** The explicit Safari/mobile pre-flight gate, independent of path preference. */
+export function inspectAudioWorkletCaptureSupport(
+  environment: CaptureEnvironment = browserCaptureEnvironment(),
+): CaptureSupport {
+  if (!environment.AudioData) {
+    return {
+      available: false,
+      path: null,
+      reason: "WebCodecs AudioData is not exposed by this browser.",
+    };
+  }
+  if (environment.AudioContext && environment.AudioWorkletNode) {
+    return {
+      available: true,
+      path: "audio_worklet",
+      reason: "AudioWorklet microphone capture is available.",
+    };
+  }
+  return {
+    available: false,
+    path: null,
+    reason: "AudioWorklet microphone capture is not exposed by this browser.",
+  };
+}
+
 export function createAudioCaptureAdapter(
   environment: CaptureEnvironment = browserCaptureEnvironment(),
 ): AudioCaptureAdapter {

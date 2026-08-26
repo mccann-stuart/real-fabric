@@ -28,10 +28,6 @@ export function useEntryForm({ navigate, initialCode = "", stopMicrophone }: Use
 
   const enterRoom = async (mode: "create" | "join" | "presenter") => {
     let enteredName = displayName.trim();
-    if (!enteredName && mode === "presenter") {
-      setError("Enter your name before creating or joining a room.");
-      return;
-    }
     if (!enteredName) {
       enteredName = generateRandomDisplayName();
       setDisplayName(enteredName);
@@ -51,6 +47,8 @@ export function useEntryForm({ navigate, initialCode = "", stopMicrophone }: Use
         rejoinToken: result.rejoinToken,
         displayName: enteredName,
       });
+      // §8: the relay credential stays in memory. It is never stored and never
+      // placed in a URL that could be shared.
       rememberRelayCredential(result.participant.id, result.relayCredential);
 
       if (mode === "presenter") {
@@ -58,6 +56,8 @@ export function useEntryForm({ navigate, initialCode = "", stopMicrophone }: Use
         await configurePresenter(session, {
           simulatedHumans,
           simulatedAis,
+          // FR4: no live pipeline exists, so scripted responses are the only
+          // honest option, and they are labelled as scripted everywhere.
           scriptedResponses: true,
         });
       }
