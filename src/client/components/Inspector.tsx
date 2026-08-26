@@ -235,6 +235,18 @@ function Signal({
           </dd>
         </div>
         <div>
+          <dt>WebTransport reliability</dt>
+          <dd>
+            {negotiation?.transportReliability ?? "Not exposed — no session has completed setup"}
+          </dd>
+        </div>
+        <div>
+          <dt>Congestion control</dt>
+          <dd>
+            {negotiation?.congestionControl ?? "Not exposed — no session has completed setup"}
+          </dd>
+        </div>
+        <div>
           <dt>SERVER_SETUP</dt>
           <dd>
             {negotiation ? (

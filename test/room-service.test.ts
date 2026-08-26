@@ -205,6 +205,33 @@ describe("H9 and §8 — consent is per human and AI pair", () => {
   });
 });
 
+describe("Activity endpoint authorization", () => {
+  it("allows a participant to update their own active state", async () => {
+    const created = await createRoom();
+    const { status } = await call(`/api/rooms/${created.room.code}/active`, {
+      participantId: created.participant.id,
+      rejoinToken: created.rejoinToken,
+      targetId: created.participant.id,
+    });
+    expect(status).toBe(204);
+  });
+
+  it("refuses to update another participant's active state", async () => {
+    const created = await createRoom();
+    const joined = await call<CreateRoomResponse>(`/api/rooms/${created.room.code}/join`, {
+      displayName: "Grace",
+    });
+    const otherId = joined.value.participant.id;
+
+    const { status } = await call(`/api/rooms/${created.room.code}/active`, {
+      participantId: created.participant.id,
+      rejoinToken: created.rejoinToken,
+      targetId: otherId,
+    });
+    expect(status).toBe(403);
+  });
+});
+
 describe("H10 — AI-to-AI off by default and capped", () => {
   it("starts disabled and refuses turns", async () => {
     const created = await createRoom();
