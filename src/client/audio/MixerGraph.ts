@@ -17,6 +17,11 @@ export interface TrackMixStats {
   ratio: number;
 }
 
+export interface MixerGraphCallbacks {
+  /** Fires only after the context has previously reached running. */
+  onSuspended?: () => void;
+}
+
 interface WorkletStatsMessage {
   type: "stats";
   at: number;
@@ -32,6 +37,9 @@ export class MixerGraph {
   private tracks = new Set<string>();
   private latest: TrackMixStats[] = [];
   private startedAt: number | null = null;
+  private hasRun = false;
+
+  constructor(private readonly callbacks: MixerGraphCallbacks = {}) {}
 
   async start(): Promise<void> {
     if (this.closed) return;
@@ -56,7 +64,11 @@ export class MixerGraph {
       latencyHint: "interactive",
     });
     try {
-      await context.audioWorklet.addModule(WORKLET_URL);
+      // Issue resume before the first await. Safari can then associate the
+      // request with the Start/Resume tap even though loading the worklet is
+      // asynchronous.
+      const resumeRequest = context.state === "suspended" ? context.resume() : Promise.resolve();
+      await Promise.all([resumeRequest, context.audioWorklet.addModule(WORKLET_URL)]);
       if (this.closed) {
         await context.close().catch(() => undefined);
         return;
@@ -74,6 +86,8 @@ export class MixerGraph {
       this.context = context;
       this.node = node;
       this.startedAt = Date.now();
+      this.hasRun = context.state === "running";
+      context.addEventListener("statechange", this.onContextStateChange);
       for (const trackId of this.tracks) this.post({ type: "add_track", trackId });
 
       // Chrome may suspend a new AudioContext after the asynchronous room
@@ -177,7 +191,10 @@ export class MixerGraph {
     this.startedAt = null;
     const context = this.context;
     this.context = null;
-    if (context && context.state !== "closed") await context.close();
+    if (context) {
+      context.removeEventListener("statechange", this.onContextStateChange);
+      if (context.state !== "closed") await context.close();
+    }
   }
 
   private post(message: Record<string, unknown>, transfer: Transferable[] = []): void {
@@ -190,12 +207,22 @@ export class MixerGraph {
     void context.resume().then(
       () => {
         if (context.state !== "running") return;
+        this.hasRun = true;
         this.removeUnlockListeners?.();
         this.removeUnlockListeners = null;
       },
       () => undefined,
     );
   }
+
+  private readonly onContextStateChange = () => {
+    const state = this.context?.state;
+    if (state === "running") {
+      this.hasRun = true;
+      return;
+    }
+    if (state === "suspended" && this.hasRun) this.callbacks.onSuspended?.();
+  };
 
   private installUnlockListeners(): void {
     if (this.removeUnlockListeners || typeof document === "undefined") return;
