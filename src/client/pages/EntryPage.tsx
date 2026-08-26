@@ -1,13 +1,10 @@
-import { useState } from "react";
 import { MAX_SIMULATED_PARTICIPANTS, PINNED_MOQT_DRAFT } from "../../shared/contracts";
-import { configurePresenter, createRoom, joinRoom, normaliseCode, storeSession } from "../api";
 import { Brand } from "../components/Brand";
 import { PinnedConfigBanner } from "../components/PinnedConfigBanner";
 import { PreflightPanel } from "../components/PreflightPanel";
 import { SignalPath } from "../components/SignalPath";
-import { generateRandomDisplayName } from "../displayName";
 import { useCapabilities } from "../hooks/useCapabilities";
-import { rememberRelayCredential } from "../session/RoomSession";
+import { useEntryForm } from "../hooks/useEntryForm";
 
 const MIC_BARS = Array.from({ length: 18 }, (_, value) => ({ id: `mic-${value}`, value }));
 
@@ -18,62 +15,20 @@ export function EntryPage({
   navigate: (path: string) => void;
   initialCode?: string;
 }) {
-  const [displayName, setDisplayName] = useState("");
-  const [roomCode, setRoomCode] = useState(normaliseCode(initialCode));
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  // H11: presenter simulation is a configurable number, not a fixed cast.
-  const [simulatedHumans, setSimulatedHumans] = useState(5);
-  const [simulatedAis, setSimulatedAis] = useState(2);
   const { report, level, testMicrophone, stopMicrophone } = useCapabilities();
-
-  const enterRoom = async (mode: "create" | "join" | "presenter") => {
-    let enteredName = displayName.trim();
-    if (!enteredName && mode === "presenter") {
-      setError("Enter your name before creating or joining a room.");
-      return;
-    }
-    if (!enteredName) {
-      enteredName = generateRandomDisplayName();
-      setDisplayName(enteredName);
-    }
-    if (mode === "join" && roomCode.length !== 20) {
-      setError("Enter the complete 20-character room code.");
-      return;
-    }
-    setBusy(true);
-    setError("");
-    try {
-      const result =
-        mode === "join" ? await joinRoom(roomCode, enteredName) : await createRoom(enteredName);
-      const session = storeSession({
-        code: result.room.code,
-        participantId: result.participant.id,
-        rejoinToken: result.rejoinToken,
-        displayName: enteredName,
-      });
-      // §8: the relay credential stays in memory. It is never stored and never
-      // placed in a URL that could be shared.
-      rememberRelayCredential(result.participant.id, result.relayCredential);
-
-      if (mode === "presenter") {
-        sessionStorage.setItem(`real-fabric:presenter:${result.room.code}`, "true");
-        await configurePresenter(session, {
-          simulatedHumans,
-          simulatedAis,
-          // FR4: no live pipeline exists, so scripted responses are the only
-          // honest option, and they are labelled as scripted everywhere.
-          scriptedResponses: true,
-        });
-      }
-      stopMicrophone();
-      navigate(`/room/${result.room.code}`);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "The room could not be opened.");
-    } finally {
-      setBusy(false);
-    }
-  };
+  const {
+    displayName,
+    setDisplayName,
+    roomCode,
+    setRoomCode,
+    busy,
+    error,
+    simulatedHumans,
+    setSimulatedHumans,
+    simulatedAis,
+    setSimulatedAis,
+    enterRoom,
+  } = useEntryForm({ navigate, initialCode, stopMicrophone });
 
   return (
     <main className="entry-page">
@@ -106,7 +61,7 @@ export function EntryPage({
                 autoCapitalize="characters"
                 maxLength={20}
                 value={roomCode}
-                onChange={(event) => setRoomCode(normaliseCode(event.target.value))}
+                onChange={(event) => setRoomCode(event.target.value)}
                 placeholder="20-character code"
               />
             </label>
@@ -152,7 +107,7 @@ export function EntryPage({
                 min={0}
                 max={MAX_SIMULATED_PARTICIPANTS}
                 value={simulatedHumans}
-                onChange={(event) => setSimulatedHumans(clamp(Number(event.target.value)))}
+                onChange={(event) => setSimulatedHumans(Number(event.target.value))}
               />
             </label>
             <label>
@@ -162,7 +117,7 @@ export function EntryPage({
                 min={0}
                 max={MAX_SIMULATED_PARTICIPANTS}
                 value={simulatedAis}
-                onChange={(event) => setSimulatedAis(clamp(Number(event.target.value)))}
+                onChange={(event) => setSimulatedAis(Number(event.target.value))}
               />
             </label>
             <p>
@@ -208,9 +163,4 @@ export function EntryPage({
       </footer>
     </main>
   );
-}
-
-function clamp(value: number): number {
-  if (!Number.isFinite(value)) return 0;
-  return Math.min(MAX_SIMULATED_PARTICIPANTS, Math.max(0, Math.trunc(value)));
 }
