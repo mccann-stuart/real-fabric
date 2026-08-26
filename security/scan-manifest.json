@@ -156,9 +156,7 @@
       ],
       "context": "Registered revision a784122aa18c6b7fbee1ae53d34b054a24d71f0b, materialised read-only from Git because the registered checkout advanced after launch.",
       "excludePaths": [],
-      "includePaths": [
-        "."
-      ],
+      "includePaths": ["."],
       "limitations": [
         "MOQT relay acceptance, token ACLs, expiry, duplicate-publication behaviour and cross-room enforcement were not exercised.",
         "Cloudflare intermediary URL logging, request quotas, Durable Object billing and runtime limits were not inspected.",

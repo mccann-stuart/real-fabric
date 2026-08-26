@@ -169,9 +169,7 @@
       },
       "taxonomy": {
         "category": "broken-access-control",
-        "cwe": [
-          "CWE-522"
-        ]
+        "cwe": ["CWE-522"]
       },
       "locations": [
         {
@@ -225,10 +223,7 @@
       ],
       "rootCause": {
         "summary": "A single Worker secret is treated as a browser credential; no server component mints or enforces room-, participant-, publication- or subscription-specific claims.",
-        "evidenceRefs": [
-          "relay-issue",
-          "relay-create-response"
-        ]
+        "evidenceRefs": ["relay-issue", "relay-create-response"]
       },
       "remediation": "Replace the shared browser-visible token with short-lived credentials scoped to one opaque room and participant, authorising only the participant's publication track and server-approved subscriptions. If the relay cannot enforce that scope, keep live transport unavailable or add an enforcing relay boundary, then rotate the shared secret.",
       "validation": {
@@ -242,10 +237,7 @@
           "Room codes and participant identifiers are high entropy.",
           "Routing is truthfully labelled cooperative and transport is unverified."
         ],
-        "evidenceRefs": [
-          "relay-issue",
-          "relay-create-response"
-        ],
+        "evidenceRefs": ["relay-issue", "relay-create-response"],
         "limitations": [
           "Successful relay abuse was not run because live relay acceptance is outside the authorised source snapshot."
         ],
@@ -260,10 +252,7 @@
           "Room codes and participant identifiers are high entropy.",
           "Routing is truthfully labelled cooperative and transport is unverified."
         ],
-        "evidenceRefs": [
-          "relay-issue",
-          "relay-create-response"
-        ],
+        "evidenceRefs": ["relay-issue", "relay-create-response"],
         "impact": {
           "level": "high",
           "rationale": "Successful abuse can expose or spoof room audio and disrupt every connected participant; cross-room reach depends on external namespace and relay behaviour."
@@ -322,9 +311,7 @@
       },
       "taxonomy": {
         "category": "missing-authorization",
-        "cwe": [
-          "CWE-862"
-        ]
+        "cwe": ["CWE-862"]
       },
       "locations": [
         {
@@ -378,10 +365,7 @@
       ],
       "rootCause": {
         "summary": "Global room mutations rely on a role predicate that verifies only human membership, while presenterMode is client-side UI state and no stronger server principal exists.",
-        "evidenceRefs": [
-          "global-ai-add",
-          "global-human-guard"
-        ]
+        "evidenceRefs": ["global-ai-add", "global-human-guard"]
       },
       "remediation": "Persist a room owner/presenter capability at creation, support deliberate delegation, require it for presenter and AI lifecycle administration, and issue per-AI worker credentials for pipeline heartbeats. Add per-room AI mutation and cost budgets without capping ordinary human membership.",
       "validation": {
@@ -395,10 +379,7 @@
           "Simulation counts and AI-to-AI turns are bounded.",
           "Rooms hard-stop after twenty minutes and no live AI workers exist yet."
         ],
-        "evidenceRefs": [
-          "global-ai-add",
-          "global-human-guard"
-        ],
+        "evidenceRefs": ["global-ai-add", "global-human-guard"],
         "limitations": [
           "External AI cost impact is prospective because the revision uses labelled presenter simulation only."
         ],
@@ -413,10 +394,7 @@
           "Simulation counts and AI-to-AI turns are bounded.",
           "Rooms hard-stop after twenty minutes and no live AI workers exist yet."
         ],
-        "evidenceRefs": [
-          "global-ai-add",
-          "global-human-guard"
-        ],
+        "evidenceRefs": ["global-ai-add", "global-human-guard"],
         "impact": {
           "level": "high",
           "rationale": "The attacker can remove legitimate AIs, fabricate shared AI state, reshape the simulated cast and manipulate AI-to-AI safety counters, breaking the demo's integrity and availability."
@@ -474,9 +452,7 @@
       },
       "taxonomy": {
         "category": "improper-input-validation",
-        "cwe": [
-          "CWE-20"
-        ]
+        "cwe": ["CWE-20"]
       },
       "locations": [
         {
@@ -513,9 +489,7 @@
       ],
       "rootCause": {
         "summary": "The floor API trusts an identifier asserted by a human caller and the database schema does not bind floor holders or queue entries to active AI participant rows.",
-        "evidenceRefs": [
-          "floor-write"
-        ]
+        "evidenceRefs": ["floor-write"]
       },
       "remediation": "Resolve aiId to an active role='ai' participant before every floor operation. Bind acquisition and release to an authorised AI or server-issued turn capability, reject stale requests and constrain the queue to active AI rows.",
       "validation": {
@@ -529,9 +503,7 @@
           "Duplicate queue identifiers are deduplicated.",
           "Removing a known AI cleans its own floor state."
         ],
-        "evidenceRefs": [
-          "floor-write"
-        ],
+        "evidenceRefs": ["floor-write"],
         "limitations": [],
         "method": "Offline source review of the exact authorised Git revision.",
         "status": "validated",
@@ -544,9 +516,7 @@
           "Duplicate queue identifiers are deduplicated.",
           "Removing a known AI cleans its own floor state."
         ],
-        "evidenceRefs": [
-          "floor-write"
-        ],
+        "evidenceRefs": ["floor-write"],
         "impact": {
           "level": "medium",
           "rationale": "Shared AI turn-taking is wedged or pre-empted until another caller supplies the exact bogus holder or the room expires."
@@ -556,9 +526,7 @@
           "rationale": "high"
         },
         "limitations": [],
-        "preconditions": [
-          "The attacker is an active human participant."
-        ],
+        "preconditions": ["The attacker is an active human participant."],
         "steps": [
           "Join as a human.",
           "Request the floor for a nonexistent identifier while the floor is empty.",
@@ -657,9 +625,7 @@
           "src/shared/contracts.ts",
           "test/worker.test.ts"
         ],
-        "surfaceIds": [
-          "surface_baseline_audit"
-        ],
+        "surfaceIds": ["surface_baseline_audit"],
         "candidate": {
           "rule": "A reusable participant bearer token is placed in the WebSocket URL query string",
           "cwe": "CWE-598",
@@ -712,14 +678,8 @@
       {
         "id": "baseline-join-websocket-resource-limits",
         "reason": "Independent baseline candidate awaiting parent source validation.",
-        "paths": [
-          "src/worker/index.ts",
-          "src/worker/room.ts",
-          "test/room-service.test.ts"
-        ],
-        "surfaceIds": [
-          "surface_baseline_audit"
-        ],
+        "paths": ["src/worker/index.ts", "src/worker/room.ts", "test/room-service.test.ts"],
+        "surfaceIds": ["surface_baseline_audit"],
         "candidate": {
           "rule": "Room joins and control WebSockets have no per-room or per-credential resource limits",
           "cwe": "CWE-770",
@@ -772,13 +732,8 @@
       {
         "id": "baseline-unbounded-json-body",
         "reason": "Independent baseline candidate awaiting parent source validation.",
-        "paths": [
-          "src/worker/validation.ts",
-          "src/worker/index.ts"
-        ],
-        "surfaceIds": [
-          "surface_baseline_audit"
-        ],
+        "paths": ["src/worker/validation.ts", "src/worker/index.ts"],
+        "surfaceIds": ["surface_baseline_audit"],
         "candidate": {
           "rule": "Untrusted JSON bodies are fully allocated and parsed before application size and rate controls",
           "cwe": "CWE-400",
@@ -828,9 +783,7 @@
           "src/client/audio/PlaybackDeduplicator.ts",
           "src/client/audio/AdaptiveJitterBuffer.ts"
         ],
-        "surfaceIds": [
-          "surface_baseline_audit"
-        ],
+        "surfaceIds": ["surface_baseline_audit"],
         "candidate": {
           "rule": "Inbound media objects have no per-track object-count or byte budget",
           "cwe": "CWE-770",
@@ -890,9 +843,7 @@
           "src/client/audio/TrackPlayer.ts",
           "src/client/audio/PlaybackDeduplicator.ts"
         ],
-        "surfaceIds": [
-          "surface_media_resource_investigation"
-        ],
+        "surfaceIds": ["surface_media_resource_investigation"],
         "candidate": {
           "rule": "Unbounded per-group playback deduplication retains attacker-controlled object identifiers",
           "cwe": "CWE-770",
@@ -957,9 +908,7 @@
           "src/client/audio/AdaptiveJitterBuffer.ts",
           "src/client/audio/frame.ts"
         ],
-        "surfaceIds": [
-          "surface_media_resource_investigation"
-        ],
+        "surfaceIds": ["surface_media_resource_investigation"],
         "candidate": {
           "rule": "Count-unbounded jitter insertion and decoder submission permit algorithmic media-burst denial of service",
           "cwe": "CWE-407",
@@ -1013,13 +962,8 @@
       {
         "id": "media-unbounded-json-body",
         "reason": "Focused investigation candidate awaiting parent source validation.",
-        "paths": [
-          "src/worker/validation.ts",
-          "src/worker/index.ts"
-        ],
-        "surfaceIds": [
-          "surface_media_resource_investigation"
-        ],
+        "paths": ["src/worker/validation.ts", "src/worker/index.ts"],
+        "surfaceIds": ["surface_media_resource_investigation"],
         "candidate": {
           "rule": "Worker parses unbounded JSON bodies before rate limiting or participant authentication",
           "cwe": "CWE-400",
@@ -1072,9 +1016,7 @@
           "src/worker/room.ts",
           "src/client/room/participantLayout.ts"
         ],
-        "surfaceIds": [
-          "surface_control_boundary_investigation"
-        ],
+        "surfaceIds": ["surface_control_boundary_investigation"],
         "candidate": {
           "rule": "Caller-selected activity targets allow participant recency spoofing",
           "cwe": "CWE-639",
@@ -1122,14 +1064,8 @@
       {
         "id": "control-routing-row-disclosure",
         "reason": "Focused investigation candidate awaiting parent source validation.",
-        "paths": [
-          "src/worker/index.ts",
-          "src/worker/room.ts",
-          "PRODUCT_SPEC_v1-demo_1.md"
-        ],
-        "surfaceIds": [
-          "surface_control_boundary_investigation"
-        ],
+        "paths": ["src/worker/index.ts", "src/worker/room.ts", "PRODUCT_SPEC_v1-demo_1.md"],
+        "surfaceIds": ["surface_control_boundary_investigation"],
         "candidate": {
           "rule": "Public room snapshots disclose every human's private per-AI routing row",
           "cwe": "CWE-200",
@@ -1189,9 +1125,7 @@
           "src/worker/room.ts",
           "src/client/hooks/useRoomSession.ts"
         ],
-        "surfaceIds": [
-          "surface_control_boundary_investigation"
-        ],
+        "surfaceIds": ["surface_control_boundary_investigation"],
         "candidate": {
           "rule": "A reusable participant bearer is placed in the WebSocket query string instead of a single-use socket ticket",
           "cwe": "CWE-598",
@@ -1249,13 +1183,8 @@
       {
         "id": "control-concurrent-websockets",
         "reason": "Focused investigation candidate awaiting parent source validation.",
-        "paths": [
-          "src/worker/index.ts",
-          "src/worker/room.ts"
-        ],
-        "surfaceIds": [
-          "surface_control_boundary_investigation"
-        ],
+        "paths": ["src/worker/index.ts", "src/worker/room.ts"],
+        "surfaceIds": ["surface_control_boundary_investigation"],
         "candidate": {
           "rule": "A reusable participant token can open unbounded concurrent control sockets",
           "cwe": "CWE-770",
@@ -1305,13 +1234,8 @@
       {
         "id": "control-unthrottled-joins",
         "reason": "Focused investigation candidate awaiting parent source validation.",
-        "paths": [
-          "src/worker/index.ts",
-          "src/worker/room.ts"
-        ],
-        "surfaceIds": [
-          "surface_control_boundary_investigation"
-        ],
+        "paths": ["src/worker/index.ts", "src/worker/room.ts"],
+        "surfaceIds": ["surface_control_boundary_investigation"],
         "candidate": {
           "rule": "Unthrottled open-room joins permit unbounded participant and routing allocation",
           "cwe": "CWE-770",
@@ -1360,13 +1284,8 @@
       {
         "id": "control-arbitrary-room-do-initialisation",
         "reason": "Focused investigation candidate awaiting parent source validation.",
-        "paths": [
-          "src/worker/index.ts",
-          "src/worker/room.ts"
-        ],
-        "surfaceIds": [
-          "surface_control_boundary_investigation"
-        ],
+        "paths": ["src/worker/index.ts", "src/worker/room.ts"],
+        "surfaceIds": ["surface_control_boundary_investigation"],
         "candidate": {
           "rule": "Arbitrary room-code probes force persistent SQLite Durable Object initialisation outside the creation limiter",
           "cwe": "CWE-770",
@@ -1428,9 +1347,7 @@
           "src/client/audio/CaptureController.ts",
           "AGENTS.md"
         ],
-        "surfaceIds": [
-          "surface_remaining_inventory_review"
-        ],
+        "surfaceIds": ["surface_remaining_inventory_review"],
         "candidate": {
           "rule": "Narrow read-only clients still start microphone capture and publication",
           "cwe": "CWE-359",
@@ -1501,9 +1418,7 @@
           "test/invariants.test.ts",
           "test/jitter-buffer.test.ts"
         ],
-        "surfaceIds": [
-          "surface_remaining_inventory_review"
-        ],
+        "surfaceIds": ["surface_remaining_inventory_review"],
         "candidate": {
           "rule": "Time-window pruning does not bound jitter-buffer burst cardinality",
           "cwe": "CWE-770",
@@ -1560,9 +1475,7 @@
           "src/client/session/RoomSession.ts",
           "test/invariants.test.ts"
         ],
-        "surfaceIds": [
-          "surface_remaining_inventory_review"
-        ],
+        "surfaceIds": ["surface_remaining_inventory_review"],
         "candidate": {
           "rule": "Playback deduplication is unbounded within a single object group",
           "cwe": "CWE-770",
@@ -1598,10 +1511,7 @@
             "Malformed payloads consume state before decodeAudioObject.",
             "Normal mapping expects 50 objects/group but does not enforce it."
           ],
-          "counterevidence": [
-            "Four groups are retained.",
-            "Close/forget clears state."
-          ],
+          "counterevidence": ["Four groups are retained.", "Close/forget clears state."],
           "recommended_remediation": "Validate before deduplication; cap IDs per group; reject excess; add thousands-of-IDs tests."
         }
       }
