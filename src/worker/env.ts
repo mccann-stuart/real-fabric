@@ -6,7 +6,7 @@
  * them in configuration.
  */
 export function configValue(value: string): string {
-  return value;
+  return value.trim();
 }
 
 export function configFlag(value: string): boolean {
