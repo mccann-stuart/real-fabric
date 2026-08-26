@@ -631,33 +631,23 @@ export class Room extends DurableObject<Env> {
   }
 
   private seedRoutingForHuman(humanId: string, now: number): void {
-    const ais = this.ctx.storage.sql
-      .exec<ParticipantRow>("SELECT id FROM participants WHERE role = 'ai' AND state != 'left'")
-      .toArray();
-    for (const ai of ais) {
-      this.ctx.storage.sql.exec(
-        `INSERT INTO routing (human_id, ai_id, hears_me, i_hear_it, updated_at)
-         VALUES (?, ?, 0, 1, ?) ON CONFLICT(human_id, ai_id) DO NOTHING`,
-        humanId,
-        ai.id,
-        now,
-      );
-    }
+    this.ctx.storage.sql.exec(
+      `INSERT INTO routing (human_id, ai_id, hears_me, i_hear_it, updated_at)
+       SELECT ?, id, 0, 1, ? FROM participants WHERE role = 'ai' AND state != 'left'
+       ON CONFLICT(human_id, ai_id) DO NOTHING`,
+      humanId,
+      now,
+    );
   }
 
   private seedRoutingForAi(aiId: string, now: number): void {
-    const humans = this.ctx.storage.sql
-      .exec<ParticipantRow>("SELECT id FROM participants WHERE role = 'human' AND state != 'left'")
-      .toArray();
-    for (const human of humans) {
-      this.ctx.storage.sql.exec(
-        `INSERT INTO routing (human_id, ai_id, hears_me, i_hear_it, updated_at)
-         VALUES (?, ?, 0, 1, ?) ON CONFLICT(human_id, ai_id) DO NOTHING`,
-        human.id,
-        aiId,
-        now,
-      );
-    }
+    this.ctx.storage.sql.exec(
+      `INSERT INTO routing (human_id, ai_id, hears_me, i_hear_it, updated_at)
+       SELECT id, ?, 0, 1, ? FROM participants WHERE role = 'human' AND state != 'left'
+       ON CONFLICT(human_id, ai_id) DO NOTHING`,
+      aiId,
+      now,
+    );
   }
 
   private async releaseFloorInternal(aiId: string, now: number): Promise<void> {
