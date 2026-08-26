@@ -28,16 +28,9 @@ export function microphoneAction(
     return { disabled: false, label: "Start microphone", visible: false };
   }
 
-  if (phase?.name === "resume_required" || capture?.name === "resume_required") {
-    return { disabled: false, label: "Resume audio", visible: true };
-  }
-  if (phase?.name === "awaiting_audio_start") {
-    return { disabled: false, label: "Start audio", visible: true };
-  }
-
   switch (capture?.name) {
     case "starting":
-      return { disabled: true, label: "Starting audio…", visible: true };
+      return { disabled: true, label: "Starting microphone…", visible: true };
     case "opening_publication":
       return { disabled: true, label: "Opening publication…", visible: true };
     case "listen_only":

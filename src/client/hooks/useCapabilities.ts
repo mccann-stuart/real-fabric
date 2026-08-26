@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FailureCode } from "../../shared/failures";
 import { fetchHealth } from "../api";
-import { probeOpusEncoderSupport } from "../audio/CaptureController";
-import { inspectAudioWorkletCaptureSupport } from "../audio/UniversalAudioCaptureAdapter";
+import { inspectCaptureSupport } from "../audio/UniversalAudioCaptureAdapter";
 import { draftsFramedByClient } from "../transport/MoqTransportAdapter";
 import { notRunProbe, type ProbeResult, probeRelayReachability } from "../transport/NetworkProbe";
 
@@ -17,19 +16,10 @@ export type CheckState =
 export interface CapabilityReport {
   secureContext: CheckState;
   webTransport: CheckState;
-  webTransportReliability: CheckState;
-  opusEncoder: CheckState;
-  opusDecoder: CheckState;
+  opus: CheckState;
   capture: CheckState;
   captureReason: string;
-  playout: CheckState;
-  playoutReason: string;
   microphone: CheckState;
-  audioSession: CheckState;
-  wakeLock: CheckState;
-  dtx: CheckState;
-  lowLatencyCongestionControl: CheckState;
-  codecReason: string;
   relay: CheckState;
   relayReason: string;
   /** §11.2: HTTP/3 and QUIC reachability, run in the background. */
@@ -41,19 +31,10 @@ export interface CapabilityReport {
 const INITIAL: CapabilityReport = {
   secureContext: "checking",
   webTransport: "checking",
-  webTransportReliability: "not_tested",
-  opusEncoder: "checking",
-  opusDecoder: "checking",
+  opus: "checking",
   capture: "checking",
   captureReason: "Checking browser microphone framing APIs.",
-  playout: "checking",
-  playoutReason: "Checking browser audio decoding and mixing APIs.",
   microphone: "not_tested",
-  audioSession: "not_tested",
-  wakeLock: "not_tested",
-  dtx: "not_tested",
-  lowLatencyCongestionControl: "not_tested",
-  codecReason: "Checking the required Opus encoder and decoder configurations.",
   relay: "checking",
   relayReason: "Checking the room service and draft gate.",
   network: notRunProbe("The relay reachability probe has not started."),
@@ -70,24 +51,11 @@ export function useCapabilities() {
   useEffect(() => {
     let active = true;
     const run = async () => {
-      const [encoder, opusDecoder] = await Promise.all([
-        probeOpusEncoderSupport(),
-        checkOpusDecoder(),
-      ]);
+      const opus = await checkOpus();
       const secureContext: CheckState = globalThis.isSecureContext ? "ready" : "unavailable";
       const webTransport: CheckState = "WebTransport" in globalThis ? "ready" : "unavailable";
-      const captureSupport = inspectAudioWorkletCaptureSupport();
+      const captureSupport = inspectCaptureSupport();
       const capture: CheckState = captureSupport.available ? "ready" : "unavailable";
-      const playoutSupport = inspectPlayoutSupport();
-      const playout: CheckState = playoutSupport.available ? "ready" : "unavailable";
-      const opusEncoder: CheckState = encoder.supported ? "ready" : "unavailable";
-      const audioSession: CheckState = "audioSession" in navigator ? "ready" : "not_tested";
-      const wakeLock: CheckState = "wakeLock" in navigator ? "ready" : "not_tested";
-      const dtx: CheckState = encoder.dtx.exposed
-        ? encoder.dtx.value
-          ? "ready"
-          : "unavailable"
-        : "not_tested";
       let relay: CheckState = "unavailable";
       let relayReason = "The room service is unreachable.";
       let failure: FailureCode | null = null;
@@ -130,10 +98,8 @@ export function useCapabilities() {
       if (
         secureContext === "unavailable" ||
         webTransport === "unavailable" ||
-        opusEncoder === "unavailable" ||
-        opusDecoder === "unavailable" ||
-        capture === "unavailable" ||
-        playout === "unavailable"
+        opus === "unavailable" ||
+        capture === "unavailable"
       ) {
         failure = "transport_unsupported";
       }
@@ -143,16 +109,9 @@ export function useCapabilities() {
         ...current,
         secureContext,
         webTransport,
-        opusEncoder,
-        opusDecoder,
+        opus,
         capture,
         captureReason: captureSupport.reason,
-        playout,
-        playoutReason: playoutSupport.reason,
-        audioSession,
-        wakeLock,
-        dtx,
-        codecReason: `${encoder.reason} ${opusDecoder === "ready" ? "Opus decode is available." : "The required Opus decoder configuration is unavailable."}`,
         relay,
         relayReason,
         failure,
@@ -167,17 +126,13 @@ export function useCapabilities() {
       }));
       const network = await probeRelayReachability({ relayEndpoint });
       if (!active) return;
-      const transportCapabilities = classifyTransportCapabilities(network);
       setReport((current) => ({
         ...current,
         network,
-        ...transportCapabilities,
         failure:
-          network.state === "reliable_only"
-            ? "transport_reliable_only"
-            : network.state === "udp_blocked" && current.failure === null
-              ? "udp_blocked"
-              : current.failure,
+          network.state === "udp_blocked" && current.failure === null
+            ? "udp_blocked"
+            : current.failure,
       }));
     };
     void run();
@@ -247,52 +202,17 @@ export function useCapabilities() {
   return { report, level, testMicrophone, stopMicrophone };
 }
 
-export function classifyTransportCapabilities(
-  network: ProbeResult,
-): Pick<CapabilityReport, "webTransportReliability" | "lowLatencyCongestionControl"> {
-  const probeCompleted = network.state !== "not_run" && network.state !== "probing";
-  return {
-    webTransportReliability:
-      network.reliability === "supports-unreliable"
-        ? "ready"
-        : probeCompleted
-          ? "unavailable"
-          : "not_tested",
-    // Low-latency congestion control is a preference, not an admission gate.
-    // A reported default/throughput result stays visible as unavailable without
-    // changing the required reliability or failure result.
-    lowLatencyCongestionControl:
-      network.congestionControl === "low-latency"
-        ? "ready"
-        : network.congestionControl === "Not exposed"
-          ? "not_tested"
-          : "unavailable",
-  };
-}
-
-export async function checkOpusDecoder(): Promise<CheckState> {
-  if (!("AudioDecoder" in globalThis)) return "unavailable";
+async function checkOpus(): Promise<CheckState> {
+  if (!("AudioEncoder" in globalThis)) return "unavailable";
   try {
-    const result = await AudioDecoder.isConfigSupported({
+    const result = await AudioEncoder.isConfigSupported({
       codec: "opus",
       sampleRate: 48_000,
       numberOfChannels: 1,
+      bitrate: 32_000,
     });
     return result.supported ? "ready" : "unavailable";
   } catch {
     return "unavailable";
   }
-}
-
-export function inspectPlayoutSupport(): { available: boolean; reason: string } {
-  const missing: string[] = [];
-  if (!("AudioContext" in globalThis)) missing.push("AudioContext");
-  if (!("AudioWorkletNode" in globalThis)) missing.push("AudioWorkletNode");
-  if (!("AudioDecoder" in globalThis)) missing.push("WebCodecs AudioDecoder");
-  return missing.length === 0
-    ? { available: true, reason: "AudioWorklet playout and Opus decoding are exposed." }
-    : {
-        available: false,
-        reason: `Playback is missing ${missing.join(", ")}.`,
-      };
 }

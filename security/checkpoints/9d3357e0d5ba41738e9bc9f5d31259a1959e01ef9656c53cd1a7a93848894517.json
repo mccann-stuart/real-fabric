@@ -154,7 +154,9 @@
           "src/worker/room.ts",
           "wrangler.jsonc"
         ],
-        "surfaceIds": ["surface_baseline_audit"],
+        "surfaceIds": [
+          "surface_baseline_audit"
+        ],
         "candidate": {
           "rule": "A Worker-wide relay bearer credential is disclosed to every room creator and joiner",
           "cwe": "CWE-522",
@@ -218,7 +220,9 @@
           "src/client/pages/RoomPage.tsx",
           "test/room-service.test.ts"
         ],
-        "surfaceIds": ["surface_baseline_audit"],
+        "surfaceIds": [
+          "surface_baseline_audit"
+        ],
         "candidate": {
           "rule": "Any joined human can execute presenter-only global room controls",
           "cwe": "CWE-862",
@@ -283,7 +287,9 @@
           "src/shared/contracts.ts",
           "test/worker.test.ts"
         ],
-        "surfaceIds": ["surface_baseline_audit"],
+        "surfaceIds": [
+          "surface_baseline_audit"
+        ],
         "candidate": {
           "rule": "A reusable participant bearer token is placed in the WebSocket URL query string",
           "cwe": "CWE-598",
@@ -336,8 +342,14 @@
       {
         "id": "baseline-join-websocket-resource-limits",
         "reason": "Independent baseline candidate awaiting parent source validation.",
-        "paths": ["src/worker/index.ts", "src/worker/room.ts", "test/room-service.test.ts"],
-        "surfaceIds": ["surface_baseline_audit"],
+        "paths": [
+          "src/worker/index.ts",
+          "src/worker/room.ts",
+          "test/room-service.test.ts"
+        ],
+        "surfaceIds": [
+          "surface_baseline_audit"
+        ],
         "candidate": {
           "rule": "Room joins and control WebSockets have no per-room or per-credential resource limits",
           "cwe": "CWE-770",
@@ -390,8 +402,13 @@
       {
         "id": "baseline-unbounded-json-body",
         "reason": "Independent baseline candidate awaiting parent source validation.",
-        "paths": ["src/worker/validation.ts", "src/worker/index.ts"],
-        "surfaceIds": ["surface_baseline_audit"],
+        "paths": [
+          "src/worker/validation.ts",
+          "src/worker/index.ts"
+        ],
+        "surfaceIds": [
+          "surface_baseline_audit"
+        ],
         "candidate": {
           "rule": "Untrusted JSON bodies are fully allocated and parsed before application size and rate controls",
           "cwe": "CWE-400",
@@ -441,7 +458,9 @@
           "src/client/audio/PlaybackDeduplicator.ts",
           "src/client/audio/AdaptiveJitterBuffer.ts"
         ],
-        "surfaceIds": ["surface_baseline_audit"],
+        "surfaceIds": [
+          "surface_baseline_audit"
+        ],
         "candidate": {
           "rule": "Inbound media objects have no per-track object-count or byte budget",
           "cwe": "CWE-770",
@@ -501,7 +520,9 @@
           "src/client/audio/TrackPlayer.ts",
           "src/client/audio/PlaybackDeduplicator.ts"
         ],
-        "surfaceIds": ["surface_media_resource_investigation"],
+        "surfaceIds": [
+          "surface_media_resource_investigation"
+        ],
         "candidate": {
           "rule": "Unbounded per-group playback deduplication retains attacker-controlled object identifiers",
           "cwe": "CWE-770",
@@ -566,7 +587,9 @@
           "src/client/audio/AdaptiveJitterBuffer.ts",
           "src/client/audio/frame.ts"
         ],
-        "surfaceIds": ["surface_media_resource_investigation"],
+        "surfaceIds": [
+          "surface_media_resource_investigation"
+        ],
         "candidate": {
           "rule": "Count-unbounded jitter insertion and decoder submission permit algorithmic media-burst denial of service",
           "cwe": "CWE-407",
@@ -627,7 +650,9 @@
           "src/shared/tracks.ts",
           "wrangler.jsonc"
         ],
-        "surfaceIds": ["surface_media_resource_investigation"],
+        "surfaceIds": [
+          "surface_media_resource_investigation"
+        ],
         "candidate": {
           "rule": "A static relay-wide credential is returned to every participant without room, publisher or subscription scope",
           "cwe": "CWE-284",
@@ -692,8 +717,13 @@
       {
         "id": "media-unbounded-json-body",
         "reason": "Focused investigation candidate awaiting parent source validation.",
-        "paths": ["src/worker/validation.ts", "src/worker/index.ts"],
-        "surfaceIds": ["surface_media_resource_investigation"],
+        "paths": [
+          "src/worker/validation.ts",
+          "src/worker/index.ts"
+        ],
+        "surfaceIds": [
+          "surface_media_resource_investigation"
+        ],
         "candidate": {
           "rule": "Worker parses unbounded JSON bodies before rate limiting or participant authentication",
           "cwe": "CWE-400",
@@ -747,7 +777,9 @@
           "src/worker/env.ts",
           "src/client/transport/MoqTransportAdapter.ts"
         ],
-        "surfaceIds": ["surface_control_boundary_investigation"],
+        "surfaceIds": [
+          "surface_control_boundary_investigation"
+        ],
         "candidate": {
           "rule": "Unauthenticated room creation discloses a Worker-wide relay publish/subscribe bearer",
           "cwe": "CWE-522",
@@ -811,7 +843,9 @@
           "src/shared/tracks.ts",
           "src/client/transport/MoqTransportAdapter.ts"
         ],
-        "surfaceIds": ["surface_control_boundary_investigation"],
+        "surfaceIds": [
+          "surface_control_boundary_investigation"
+        ],
         "candidate": {
           "rule": "Open-room joining independently discloses the same relay-wide bearer without an issuance throttle",
           "cwe": "CWE-522",
@@ -872,7 +906,9 @@
           "src/client/pages/RoomPage.tsx",
           "PRODUCT_SPEC_v1-demo_1.md"
         ],
-        "surfaceIds": ["surface_control_boundary_investigation"],
+        "surfaceIds": [
+          "surface_control_boundary_investigation"
+        ],
         "candidate": {
           "rule": "Any joined human can perform presenter-only simulation and AI-to-AI safety mutations",
           "cwe": "CWE-862",
@@ -929,8 +965,14 @@
       {
         "id": "control-ai-lifecycle-authorisation",
         "reason": "Focused investigation candidate awaiting parent source validation.",
-        "paths": ["src/worker/index.ts", "src/worker/room.ts", "test/room-service.test.ts"],
-        "surfaceIds": ["surface_control_boundary_investigation"],
+        "paths": [
+          "src/worker/index.ts",
+          "src/worker/room.ts",
+          "test/room-service.test.ts"
+        ],
+        "surfaceIds": [
+          "surface_control_boundary_investigation"
+        ],
         "candidate": {
           "rule": "Any joined human can create, remove or falsify global AI state",
           "cwe": "CWE-862",
@@ -983,8 +1025,13 @@
       {
         "id": "control-floor-target-validation",
         "reason": "Focused investigation candidate awaiting parent source validation.",
-        "paths": ["src/worker/index.ts", "src/worker/room.ts"],
-        "surfaceIds": ["surface_control_boundary_investigation"],
+        "paths": [
+          "src/worker/index.ts",
+          "src/worker/room.ts"
+        ],
+        "surfaceIds": [
+          "surface_control_boundary_investigation"
+        ],
         "candidate": {
           "rule": "Unvalidated floor targets let any human wedge or pre-empt the global AI floor",
           "cwe": "CWE-20",
@@ -1032,7 +1079,9 @@
           "src/worker/room.ts",
           "src/client/room/participantLayout.ts"
         ],
-        "surfaceIds": ["surface_control_boundary_investigation"],
+        "surfaceIds": [
+          "surface_control_boundary_investigation"
+        ],
         "candidate": {
           "rule": "Caller-selected activity targets allow participant recency spoofing",
           "cwe": "CWE-639",
@@ -1080,8 +1129,14 @@
       {
         "id": "control-routing-row-disclosure",
         "reason": "Focused investigation candidate awaiting parent source validation.",
-        "paths": ["src/worker/index.ts", "src/worker/room.ts", "PRODUCT_SPEC_v1-demo_1.md"],
-        "surfaceIds": ["surface_control_boundary_investigation"],
+        "paths": [
+          "src/worker/index.ts",
+          "src/worker/room.ts",
+          "PRODUCT_SPEC_v1-demo_1.md"
+        ],
+        "surfaceIds": [
+          "surface_control_boundary_investigation"
+        ],
         "candidate": {
           "rule": "Public room snapshots disclose every human's private per-AI routing row",
           "cwe": "CWE-200",
@@ -1141,7 +1196,9 @@
           "src/worker/room.ts",
           "src/client/hooks/useRoomSession.ts"
         ],
-        "surfaceIds": ["surface_control_boundary_investigation"],
+        "surfaceIds": [
+          "surface_control_boundary_investigation"
+        ],
         "candidate": {
           "rule": "A reusable participant bearer is placed in the WebSocket query string instead of a single-use socket ticket",
           "cwe": "CWE-598",
@@ -1199,8 +1256,13 @@
       {
         "id": "control-concurrent-websockets",
         "reason": "Focused investigation candidate awaiting parent source validation.",
-        "paths": ["src/worker/index.ts", "src/worker/room.ts"],
-        "surfaceIds": ["surface_control_boundary_investigation"],
+        "paths": [
+          "src/worker/index.ts",
+          "src/worker/room.ts"
+        ],
+        "surfaceIds": [
+          "surface_control_boundary_investigation"
+        ],
         "candidate": {
           "rule": "A reusable participant token can open unbounded concurrent control sockets",
           "cwe": "CWE-770",
@@ -1250,8 +1312,13 @@
       {
         "id": "control-unthrottled-joins",
         "reason": "Focused investigation candidate awaiting parent source validation.",
-        "paths": ["src/worker/index.ts", "src/worker/room.ts"],
-        "surfaceIds": ["surface_control_boundary_investigation"],
+        "paths": [
+          "src/worker/index.ts",
+          "src/worker/room.ts"
+        ],
+        "surfaceIds": [
+          "surface_control_boundary_investigation"
+        ],
         "candidate": {
           "rule": "Unthrottled open-room joins permit unbounded participant and routing allocation",
           "cwe": "CWE-770",
@@ -1300,8 +1367,13 @@
       {
         "id": "control-arbitrary-room-do-initialisation",
         "reason": "Focused investigation candidate awaiting parent source validation.",
-        "paths": ["src/worker/index.ts", "src/worker/room.ts"],
-        "surfaceIds": ["surface_control_boundary_investigation"],
+        "paths": [
+          "src/worker/index.ts",
+          "src/worker/room.ts"
+        ],
+        "surfaceIds": [
+          "surface_control_boundary_investigation"
+        ],
         "candidate": {
           "rule": "Arbitrary room-code probes force persistent SQLite Durable Object initialisation outside the creation limiter",
           "cwe": "CWE-770",
