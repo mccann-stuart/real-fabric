@@ -25,7 +25,7 @@ Milestones 1 and 2 of the §11 release plan are built. Milestones 3 and 4 are no
 
 Conflating the two would have meant never attempting the connection that produces the trace. There is still no second transport to fall back to, and presenter simulation never stands in for a working relay or AI pipeline.
 
-**Draft configuration change, not a rewrite.** When an endpoint deploys, add its wire version to `DRAFT_REGISTRY` in [`MoqTransportAdapter`](src/client/transport/MoqTransportAdapter.ts), bump `moqtail` to a version that frames it, and repoint `MOQT_DRAFT` and `MOQ_RELAY_URL`. No room, UI or audio-pipeline code changes.
+**Draft configuration change, not a rewrite.** `DRAFT_REGISTRY` in [`MoqTransportAdapter`](src/client/transport/MoqTransportAdapter.ts) already carries `moqt-14`, `moqt-16`, `moqt-18` and `moqt-20`, each with the reason it is or is not currently usable. For draft 20 the remaining steps are therefore only to bump `moqtail` to a version that frames it and to repoint `MOQT_DRAFT` and `MOQ_RELAY_URL`; a draft outside that registry needs one entry added first. No room, UI or audio-pipeline code changes.
 
 ### H1–H16
 
@@ -68,7 +68,7 @@ The ladder is implemented and unit-tested, and it announces every step. Its curr
 
 | Deliverable | State |
 |---|---|
-| Relay endpoint integration on draft 16 | Built. `DRAFT_REGISTRY` holds the required wire version, while the adapter permits `moqtail` to add its pinned `SUPPORTED_VERSIONS` exactly once. This prevents Chrome rejecting duplicate WebTransport protocols and prevents an unrequested draft from being negotiated. |
+| Relay endpoint integration on draft 16 | Built. `DRAFT_REGISTRY` holds `moqt-14`, `moqt-16`, `moqt-18` and `moqt-20`, and the adapter refuses by name any entry the pinned `moqtail` cannot frame, as well as any future library that would offer more than the single requested version. It permits `moqtail` to add its pinned `SUPPORTED_VERSIONS` exactly once. This prevents Chrome rejecting duplicate WebTransport protocols and prevents an unrequested draft from being negotiated. |
 | CLIENT_SETUP / SERVER_SETUP negotiation | Built. Cloudflare draft-16 authentication places its provisioned token in the WebTransport URL path; the adapter constructs that URL in memory and redacts it from errors and inspection. A session with no SERVER_SETUP, or a `MAX_REQUEST_ID` of zero, is closed as a non-retryable protocol failure rather than left to present as dead air. |
 | Publication and subscription request lifecycle | Built. Draft-16 publication sends `PUBLISH` directly and waits for `PUBLISH_OK` before showing an uplink or publish event. Every other permitted real-party track is interested by default: namespace-pushed `PUBLISH` requests receive `PUBLISH_OK` and enter the ordinary player path, while an explicit local opt-out receives `UNINTERESTED`. A publication refusal stops capture and retains its exact code and reason in same-tab inspector history. Missing remote tracks use capped exponential retries, wake immediately on a namespace publication announcement or accepted push, and expose listener-owned subscribe/unsubscribe controls. |
 | Pre-flight HTTP/3 and UDP probe | Built, in [`NetworkProbe`](src/client/transport/NetworkProbe.ts). Non-blocking, runs alongside the join, and compares a QUIC leg against a TCP leg to separate filtered UDP from a dead connection. It says so when the two are indistinguishable. |
@@ -124,7 +124,7 @@ The production relay is `real-fabric-production` (`5266d64d9209fb9a8961f00974580
 - `src/client/components`, `src/client/pages` — entry, pre-flight, room, inspector and presenter surfaces.
 - `public/audio/mixer-worklet.js` — the single mixing point, served same-origin so it satisfies the existing `script-src 'self'` policy.
 - `src/worker` — API routing, security headers, redacted structured logs, provisioned relay credential handling and the SQLite Durable Object room service.
-- `test` — 152 automated tests across ten files covering the requirements above.
+- `test` — 196 automated tests across sixteen files covering the requirements above.
 
 ## Local setup
 
