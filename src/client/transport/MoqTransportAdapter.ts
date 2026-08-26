@@ -3,7 +3,6 @@ import {
   FilterType,
   FullTrackName,
   GroupOrder,
-  type KeyValuePair,
   LiveTrackSource,
   Location,
   MOQtailClient,
@@ -263,7 +262,7 @@ export class MoqTransportAdapter {
 
     // Captured during `MOQtailClient.new`, which performs the handshake before
     // it resolves, so these must be in scope before the call.
-    let clientSetup: KeyValuePair[] | null = null;
+    let clientSetup: Parameters<typeof SetupParameters.fromKeyValuePairs>[0] | null = null;
     let serverSetupObserved = false;
 
     try {
@@ -397,7 +396,7 @@ export class MoqTransportAdapter {
     draft: MoqDraft;
     profile: DraftProfile;
     endpointName: string;
-    clientSetup: KeyValuePair[] | null;
+    clientSetup: Parameters<typeof SetupParameters.fromKeyValuePairs>[0] | null;
     serverSetupObserved: boolean;
     credential: string;
   }): MoqNegotiation {
@@ -773,7 +772,10 @@ function redactEndpoint(endpoint: string): string {
  * AC-14: setup parameters are rendered for the inspector with the credential
  * removed. An authorisation token is reported as present, never as its value.
  */
-function describeParameters(pairs: KeyValuePair[], credential: string): SetupParameterRecord[] {
+function describeParameters(
+  pairs: Parameters<typeof SetupParameters.fromKeyValuePairs>[0],
+  credential: string,
+): SetupParameterRecord[] {
   return SetupParameters.fromKeyValuePairs(pairs).map((parameter) => {
     if (SetupParameter.isMaxRequestId(parameter)) {
       return { name: "MAX_REQUEST_ID", value: String(parameter.maxId) };
