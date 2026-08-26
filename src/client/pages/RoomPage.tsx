@@ -2,13 +2,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import type { Participant } from "../../shared/contracts";
 import { notExposed } from "../../shared/measurement";
 import { currentUserAgentFacts, matchConfiguration } from "../../shared/pinnedConfiguration";
-import {
-  clearSession,
-  configurePresenter,
-  loadSession,
-  type StoredSession,
-  setAiToAi,
-} from "../api";
+import { clearSession, configurePresenter, loadSession, setAiToAi } from "../api";
 import { Brand } from "../components/Brand";
 import { DemoScriptPanel } from "../components/DemoScriptPanel";
 import { Inspector } from "../components/Inspector";
@@ -23,7 +17,7 @@ import { layoutParticipants } from "../room/participantLayout";
 import { microphoneAction, representedFailureCodes } from "../room/roomPresentation";
 
 export function RoomPage({ code, navigate }: { code: string; navigate: (path: string) => void }) {
-  const [stored] = useState<StoredSession | null>(() => loadSession(code));
+  const [stored] = useState(() => loadSession(code));
   const presenterMode = sessionStorage.getItem(`real-fabric:presenter:${code}`) === "true";
   const { state, session, reclaimed, error, startAudio, setMuted, retry, leave } = useRoomSession(
     stored,
