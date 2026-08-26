@@ -8,6 +8,7 @@
 
 export type FailureCode =
   | "transport_unsupported"
+  | "transport_reliable_only"
   | "udp_blocked"
   | "microphone_denied"
   | "microphone_no_device"
@@ -52,6 +53,17 @@ const REGISTRY: Record<FailureCode, FailureState> = {
       "This browser does not expose the capability named in the pre-flight panel, so there is no way to publish audio.",
     behaviour: "No join and no fallback. The build contains no WebRTC or WebSocket audio path.",
     recovery: "Open the demo on the pinned browser and version named in the README.",
+    severity: "blocking",
+    blocksPublication: true,
+  },
+  transport_reliable_only: {
+    code: "transport_reliable_only",
+    title: "HTTP/3 transport required",
+    experience:
+      "WebTransport reported a reliable-only first hop. Real Fabric requires UDP-capable HTTP/3 and QUIC for audio.",
+    behaviour:
+      "The partial session is closed. HTTP/2, TCP, WebRTC and WebSocket audio are not attempted.",
+    recovery: "Retry once, then switch to the documented phone hotspot.",
     severity: "blocking",
     blocksPublication: true,
   },
