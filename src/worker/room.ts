@@ -736,22 +736,33 @@ export class Room extends DurableObject<Env> {
       });
     }
 
-    for (const surplus of existing.slice(target)) {
+    const surplusList = existing.slice(target);
+    if (surplusList.length > 0) {
       if (role === "ai") {
-        await this.removeAiInternal(surplus.id);
-        continue;
+        for (const surplus of surplusList) {
+          await this.removeAiInternal(surplus.id);
+        }
+      } else {
+        const ids = surplusList.map((surplus) => surplus.id);
+        const placeholders = ids.map(() => "?").join(", ");
+        this.ctx.storage.sql.exec(
+          `UPDATE participants SET state = 'left', reconnect_until = NULL WHERE id IN (${placeholders})`,
+          ...ids,
+        );
+        this.ctx.storage.sql.exec(
+          `DELETE FROM routing WHERE human_id IN (${placeholders})`,
+          ...ids,
+        );
+        const now = Date.now();
+        for (const id of ids) {
+          this.broadcast({
+            type: "participant_changed",
+            participantId: id,
+            state: "left",
+            at: now,
+          });
+        }
       }
-      this.ctx.storage.sql.exec(
-        "UPDATE participants SET state = 'left', reconnect_until = NULL WHERE id = ?",
-        surplus.id,
-      );
-      this.ctx.storage.sql.exec("DELETE FROM routing WHERE human_id = ?", surplus.id);
-      this.broadcast({
-        type: "participant_changed",
-        participantId: surplus.id,
-        state: "left",
-        at: Date.now(),
-      });
     }
   }
 
