@@ -18,7 +18,7 @@ import { PresenterStrip } from "../components/PresenterStrip";
 import { RoomStatusStack } from "../components/RoomStatusStack";
 import { RoomTopBar } from "../components/RoomTopBar";
 import { useRoomSession } from "../hooks/useRoomSession";
-import { type DemoContext, DemoRunner } from "../presenter/DemoScript";
+import { DemoRunner } from "../presenter/DemoScript";
 import { layoutParticipants } from "../room/participantLayout";
 import { microphoneAction, representedFailureCodes } from "../room/roomPresentation";
 
@@ -105,7 +105,7 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
     [room, session, viewerId],
   );
 
-  const demoContext = useCallback((): DemoContext => {
+  const demoContext = useCallback(() => {
     const metrics = state?.metrics;
     const speaking = (room?.participants ?? []).filter(
       (participant) => participant.role === "ai" && participant.pipeline === "speaking",

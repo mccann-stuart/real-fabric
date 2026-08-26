@@ -8,6 +8,34 @@ describe("roomError and decodeRoomError", () => {
     expect(err.message).toBe("RF-ROOM-ERROR|404|room_not_found|Room is not initialised.");
   });
 
+  it("handles edge cases in roomError including empty message, special characters, unicode, and status/code variations", () => {
+    const emptyErr = roomError(500, "internal_error", "");
+    expect(emptyErr).toBeInstanceOf(Error);
+    expect(emptyErr.message).toBe("RF-ROOM-ERROR|500|internal_error|");
+    expect(decodeRoomError(emptyErr)).toEqual({
+      status: 500,
+      code: "internal_error",
+      message: "",
+    });
+
+    const unicodeMsg = "Error in room 🚀: invalid state | check parameters";
+    const unicodeErr = roomError(422, "unprocessable_entity", unicodeMsg);
+    expect(unicodeErr.message).toBe(`RF-ROOM-ERROR|422|unprocessable_entity|${unicodeMsg}`);
+    expect(decodeRoomError(unicodeErr)).toEqual({
+      status: 422,
+      code: "unprocessable_entity",
+      message: unicodeMsg,
+    });
+
+    const customCodeErr = roomError(200, "ok_status", "OK");
+    expect(customCodeErr.message).toBe("RF-ROOM-ERROR|200|ok_status|OK");
+    expect(decodeRoomError(customCodeErr)).toEqual({
+      status: 200,
+      code: "ok_status",
+      message: "OK",
+    });
+  });
+
   it("decodes valid room errors created via roomError", () => {
     const err = roomError(401, "participant_auth_failed", "Invalid credentials.");
     const decoded = decodeRoomError(err);

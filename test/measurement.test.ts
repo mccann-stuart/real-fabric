@@ -54,8 +54,26 @@ describe("measurement formatting and utilities", () => {
       expect(formatMilliseconds(measured(0))).toBe("0 ms");
     });
 
-    it("returns 'Not exposed' for unexposed milliseconds measurements", () => {
+    it("handles rounding edge cases at .5 boundaries", () => {
+      expect(formatMilliseconds(measured(12.5))).toBe("13 ms");
+      expect(formatMilliseconds(measured(0.5))).toBe("1 ms");
+      expect(formatMilliseconds(measured(0.4))).toBe("0 ms");
+    });
+
+    it("formats negative millisecond values and negative rounding correctly", () => {
+      expect(formatMilliseconds(measured(-12.4))).toBe("-12 ms");
+      expect(formatMilliseconds(measured(-12.5))).toBe("-12 ms");
+      expect(formatMilliseconds(measured(-12.6))).toBe("-13 ms");
+    });
+
+    it("formats large millisecond values", () => {
+      expect(formatMilliseconds(measured(10000))).toBe("10000 ms");
+      expect(formatMilliseconds(measured(86400000))).toBe("86400000 ms");
+    });
+
+    it("returns 'Not exposed' for unexposed milliseconds measurements regardless of reason", () => {
       expect(formatMilliseconds(notExposed("not measured"))).toBe(NOT_EXPOSED);
+      expect(formatMilliseconds(notExposed("clock drift too high"))).toBe(NOT_EXPOSED);
     });
   });
 
@@ -83,14 +101,23 @@ describe("measurement formatting and utilities", () => {
   });
 
   describe("fromNullable", () => {
-    it("returns exposed measurement for non-null and non-undefined values", () => {
+    it("returns exposed measurement for non-null and non-undefined primitive values", () => {
       expect(fromNullable(10, "missing")).toEqual({ exposed: true, value: 10 });
       expect(fromNullable("str", "missing")).toEqual({ exposed: true, value: "str" });
+      expect(fromNullable("", "missing")).toEqual({ exposed: true, value: "" });
       expect(fromNullable(0, "missing")).toEqual({ exposed: true, value: 0 });
       expect(fromNullable(false, "missing")).toEqual({ exposed: true, value: false });
+      expect(fromNullable(true, "missing")).toEqual({ exposed: true, value: true });
     });
 
-    it("returns unexposed measurement with reason when value is null or undefined", () => {
+    it("returns exposed measurement for complex objects and arrays", () => {
+      const obj = { id: "test-id", count: 42 };
+      const arr = [1, 2, 3];
+      expect(fromNullable(obj, "missing object")).toEqual({ exposed: true, value: obj });
+      expect(fromNullable(arr, "missing array")).toEqual({ exposed: true, value: arr });
+    });
+
+    it("returns unexposed measurement with specified reason when value is null or undefined", () => {
       expect(fromNullable(null, "value is null")).toEqual({
         exposed: false,
         reason: "value is null",
@@ -99,6 +126,17 @@ describe("measurement formatting and utilities", () => {
         exposed: false,
         reason: "value is undefined",
       });
+    });
+
+    it("correctly narrows NonNullable type when exposed", () => {
+      const maybeValue: number | null = 42;
+      const result = fromNullable(maybeValue, "no value");
+      if (result.exposed) {
+        const value: number = result.value;
+        expect(value).toBe(42);
+      } else {
+        expect.unreachable("Expected measurement to be exposed");
+      }
     });
   });
 
