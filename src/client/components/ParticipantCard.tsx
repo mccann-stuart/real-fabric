@@ -125,18 +125,6 @@ export function ParticipantCard({
             onPointerDown={() => onAddressDown?.(participant.id)}
             onPointerUp={() => onAddressUp?.(participant.id)}
             onPointerLeave={() => onAddressUp?.(participant.id)}
-            onKeyDown={(event) => {
-              if ((event.key === " " || event.key === "Enter") && !event.repeat) {
-                event.preventDefault();
-                onAddressDown?.(participant.id);
-              }
-            }}
-            onKeyUp={(event) => {
-              if (event.key === " " || event.key === "Enter") {
-                event.preventDefault();
-                onAddressUp?.(participant.id);
-              }
-            }}
           >
             Hold to ask {participant.displayName}
           </button>
