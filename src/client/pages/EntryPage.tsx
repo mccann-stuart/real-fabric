@@ -5,6 +5,7 @@ import { Brand } from "../components/Brand";
 import { PinnedConfigBanner } from "../components/PinnedConfigBanner";
 import { PreflightPanel } from "../components/PreflightPanel";
 import { SignalPath } from "../components/SignalPath";
+import { generateRandomDisplayName } from "../displayName";
 import { useCapabilities } from "../hooks/useCapabilities";
 import { rememberRelayCredential } from "../session/RoomSession";
 
@@ -27,9 +28,14 @@ export function EntryPage({
   const { report, level, testMicrophone, stopMicrophone } = useCapabilities();
 
   const enterRoom = async (mode: "create" | "join" | "presenter") => {
-    if (!displayName.trim()) {
+    let enteredName = displayName.trim();
+    if (!enteredName && mode === "presenter") {
       setError("Enter your name before creating or joining a room.");
       return;
+    }
+    if (!enteredName) {
+      enteredName = generateRandomDisplayName();
+      setDisplayName(enteredName);
     }
     if (mode === "join" && roomCode.length !== 20) {
       setError("Enter the complete 20-character room code.");
@@ -39,14 +45,12 @@ export function EntryPage({
     setError("");
     try {
       const result =
-        mode === "join"
-          ? await joinRoom(roomCode, displayName.trim())
-          : await createRoom(displayName.trim());
+        mode === "join" ? await joinRoom(roomCode, enteredName) : await createRoom(enteredName);
       const session = storeSession({
         code: result.room.code,
         participantId: result.participant.id,
         rejoinToken: result.rejoinToken,
-        displayName: displayName.trim(),
+        displayName: enteredName,
       });
       // §8: the relay credential stays in memory. It is never stored and never
       // placed in a URL that could be shared.
