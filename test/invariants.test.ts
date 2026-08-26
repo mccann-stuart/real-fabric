@@ -24,7 +24,7 @@ import {
   type Participant,
   type RoutingPreference,
 } from "../src/shared/contracts";
-import { ALL_FAILURE_CODES, allFailureStates } from "../src/shared/failures";
+import { ALL_FAILURE_CODES, allFailureStates, failureState } from "../src/shared/failures";
 import { formatMeasurement, measured, notExposed } from "../src/shared/measurement";
 import { matchConfiguration, PINNED_CONFIGURATION } from "../src/shared/pinnedConfiguration";
 import {
@@ -33,6 +33,7 @@ import {
   parseTrackName,
   participantNamespace,
   presenceTrack,
+  trackKey,
 } from "../src/shared/tracks";
 
 function human(id: string, overrides: Partial<Participant> = {}): Participant {
@@ -100,6 +101,17 @@ describe("H2 — one independent track per participant, no mixing upstream", () 
     expect(participantNamespace("room1", "p1")).toBe("demo/room1/p1");
     expect(audioTrack("room1", "p1").namespace).not.toBe(audioTrack("room1", "p2").namespace);
     expect(audioTrack("room1", "p1").namespace.startsWith("demo/room1/")).toBe(true);
+  });
+
+  it("combines namespace and name into a single track key string", () => {
+    expect(trackKey({ namespace: "demo/room1/p1", name: "audio/p1" })).toBe(
+      "demo/room1/p1/audio/p1",
+    );
+    expect(trackKey(audioTrack("room1", "p1"))).toBe("demo/room1/p1/audio/p1");
+    expect(trackKey(presenceTrack("room1", "p1"))).toBe("demo/room1/p1/presence/p1");
+    expect(trackKey({ namespace: "", name: "" })).toBe("/");
+    expect(trackKey({ namespace: "ns", name: "" })).toBe("ns/");
+    expect(trackKey({ namespace: "", name: "name" })).toBe("/name");
   });
 
   it("keeps the uplink at one track regardless of audience size", () => {
@@ -527,6 +539,25 @@ describe("H13 — ten minutes without unbounded growth or uncorrected drift", ()
     const estimator = new DriftEstimator("t3");
     estimator.observe(0, 0);
     expect(estimator.skewPpm().exposed).toBe(false);
+  });
+});
+
+describe("failureState", () => {
+  it("returns the exact failure state matching the given code", () => {
+    for (const code of ALL_FAILURE_CODES) {
+      const state = failureState(code);
+      expect(state.code).toBe(code);
+      expect(typeof state.title).toBe("string");
+      expect(state.title.length).toBeGreaterThan(0);
+      expect(typeof state.experience).toBe("string");
+      expect(state.experience.length).toBeGreaterThan(0);
+      expect(typeof state.behaviour).toBe("string");
+      expect(state.behaviour.length).toBeGreaterThan(0);
+      expect(typeof state.recovery).toBe("string");
+      expect(state.recovery.length).toBeGreaterThan(0);
+      expect(["blocking", "degraded", "transient"]).toContain(state.severity);
+      expect(typeof state.blocksPublication).toBe("boolean");
+    }
   });
 });
 
