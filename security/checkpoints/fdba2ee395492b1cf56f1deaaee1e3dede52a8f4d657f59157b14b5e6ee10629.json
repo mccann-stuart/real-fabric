@@ -130,9 +130,7 @@
           "src/worker/room.ts",
           "wrangler.jsonc"
         ],
-        "surfaceIds": [
-          "surface_baseline_audit"
-        ],
+        "surfaceIds": ["surface_baseline_audit"],
         "candidate": {
           "rule": "A Worker-wide relay bearer credential is disclosed to every room creator and joiner",
           "cwe": "CWE-522",
@@ -196,9 +194,7 @@
           "src/client/pages/RoomPage.tsx",
           "test/room-service.test.ts"
         ],
-        "surfaceIds": [
-          "surface_baseline_audit"
-        ],
+        "surfaceIds": ["surface_baseline_audit"],
         "candidate": {
           "rule": "Any joined human can execute presenter-only global room controls",
           "cwe": "CWE-862",
@@ -263,9 +259,7 @@
           "src/shared/contracts.ts",
           "test/worker.test.ts"
         ],
-        "surfaceIds": [
-          "surface_baseline_audit"
-        ],
+        "surfaceIds": ["surface_baseline_audit"],
         "candidate": {
           "rule": "A reusable participant bearer token is placed in the WebSocket URL query string",
           "cwe": "CWE-598",
@@ -318,14 +312,8 @@
       {
         "id": "baseline-join-websocket-resource-limits",
         "reason": "Independent baseline candidate awaiting parent source validation.",
-        "paths": [
-          "src/worker/index.ts",
-          "src/worker/room.ts",
-          "test/room-service.test.ts"
-        ],
-        "surfaceIds": [
-          "surface_baseline_audit"
-        ],
+        "paths": ["src/worker/index.ts", "src/worker/room.ts", "test/room-service.test.ts"],
+        "surfaceIds": ["surface_baseline_audit"],
         "candidate": {
           "rule": "Room joins and control WebSockets have no per-room or per-credential resource limits",
           "cwe": "CWE-770",
@@ -378,13 +366,8 @@
       {
         "id": "baseline-unbounded-json-body",
         "reason": "Independent baseline candidate awaiting parent source validation.",
-        "paths": [
-          "src/worker/validation.ts",
-          "src/worker/index.ts"
-        ],
-        "surfaceIds": [
-          "surface_baseline_audit"
-        ],
+        "paths": ["src/worker/validation.ts", "src/worker/index.ts"],
+        "surfaceIds": ["surface_baseline_audit"],
         "candidate": {
           "rule": "Untrusted JSON bodies are fully allocated and parsed before application size and rate controls",
           "cwe": "CWE-400",
@@ -434,9 +417,7 @@
           "src/client/audio/PlaybackDeduplicator.ts",
           "src/client/audio/AdaptiveJitterBuffer.ts"
         ],
-        "surfaceIds": [
-          "surface_baseline_audit"
-        ],
+        "surfaceIds": ["surface_baseline_audit"],
         "candidate": {
           "rule": "Inbound media objects have no per-track object-count or byte budget",
           "cwe": "CWE-770",
