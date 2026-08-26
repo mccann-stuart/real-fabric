@@ -704,54 +704,154 @@ export class Room extends DurableObject<Env> {
       )
       .toArray();
 
-    for (let index = existing.length; index < target; index += 1) {
-      const name = simulatedName(role, index);
-      if (role === "ai") {
-        await this.addAiInternal(name, {
-          address: `ai/${slug(name)}`,
-          wakeName: name,
-          simulated: true,
-        });
-        continue;
-      }
+    const countToAdd = target - existing.length;
+
+    if (countToAdd > 0) {
       const now = Date.now();
-      const id = crypto.randomUUID();
-      this.ctx.storage.sql.exec(
-        `INSERT INTO participants (
-           id, display_name, role, state, joined_at, reconnect_until, rejoin_hash,
-           simulated, address, wake_name, pipeline, last_active_at
-         ) VALUES (?, ?, 'human', 'connected', ?, NULL, ?, 1, NULL, NULL, NULL, ?)`,
-        id,
-        name,
-        now,
-        await sha256(randomToken()),
-        now,
-      );
-      this.seedRoutingForHuman(id, now);
-      this.broadcast({
-        type: "participant_changed",
-        participantId: id,
-        state: "connected",
-        at: now,
-      });
+      if (role === "human") {
+        const added = await Promise.all(
+          Array.from({ length: countToAdd }, (_, i) => {
+            const index = existing.length + i;
+            const name = simulatedName("human", index);
+            const id = crypto.randomUUID();
+            return sha256(randomToken()).then((hash) => ({ id, name, hash }));
+          }),
+        );
+
+        const ais = this.ctx.storage.sql
+          .exec<ParticipantRow>("SELECT id FROM participants WHERE role = 'ai' AND state != 'left'")
+          .toArray();
+
+        const CHUNK_SIZE = 10;
+        for (let i = 0; i < added.length; i += CHUNK_SIZE) {
+          const chunk = added.slice(i, i + CHUNK_SIZE);
+          const valuePlaceholders: string[] = [];
+          const params: SqlStorageValue[] = [];
+          for (const item of chunk) {
+            valuePlaceholders.push(
+              "(?, ?, 'human', 'connected', ?, NULL, ?, 1, NULL, NULL, NULL, ?)",
+            );
+            params.push(item.id, item.name, now, item.hash, now);
+          }
+          this.ctx.storage.sql.exec(
+            `INSERT INTO participants (
+               id, display_name, role, state, joined_at, reconnect_until, rejoin_hash,
+               simulated, address, wake_name, pipeline, last_active_at
+             ) VALUES ${valuePlaceholders.join(", ")}`,
+            ...params,
+          );
+        }
+
+        if (ais.length > 0) {
+          const routingRows: Array<{ humanId: string; aiId: string; updatedAt: number }> = [];
+          for (const item of added) {
+            for (const ai of ais) {
+              routingRows.push({ humanId: item.id, aiId: ai.id, updatedAt: now });
+            }
+          }
+          batchInsertRouting(this.ctx.storage.sql, routingRows);
+        }
+
+        for (const item of added) {
+          this.broadcast({
+            type: "participant_changed",
+            participantId: item.id,
+            state: "connected",
+            at: now,
+          });
+        }
+      } else {
+        const added = await Promise.all(
+          Array.from({ length: countToAdd }, (_, i) => {
+            const index = existing.length + i;
+            const name = simulatedName("ai", index);
+            const aiId = crypto.randomUUID();
+            const address = `ai/${slug(name)}`;
+            const wakeName = name;
+            return sha256(randomToken()).then((hash) => ({
+              id: aiId,
+              name,
+              hash,
+              address,
+              wakeName,
+            }));
+          }),
+        );
+
+        const humans = this.ctx.storage.sql
+          .exec<ParticipantRow>(
+            "SELECT id FROM participants WHERE role = 'human' AND state != 'left'",
+          )
+          .toArray();
+
+        const CHUNK_SIZE = 10;
+        for (let i = 0; i < added.length; i += CHUNK_SIZE) {
+          const chunk = added.slice(i, i + CHUNK_SIZE);
+          const valuePlaceholders: string[] = [];
+          const params: SqlStorageValue[] = [];
+          for (const item of chunk) {
+            valuePlaceholders.push(
+              "(?, ?, 'ai', 'connected', ?, NULL, ?, 1, ?, ?, 'listening', ?)",
+            );
+            params.push(item.id, item.name, now, item.hash, item.address, item.wakeName, now);
+          }
+          this.ctx.storage.sql.exec(
+            `INSERT INTO participants (
+               id, display_name, role, state, joined_at, reconnect_until, rejoin_hash,
+               simulated, address, wake_name, pipeline, last_active_at
+             ) VALUES ${valuePlaceholders.join(", ")}`,
+            ...params,
+          );
+        }
+
+        if (humans.length > 0) {
+          const routingRows: Array<{ humanId: string; aiId: string; updatedAt: number }> = [];
+          for (const item of added) {
+            for (const human of humans) {
+              routingRows.push({ humanId: human.id, aiId: item.id, updatedAt: now });
+            }
+          }
+          batchInsertRouting(this.ctx.storage.sql, routingRows);
+        }
+
+        for (const item of added) {
+          this.broadcast({
+            type: "participant_changed",
+            participantId: item.id,
+            state: "connected",
+            at: now,
+          });
+        }
+      }
     }
 
-    for (const surplus of existing.slice(target)) {
-      if (role === "ai") {
-        await this.removeAiInternal(surplus.id);
-        continue;
+    const surplus = existing.slice(target);
+    if (surplus.length > 0) {
+      if (role === "human") {
+        const now = Date.now();
+        const surplusIds = surplus.map((p) => p.id);
+        const placeholders = surplusIds.map(() => "?").join(", ");
+        this.ctx.storage.sql.exec(
+          `UPDATE participants SET state = 'left', reconnect_until = NULL WHERE id IN (${placeholders})`,
+          ...surplusIds,
+        );
+        this.ctx.storage.sql.exec(
+          `DELETE FROM routing WHERE human_id IN (${placeholders})`,
+          ...surplusIds,
+        );
+        for (const id of surplusIds) {
+          this.broadcast({
+            type: "participant_changed",
+            participantId: id,
+            state: "left",
+            at: now,
+          });
+        }
+      } else {
+        for (const item of surplus) {
+          await this.removeAiInternal(item.id);
+        }
       }
-      this.ctx.storage.sql.exec(
-        "UPDATE participants SET state = 'left', reconnect_until = NULL WHERE id = ?",
-        surplus.id,
-      );
-      this.ctx.storage.sql.exec("DELETE FROM routing WHERE human_id = ?", surplus.id);
-      this.broadcast({
-        type: "participant_changed",
-        participantId: surplus.id,
-        state: "left",
-        at: Date.now(),
-      });
     }
   }
 
@@ -1025,6 +1125,28 @@ function slug(value: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
+}
+
+function batchInsertRouting(
+  sql: SqlStorage,
+  rows: Array<{ humanId: string; aiId: string; updatedAt: number }>,
+): void {
+  if (rows.length === 0) return;
+  const CHUNK_SIZE = 25;
+  for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
+    const chunk = rows.slice(i, i + CHUNK_SIZE);
+    const placeholders: string[] = [];
+    const params: SqlStorageValue[] = [];
+    for (const r of chunk) {
+      placeholders.push("(?, ?, 0, 1, ?)");
+      params.push(r.humanId, r.aiId, r.updatedAt);
+    }
+    sql.exec(
+      `INSERT INTO routing (human_id, ai_id, hears_me, i_hear_it, updated_at)
+       VALUES ${placeholders.join(", ")} ON CONFLICT(human_id, ai_id) DO NOTHING`,
+      ...params,
+    );
+  }
 }
 
 function clampSimulated(value: number): number {
