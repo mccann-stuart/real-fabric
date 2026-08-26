@@ -205,7 +205,8 @@ describe("Real Fabric Worker", () => {
     socket.accept();
 
     const rooms = env.ROOMS;
-    if (!rooms) throw new Error("The ROOMS binding is required for the authentication-timeout test.");
+    if (!rooms)
+      throw new Error("The ROOMS binding is required for the authentication-timeout test.");
     const stub = rooms.getByName(created.room.code);
     const closed = nextClose(socket);
     await runInDurableObject(stub, async (instance, state) => {
