@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { Participant } from "../../shared/contracts";
+import type { FailureCode } from "../../shared/failures";
 import { notExposed } from "../../shared/measurement";
-import { currentUserAgentFacts, matchConfiguration } from "../../shared/pinnedConfiguration";
 import {
   clearSession,
   configurePresenter,
@@ -25,12 +25,10 @@ import { microphoneAction, representedFailureCodes } from "../room/roomPresentat
 export function RoomPage({ code, navigate }: { code: string; navigate: (path: string) => void }) {
   const [stored] = useState<StoredSession | null>(() => loadSession(code));
   const presenterMode = sessionStorage.getItem(`real-fabric:presenter:${code}`) === "true";
-  const { state, session, reclaimed, error, startAudio, setMuted, retry, leave } = useRoomSession(
+  const { state, session, reclaimed, error, startPublishing, retry, leave } = useRoomSession(
     stored,
     presenterMode,
   );
-  const [configuration] = useState(() => matchConfiguration(currentUserAgentFacts()));
-  const iphoneAudioCandidate = configuration.device === "iPhone" && configuration.liveAudioEligible;
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const [leaving, setLeaving] = useState(false);
@@ -175,8 +173,8 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
       viewerId={viewerId}
       routing={room?.routing ?? []}
       connectedHumanIds={connectedHumanIds}
-      level={participant.id === viewerId && !state?.muted ? (state?.micLevel ?? 0) : 0}
-      speaking={participant.id === viewerId && !state?.muted ? (state?.speaking ?? false) : false}
+      level={participant.id === viewerId ? (state?.micLevel ?? 0) : 0}
+      speaking={participant.id === viewerId ? (state?.speaking ?? false) : false}
       subscription={state?.subscriptions.find(
         (subscription) => subscription.participantId === participant.id,
       )}
@@ -188,15 +186,14 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
   );
 
   return (
-    <main className={`room-page${iphoneAudioCandidate ? " room-page--ios-live-audio" : ""}`}>
+    <main className="room-page">
       <h1 className="sr-only">Real Fabric room {code}</h1>
       <RoomTopBar
         code={code}
         copyState={copyState}
         onCopyInvite={() => void copyInvite()}
         micAction={micAction}
-        liveAudioEligible={configuration.liveAudioEligible}
-        onStartAudio={() => void startAudio()}
+        onStartPublishing={() => void startPublishing()}
         onOpenLeaveDialog={() => {
           setLeaveError(null);
           leaveDialog.current?.showModal();
@@ -216,10 +213,9 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
         state={state}
         reclaimed={reclaimed}
         error={error}
-        iphoneAudioCandidate={iphoneAudioCandidate}
         hiddenFailureCodes={hiddenFailureCodes}
         onRetry={() => void retry()}
-        onDismissFailure={(failureCode) => session?.clearFailure(failureCode)}
+        onDismissFailure={(failureCode: FailureCode) => session?.clearFailure(failureCode)}
       />
 
       <div className="room-layout">
@@ -228,7 +224,7 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
           aria-label="Room participants"
         >
           <h2 className="sr-only">Room participants</h2>
-          {!iphoneAudioCandidate ? <p className="mobile-readonly">▣ Read-only room view</p> : null}
+          <p className="mobile-readonly">▣ Read-only room view</p>
           <div className="participant-grid participant-grid--prominent">
             {layout.prominent.map(renderCard)}
           </div>
@@ -313,50 +309,13 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
         </>
       ) : null}
 
-      {iphoneAudioCandidate ? (
-        <nav className="mobile-audio-rail" aria-label="Foreground audio controls">
-          {micAction.visible ? (
-            <button
-              className="mobile-audio-rail__primary"
-              disabled={micAction.disabled}
-              type="button"
-              onClick={() => void startAudio()}
-            >
-              {micAction.label}
-            </button>
-          ) : (
-            <span className="mobile-audio-rail__status">Audio live</span>
-          )}
-          <button
-            type="button"
-            disabled={!state?.publishing}
-            onClick={() => setMuted(!(state?.muted ?? false))}
-          >
-            {state?.muted ? "Unmute" : "Mute"}
-          </button>
-          <button type="button" onClick={() => setInspectorOpen(true)}>
-            Inspector
-          </button>
-          <button
-            className="mobile-audio-rail__danger"
-            type="button"
-            onClick={() => {
-              setLeaveError(null);
-              leaveDialog.current?.showModal();
-            }}
-          >
-            Leave
-          </button>
-        </nav>
-      ) : (
-        <button
-          className="mobile-inspector-button"
-          type="button"
-          onClick={() => setInspectorOpen(true)}
-        >
-          Open inspector
-        </button>
-      )}
+      <button
+        className="mobile-inspector-button"
+        type="button"
+        onClick={() => setInspectorOpen(true)}
+      >
+        Open inspector
+      </button>
     </main>
   );
 }

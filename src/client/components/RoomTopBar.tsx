@@ -9,8 +9,7 @@ interface RoomTopBarProps {
     disabled: boolean;
     label: string;
   };
-  liveAudioEligible: boolean;
-  onStartAudio: () => void;
+  onStartPublishing: () => void;
   onOpenLeaveDialog: () => void;
 }
 
@@ -19,8 +18,7 @@ export function RoomTopBar({
   copyState,
   onCopyInvite,
   micAction,
-  liveAudioEligible,
-  onStartAudio,
+  onStartPublishing,
   onOpenLeaveDialog,
 }: RoomTopBarProps) {
   return (
@@ -43,12 +41,12 @@ export function RoomTopBar({
               ? "Retry copy"
               : "Copy invite"}
         </button>
-        {micAction.visible && liveAudioEligible ? (
+        {micAction.visible ? (
           <button
             className="button button--compact button--primary"
             disabled={micAction.disabled}
             type="button"
-            onClick={onStartAudio}
+            onClick={onStartPublishing}
           >
             {micAction.label}
           </button>

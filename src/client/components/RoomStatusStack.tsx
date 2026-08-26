@@ -8,7 +8,6 @@ interface RoomStatusStackProps {
   state: SessionState | null;
   reclaimed: boolean;
   error: string | null;
-  iphoneAudioCandidate: boolean;
   hiddenFailureCodes: FailureCode[];
   onRetry: () => void;
   onDismissFailure: (failureCode: FailureCode) => void;
@@ -18,7 +17,6 @@ export function RoomStatusStack({
   state,
   reclaimed,
   error,
-  iphoneAudioCandidate,
   hiddenFailureCodes,
   onRetry,
   onDismissFailure,
@@ -31,16 +29,7 @@ export function RoomStatusStack({
       {/* H3 */}
       <PinnedConfigBanner />
       <div className="mobile-warning" role="status">
-        {iphoneAudioCandidate ? (
-          <>
-            <b>!</b> iPhone Safari 27+ audio candidate · foreground only · physical acceptance
-            pending
-          </>
-        ) : (
-          <>
-            <b>!</b> Desktop Chrome or iPhone Safari 27+ required for live audio
-          </>
-        )}
+        <b>!</b> Desktop Chrome required for live audio
       </div>
 
       {reclaimed ? (
@@ -55,20 +44,6 @@ export function RoomStatusStack({
           <button type="button" onClick={onRetry}>
             Retry now
           </button>
-        </p>
-      ) : null}
-
-      {state?.phase.name === "resume_required" ? (
-        <p className="audio-resume-banner" role="status">
-          <b>Audio paused.</b> {state.phase.reason} Return to the foreground and tap Resume audio.
-        </p>
-      ) : null}
-
-      {state?.phase.name === "live" &&
-      (state.audioLifecycle.wakeLock === "denied" ||
-        state.audioLifecycle.wakeLock === "released") ? (
-        <p className="audio-lifecycle-note" role="status">
-          {state.audioLifecycle.wakeLockReason} Audio remains foreground-only.
         </p>
       ) : null}
 
