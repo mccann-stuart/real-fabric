@@ -21,4 +21,18 @@ describe("AdaptiveJitterBuffer", () => {
     expect(buffer.depth).toBe(1);
     expect(buffer.targetMs).toBeLessThanOrEqual(200);
   });
+
+  it("handles duplicate sequences and out-of-order frames correctly", () => {
+    const buffer = new AdaptiveJitterBuffer<string>();
+    buffer.push({ sequence: 3, groupId: 1, receivedAt: 1_040, value: "three" });
+    buffer.push({ sequence: 1, groupId: 1, receivedAt: 1_000, value: "one" });
+    buffer.push({ sequence: 2, groupId: 1, receivedAt: 1_020, value: "two" });
+    // Duplicate frame push
+    buffer.push({ sequence: 2, groupId: 1, receivedAt: 1_025, value: "two-duplicate" });
+
+    expect(buffer.depth).toBe(3);
+    expect(buffer.pull(1_120)).toBe("one");
+    expect(buffer.pull(1_120)).toBe("two");
+    expect(buffer.pull(1_120)).toBe("three");
+  });
 });

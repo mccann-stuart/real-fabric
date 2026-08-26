@@ -1,27 +1,26 @@
 import {
   currentUserAgentFacts,
-  describePin,
+  describeTargets,
   matchConfiguration,
-  PINNED_CONFIGURATION,
 } from "../../shared/pinnedConfiguration";
 
 /**
- * H3: anything other than the pinned browser, operating system and major
- * version shows a "not the tested configuration" banner.
+ * H3: anything outside the named browser, operating-system and major-version
+ * candidates shows a live-audio-unavailable banner.
  *
- * The pin is provisional until Gate 2 exit (§14), and the banner says so
- * rather than implying a decision that has not been taken.
+ * Each candidate remains provisional until its applicable acceptance gates
+ * pass, and the banner says so rather than implying support.
  */
 export function PinnedConfigBanner() {
   const match = matchConfiguration(currentUserAgentFacts());
-  if (match.tested) return null;
+  if (match.status === "supported") return null;
+  const provisional = match.status === "provisional";
   return (
-    <section className="pin-banner" role="status">
-      <b>Not the tested configuration.</b>{" "}
+    <section className={`pin-banner${provisional ? " pin-banner--provisional" : ""}`} role="status">
+      <b>{provisional ? "Provisional audio configuration." : "Live audio unavailable here."}</b>{" "}
       <span>
-        {match.reason} The demo is tested on {describePin()}, and behaviour here is unverified.
+        {match.reasons.join(" ")} The configured targets are {describeTargets()}.
       </span>
-      <small>{PINNED_CONFIGURATION.note}</small>
     </section>
   );
 }
@@ -30,24 +29,38 @@ export function PinnedConfigBanner() {
 export function PinnedConfigSummary() {
   const match = matchConfiguration(currentUserAgentFacts());
   return (
-    <div className={`pin-summary pin-summary--${match.tested ? "tested" : "untested"}`}>
+    <div className={`pin-summary pin-summary--${match.liveAudioEligible ? "tested" : "untested"}`}>
       <dl>
         <div>
-          <dt>Tested configuration</dt>
-          <dd>{describePin()}</dd>
+          <dt>Audio configuration targets</dt>
+          <dd>{describeTargets()}</dd>
         </div>
         <div>
           <dt>This browser</dt>
           <dd>
-            {match.browser} on {match.platform}
+            {match.browser} on {match.device === "iPhone" ? "iPhone " : ""}
+            {match.platform}
           </dd>
         </div>
         <div>
           <dt>Status</dt>
-          <dd>{match.tested ? "Matches the pin" : "Not the tested configuration"}</dd>
+          <dd>{configurationStatusLabel(match.status)}</dd>
         </div>
       </dl>
-      <small>{PINNED_CONFIGURATION.note}</small>
+      <small>{match.reasons.join(" ")}</small>
     </div>
   );
+}
+
+function configurationStatusLabel(status: ReturnType<typeof matchConfiguration>["status"]): string {
+  switch (status) {
+    case "supported":
+      return "Supported";
+    case "provisional":
+      return "Provisional — acceptance pending";
+    case "readOnly":
+      return "Read-only";
+    default:
+      return "Unsupported";
+  }
 }
