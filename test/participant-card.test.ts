@@ -1,7 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
-import { ParticipantCard } from "../src/client/components/ParticipantCard";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it, vi } from "vitest";
+import { ParticipantCard } from "../src/client/components/ParticipantCard";
 import type { Participant, RoutingPreference } from "../src/shared/contracts";
 
 describe("ParticipantCard component", () => {
@@ -13,6 +13,10 @@ describe("ParticipantCard component", () => {
     address: "ai/ada",
     simulated: false,
     pipeline: "listening",
+    joinedAt: 1000,
+    reconnectUntil: null,
+    wakeName: "ada",
+    lastActiveAt: 1000,
   };
 
   const mockRouting: RoutingPreference[] = [
@@ -22,6 +26,7 @@ describe("ParticipantCard component", () => {
       hearsMe: true,
       iHearIt: true,
       enforcement: "cooperative",
+      updatedAt: 1000,
     },
   ];
 
