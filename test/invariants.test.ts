@@ -24,15 +24,20 @@ import {
   type Participant,
   type RoutingPreference,
 } from "../src/shared/contracts";
-import { ALL_FAILURE_CODES, allFailureStates } from "../src/shared/failures";
+import { ALL_FAILURE_CODES, allFailureStates, failureState } from "../src/shared/failures";
 import { formatMeasurement, measured, notExposed } from "../src/shared/measurement";
-import { matchConfiguration, PINNED_CONFIGURATION } from "../src/shared/pinnedConfiguration";
+import {
+  currentUserAgentFacts,
+  matchConfiguration,
+  PINNED_CONFIGURATION,
+} from "../src/shared/pinnedConfiguration";
 import {
   audioTrack,
   fanOut,
   parseTrackName,
   participantNamespace,
   presenceTrack,
+  trackKey,
 } from "../src/shared/tracks";
 
 function human(id: string, overrides: Partial<Participant> = {}): Participant {
@@ -102,6 +107,17 @@ describe("H2 — one independent track per participant, no mixing upstream", () 
     expect(audioTrack("room1", "p1").namespace.startsWith("demo/room1/")).toBe(true);
   });
 
+  it("combines namespace and name into a single track key string", () => {
+    expect(trackKey({ namespace: "demo/room1/p1", name: "audio/p1" })).toBe(
+      "demo/room1/p1/audio/p1",
+    );
+    expect(trackKey(audioTrack("room1", "p1"))).toBe("demo/room1/p1/audio/p1");
+    expect(trackKey(presenceTrack("room1", "p1"))).toBe("demo/room1/p1/presence/p1");
+    expect(trackKey({ namespace: "", name: "" })).toBe("/");
+    expect(trackKey({ namespace: "ns", name: "" })).toBe("ns/");
+    expect(trackKey({ namespace: "", name: "name" })).toBe("/name");
+  });
+
   it("keeps the uplink at one track regardless of audience size", () => {
     expect(fanOut(["a", "b", "c"], true)).toEqual({ publishedTracks: 1, subscribedTracks: 3 });
     expect(fanOut(new Array(50).fill("x"), true).publishedTracks).toBe(1);
@@ -115,7 +131,8 @@ describe("H3 — one pinned browser, others warned", () => {
       brands: [{ brand: "Google Chrome", version: "141" }],
       platform: "macOS",
     });
-    expect(match.tested).toBe(true);
+    expect(match.status).toBe("provisional");
+    expect(match.liveAudioEligible).toBe(true);
   });
 
   it("rejects a different browser, an older version and another platform", () => {
@@ -123,25 +140,100 @@ describe("H3 — one pinned browser, others warned", () => {
       userAgent: "Mozilla/5.0 (Macintosh) Chrome/141.0.0.0 Edg/141.0.0.0",
       platform: "macOS",
     });
-    expect(edge.tested).toBe(false);
+    expect(edge.liveAudioEligible).toBe(false);
 
     const old = matchConfiguration({
       userAgent: "Mozilla/5.0 (Macintosh) Chrome/120.0.0.0",
       platform: "macOS",
     });
-    expect(old.tested).toBe(false);
-    if (!old.tested) expect(old.reason).toContain(String(PINNED_CONFIGURATION.minimumMajorVersion));
+    expect(old.liveAudioEligible).toBe(false);
+    expect(old.reasons.join(" ")).toContain(String(PINNED_CONFIGURATION.minimumMajorVersion));
 
     const windows = matchConfiguration({
       userAgent: "Mozilla/5.0 (Windows NT 10.0) Chrome/141.0.0.0",
       platform: "Windows",
     });
-    expect(windows.tested).toBe(false);
+    expect(windows.liveAudioEligible).toBe(false);
   });
 
   it("does not present a provisional pin as a decision", () => {
     expect(PINNED_CONFIGURATION.status).toBe("provisional");
     expect(PINNED_CONFIGURATION.note).toMatch(/Gate 2/);
+  });
+
+  it("extracts user agent facts from the global navigator object", () => {
+    const originalNavigator = globalThis.navigator;
+
+    try {
+      // 1. Legacy browser without userAgentData
+      Object.defineProperty(globalThis, "navigator", {
+        value: { userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)" },
+        configurable: true,
+        writable: true,
+      });
+      expect(currentUserAgentFacts()).toEqual({
+        userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+      });
+
+      // 2. Modern browser with brands and platform in userAgentData
+      const mockBrands = [{ brand: "Google Chrome", version: "141" }];
+      Object.defineProperty(globalThis, "navigator", {
+        value: {
+          userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/141.0.0.0",
+          userAgentData: {
+            brands: mockBrands,
+            platform: "macOS",
+          },
+        },
+        configurable: true,
+        writable: true,
+      });
+      const facts = currentUserAgentFacts();
+      expect(facts).toEqual({
+        userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/141.0.0.0",
+        brands: mockBrands,
+        platform: "macOS",
+      });
+      expect(matchConfiguration(facts).tested).toBe(true);
+
+      // 3. Modern browser with userAgentData having only brands
+      Object.defineProperty(globalThis, "navigator", {
+        value: {
+          userAgent: "Mozilla/5.0 Chrome/141.0.0.0",
+          userAgentData: {
+            brands: mockBrands,
+          },
+        },
+        configurable: true,
+        writable: true,
+      });
+      expect(currentUserAgentFacts()).toEqual({
+        userAgent: "Mozilla/5.0 Chrome/141.0.0.0",
+        brands: mockBrands,
+      });
+
+      // 4. Modern browser with userAgentData having only platform
+      Object.defineProperty(globalThis, "navigator", {
+        value: {
+          userAgent: "Mozilla/5.0 Chrome/141.0.0.0",
+          userAgentData: {
+            platform: "macOS",
+          },
+        },
+        configurable: true,
+        writable: true,
+      });
+      expect(currentUserAgentFacts()).toEqual({
+        userAgent: "Mozilla/5.0 Chrome/141.0.0.0",
+        platform: "macOS",
+      });
+    } finally {
+      Object.defineProperty(globalThis, "navigator", {
+        value: originalNavigator,
+        configurable: true,
+        writable: true,
+      });
+    }
   });
 });
 
@@ -334,6 +426,17 @@ describe("room status presentation", () => {
       label: "Start microphone",
       visible: true,
     });
+    expect(microphoneAction({ name: "idle" }, false, { name: "awaiting_audio_start" })).toEqual({
+      disabled: false,
+      label: "Start audio",
+      visible: true,
+    });
+    expect(
+      microphoneAction({ name: "resume_required", reason: "hidden" }, false, {
+        name: "resume_required",
+        reason: "hidden",
+      }),
+    ).toEqual({ disabled: false, label: "Resume audio", visible: true });
     expect(
       microphoneAction(
         { name: "listen_only", failure: "microphone_denied", reason: "Denied" },
@@ -515,6 +618,25 @@ describe("H13 — ten minutes without unbounded growth or uncorrected drift", ()
     const estimator = new DriftEstimator("t3");
     estimator.observe(0, 0);
     expect(estimator.skewPpm().exposed).toBe(false);
+  });
+});
+
+describe("failureState", () => {
+  it("returns the exact failure state matching the given code", () => {
+    for (const code of ALL_FAILURE_CODES) {
+      const state = failureState(code);
+      expect(state.code).toBe(code);
+      expect(typeof state.title).toBe("string");
+      expect(state.title.length).toBeGreaterThan(0);
+      expect(typeof state.experience).toBe("string");
+      expect(state.experience.length).toBeGreaterThan(0);
+      expect(typeof state.behaviour).toBe("string");
+      expect(state.behaviour.length).toBeGreaterThan(0);
+      expect(typeof state.recovery).toBe("string");
+      expect(state.recovery.length).toBeGreaterThan(0);
+      expect(["blocking", "degraded", "transient"]).toContain(state.severity);
+      expect(typeof state.blocksPublication).toBe("boolean");
+    }
   });
 });
 
