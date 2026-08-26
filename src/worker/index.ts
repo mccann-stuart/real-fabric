@@ -77,41 +77,11 @@ export default {
 async function route(request: Request, env: Env, correlationId: string): Promise<Response> {
   const url = new URL(request.url);
   if (request.method === "GET" && url.pathname === "/api/health") {
-    // Gate 1 facts, read from configuration rather than assumed. The client
-    // renders the specific §10 failure from these, never a generic error.
-    // `relayEndpoint` is what the pre-flight HTTP/3 probe aims at (§11.2), so
-    // the probe tests the endpoint the room would really use.
-    return json({
-      ok: true,
-      service: "real-fabric",
-      draft: env.MOQT_DRAFT,
-      relayEndpoint: configValue(env.MOQ_RELAY_URL) || null,
-      relayEndpointName: endpointName(configValue(env.MOQ_RELAY_URL)),
-      relayCredentialConfigured: configuredRelayCredential(env.MOQ_RELAY_TOKEN) !== null,
-      transportVerified: configFlag(env.MOQT_TRANSPORT_VERIFIED),
-      routingEnforcement:
-        configValue(env.MOQ_ROUTING_ENFORCEMENT) === "enforced" ? "enforced" : "cooperative",
-      discovery: configValue(env.MOQ_DISCOVERY),
-    });
+    return handleHealth(env);
   }
 
   if (request.method === "POST" && url.pathname === "/api/rooms") {
-    const body = await readJsonObject(request);
-    const displayName = requiredString(body, "displayName", 80);
-    await enforceCreationRateLimit(request, env);
-    const code = roomCode();
-    const stub = roomStub(env, code);
-    await stub.initialise(code, Date.now());
-    const joined = await stub.join(displayName);
-    logRoomEvent("room_created", correlationId, code, joined.participant.id);
-    return json<CreateRoomResponse>(
-      {
-        ...joined,
-        relayCredential: relayCredential(env),
-        correlationId,
-      },
-      201,
-    );
+    return handleCreateRoom(request, env, correlationId);
   }
 
   const match = url.pathname.match(
@@ -121,169 +91,225 @@ async function route(request: Request, env: Env, correlationId: string): Promise
     const code = match[1];
     const action = match[2];
     if (!code) throw new HttpError(404, "room_not_found", "The room code is invalid.");
-    const stub = roomStub(env, code);
-
-    if (request.method === "GET" && !action) {
-      const room = await stub.getSnapshot();
-      if (!room) throw roomNotFound();
-      return json<RoomSnapshot>(room);
-    }
-
-    if (request.method === "POST" && action === "join") {
-      if (!(await stub.getSnapshot())) throw roomNotFound();
-      const body = await readJsonObject(request);
-      const displayName = requiredString(body, "displayName", 80);
-      const rejoinToken = optionalString(body, "rejoinToken", 128);
-      const joined = await stub.join(displayName, rejoinToken);
-      logRoomEvent("participant_joined", correlationId, code, joined.participant.id);
-      return json<JoinRoomResponse>({
-        ...joined,
-        relayCredential: relayCredential(env),
-        correlationId,
-      });
-    }
-
-    if (request.method === "POST" && action === "leave") {
-      const body = await readJsonObject(request);
-      const participantId = requiredString(body, "participantId", 64);
-      const rejoinToken = requiredString(body, "rejoinToken", 128);
-      const room = await stub.leave(participantId, rejoinToken);
-      logRoomEvent("participant_left", correlationId, code, participantId);
-      return json(room);
-    }
-
-    if (request.method === "POST" && action === "routing") {
-      const body = await readJsonObject(request);
-      const participantId = requiredString(body, "participantId", 64);
-      const rejoinToken = requiredString(body, "rejoinToken", 128);
-      const aiId = requiredString(body, "aiId", 64);
-      const hearsMe = requiredBoolean(body, "hearsMe");
-      const iHearIt = requiredBoolean(body, "iHearIt");
-      const room = await stub.updateRouting(participantId, rejoinToken, aiId, hearsMe, iHearIt);
-      logRoomEvent("routing_changed", correlationId, code, participantId);
-      return json(room);
-    }
-
-    if (request.method === "POST" && action === "ai") {
-      const body = await readJsonObject(request);
-      const credential = readCredential(body);
-      const displayName = requiredString(body, "displayName", 80);
-      const address = optionalString(body, "address", 80);
-      const wakeName = optionalString(body, "wakeName", 80);
-      const simulated = requiredBoolean(body, "simulated");
-      const room = await stub.addAi(credential, displayName, {
-        ...(address ? { address } : {}),
-        ...(wakeName ? { wakeName } : {}),
-        simulated,
-      });
-      logRoomEvent("ai_added", correlationId, code, credential.participantId);
-      return json(room, 201);
-    }
-
-    if (request.method === "DELETE" && action === "ai") {
-      const body = await readJsonObject(request);
-      const credential = readCredential(body);
-      const aiId = requiredString(body, "aiId", 64);
-      const room = await stub.removeAi(credential, aiId);
-      logRoomEvent("ai_removed", correlationId, code, credential.participantId);
-      return json(room);
-    }
-
-    if (request.method === "POST" && action === "ai-pipeline") {
-      const body = await readJsonObject(request);
-      const credential = readCredential(body);
-      const aiId = requiredString(body, "aiId", 64);
-      const pipeline = requiredEnum<AiPipelineState>(body, "pipeline", [
-        "listening",
-        "thinking",
-        "speaking",
-        "interrupted",
-        "unavailable",
-      ]);
-      const room = await stub.setAiPipeline(credential, aiId, pipeline);
-      return json(room);
-    }
-
-    if (request.method === "POST" && action === "floor") {
-      const body = await readJsonObject(request);
-      const credential = readCredential(body);
-      const aiId = requiredString(body, "aiId", 64);
-      const operation = requiredEnum(body, "operation", ["request", "release"] as const);
-      if (operation === "release") return json(await stub.releaseFloor(credential, aiId));
-      const result = await stub.requestFloor(credential, aiId);
-      logRoomEvent("floor_requested", correlationId, code, credential.participantId);
-      return json(result);
-    }
-
-    if (request.method === "POST" && action === "ai-to-ai") {
-      const body = await readJsonObject(request);
-      const credential = readCredential(body);
-      const operation = requiredEnum(body, "operation", [
-        "enable",
-        "disable",
-        "turn",
-        "reset",
-      ] as const);
-      if (operation === "turn") {
-        const result = await stub.recordAiToAiTurn(credential);
-        logRoomEvent("ai_to_ai_turn", correlationId, code, credential.participantId);
-        return json(result);
-      }
-      if (operation === "reset") {
-        await stub.resetAiToAiTurns(credential);
-        const room = await stub.getSnapshot();
-        if (!room) throw roomNotFound();
-        return json(room);
-      }
-      const room = await stub.setAiToAi(credential, operation === "enable");
-      logRoomEvent("ai_to_ai_changed", correlationId, code, credential.participantId);
-      return json(room);
-    }
-
-    if (request.method === "POST" && action === "presenter") {
-      const body = await readJsonObject(request);
-      const credential = readCredential(body);
-      const room = await stub.configurePresenter(credential, {
-        simulatedHumans: requiredInteger(body, "simulatedHumans", 0, MAX_SIMULATED_PARTICIPANTS),
-        simulatedAis: requiredInteger(body, "simulatedAis", 0, MAX_SIMULATED_PARTICIPANTS),
-        scriptedResponses: requiredBoolean(body, "scriptedResponses"),
-      });
-      logRoomEvent("presenter_configured", correlationId, code, credential.participantId);
-      return json(room);
-    }
-
-    if (request.method === "POST" && action === "active") {
-      const body = await readJsonObject(request);
-      const credential = readCredential(body);
-      const participantId = requiredString(body, "targetId", 64);
-      await stub.markActive(credential, participantId);
-      return new Response(null, { status: 204, headers: { "cache-control": "no-store" } });
-    }
-
-    if (request.method === "GET" && action === "events") {
-      if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
-        throw new HttpError(
-          426,
-          "websocket_required",
-          "This control-plane endpoint requires WebSocket upgrade.",
-        );
-      }
-      const participantId = url.searchParams.get("participant") ?? "";
-      const rejoinToken = url.searchParams.get("token") ?? "";
-      if (!participantId || !rejoinToken) {
-        throw new HttpError(
-          401,
-          "participant_auth_required",
-          "Participant control credentials are required.",
-        );
-      }
-      return stub.fetch(request);
-    }
+    const response = await handleRoomAction(request, env, correlationId, code, action);
+    if (response) return response;
   }
 
   if (url.pathname.startsWith("/api/"))
     throw new HttpError(404, "not_found", "API route not found.");
   return env.ASSETS.fetch(request);
+}
+
+function handleHealth(env: Env): Response {
+  // Gate 1 facts, read from configuration rather than assumed. The client
+  // renders the specific §10 failure from these, never a generic error.
+  // `relayEndpoint` is what the pre-flight HTTP/3 probe aims at (§11.2), so
+  // the probe tests the endpoint the room would really use.
+  return json({
+    ok: true,
+    service: "real-fabric",
+    draft: env.MOQT_DRAFT,
+    relayEndpoint: configValue(env.MOQ_RELAY_URL) || null,
+    relayEndpointName: endpointName(configValue(env.MOQ_RELAY_URL)),
+    relayCredentialConfigured: configuredRelayCredential(env.MOQ_RELAY_TOKEN) !== null,
+    transportVerified: configFlag(env.MOQT_TRANSPORT_VERIFIED),
+    routingEnforcement:
+      configValue(env.MOQ_ROUTING_ENFORCEMENT) === "enforced" ? "enforced" : "cooperative",
+    discovery: configValue(env.MOQ_DISCOVERY),
+  });
+}
+
+async function handleCreateRoom(
+  request: Request,
+  env: Env,
+  correlationId: string,
+): Promise<Response> {
+  const body = await readJsonObject(request);
+  const displayName = requiredString(body, "displayName", 80);
+  await enforceCreationRateLimit(request, env);
+  const code = roomCode();
+  const stub = roomStub(env, code);
+  await stub.initialise(code, Date.now());
+  const joined = await stub.join(displayName);
+  logRoomEvent("room_created", correlationId, code, joined.participant.id);
+  return json<CreateRoomResponse>(
+    {
+      ...joined,
+      relayCredential: relayCredential(env),
+      correlationId,
+    },
+    201,
+  );
+}
+
+async function handleRoomAction(
+  request: Request,
+  env: Env,
+  correlationId: string,
+  code: string,
+  action: string | undefined,
+): Promise<Response | null> {
+  const stub = roomStub(env, code);
+
+  if (request.method === "GET" && !action) {
+    const room = await stub.getSnapshot();
+    if (!room) throw roomNotFound();
+    return json<RoomSnapshot>(room);
+  }
+
+  if (request.method === "POST" && action === "join") {
+    if (!(await stub.getSnapshot())) throw roomNotFound();
+    const body = await readJsonObject(request);
+    const displayName = requiredString(body, "displayName", 80);
+    const rejoinToken = optionalString(body, "rejoinToken", 128);
+    const joined = await stub.join(displayName, rejoinToken);
+    logRoomEvent("participant_joined", correlationId, code, joined.participant.id);
+    return json<JoinRoomResponse>({
+      ...joined,
+      relayCredential: relayCredential(env),
+      correlationId,
+    });
+  }
+
+  if (request.method === "POST" && action === "leave") {
+    const body = await readJsonObject(request);
+    const participantId = requiredString(body, "participantId", 64);
+    const rejoinToken = requiredString(body, "rejoinToken", 128);
+    const room = await stub.leave(participantId, rejoinToken);
+    logRoomEvent("participant_left", correlationId, code, participantId);
+    return json(room);
+  }
+
+  if (request.method === "POST" && action === "routing") {
+    const body = await readJsonObject(request);
+    const participantId = requiredString(body, "participantId", 64);
+    const rejoinToken = requiredString(body, "rejoinToken", 128);
+    const aiId = requiredString(body, "aiId", 64);
+    const hearsMe = requiredBoolean(body, "hearsMe");
+    const iHearIt = requiredBoolean(body, "iHearIt");
+    const room = await stub.updateRouting(participantId, rejoinToken, aiId, hearsMe, iHearIt);
+    logRoomEvent("routing_changed", correlationId, code, participantId);
+    return json(room);
+  }
+
+  if (request.method === "POST" && action === "ai") {
+    const body = await readJsonObject(request);
+    const credential = readCredential(body);
+    const displayName = requiredString(body, "displayName", 80);
+    const address = optionalString(body, "address", 80);
+    const wakeName = optionalString(body, "wakeName", 80);
+    const simulated = requiredBoolean(body, "simulated");
+    const room = await stub.addAi(credential, displayName, {
+      ...(address ? { address } : {}),
+      ...(wakeName ? { wakeName } : {}),
+      simulated,
+    });
+    logRoomEvent("ai_added", correlationId, code, credential.participantId);
+    return json(room, 201);
+  }
+
+  if (request.method === "DELETE" && action === "ai") {
+    const body = await readJsonObject(request);
+    const credential = readCredential(body);
+    const aiId = requiredString(body, "aiId", 64);
+    const room = await stub.removeAi(credential, aiId);
+    logRoomEvent("ai_removed", correlationId, code, credential.participantId);
+    return json(room);
+  }
+
+  if (request.method === "POST" && action === "ai-pipeline") {
+    const body = await readJsonObject(request);
+    const credential = readCredential(body);
+    const aiId = requiredString(body, "aiId", 64);
+    const pipeline = requiredEnum<AiPipelineState>(body, "pipeline", [
+      "listening",
+      "thinking",
+      "speaking",
+      "interrupted",
+      "unavailable",
+    ]);
+    const room = await stub.setAiPipeline(credential, aiId, pipeline);
+    return json(room);
+  }
+
+  if (request.method === "POST" && action === "floor") {
+    const body = await readJsonObject(request);
+    const credential = readCredential(body);
+    const aiId = requiredString(body, "aiId", 64);
+    const operation = requiredEnum(body, "operation", ["request", "release"] as const);
+    if (operation === "release") return json(await stub.releaseFloor(credential, aiId));
+    const result = await stub.requestFloor(credential, aiId);
+    logRoomEvent("floor_requested", correlationId, code, credential.participantId);
+    return json(result);
+  }
+
+  if (request.method === "POST" && action === "ai-to-ai") {
+    const body = await readJsonObject(request);
+    const credential = readCredential(body);
+    const operation = requiredEnum(body, "operation", [
+      "enable",
+      "disable",
+      "turn",
+      "reset",
+    ] as const);
+    if (operation === "turn") {
+      const result = await stub.recordAiToAiTurn(credential);
+      logRoomEvent("ai_to_ai_turn", correlationId, code, credential.participantId);
+      return json(result);
+    }
+    if (operation === "reset") {
+      await stub.resetAiToAiTurns(credential);
+      const room = await stub.getSnapshot();
+      if (!room) throw roomNotFound();
+      return json(room);
+    }
+    const room = await stub.setAiToAi(credential, operation === "enable");
+    logRoomEvent("ai_to_ai_changed", correlationId, code, credential.participantId);
+    return json(room);
+  }
+
+  if (request.method === "POST" && action === "presenter") {
+    const body = await readJsonObject(request);
+    const credential = readCredential(body);
+    const room = await stub.configurePresenter(credential, {
+      simulatedHumans: requiredInteger(body, "simulatedHumans", 0, MAX_SIMULATED_PARTICIPANTS),
+      simulatedAis: requiredInteger(body, "simulatedAis", 0, MAX_SIMULATED_PARTICIPANTS),
+      scriptedResponses: requiredBoolean(body, "scriptedResponses"),
+    });
+    logRoomEvent("presenter_configured", correlationId, code, credential.participantId);
+    return json(room);
+  }
+
+  if (request.method === "POST" && action === "active") {
+    const body = await readJsonObject(request);
+    const credential = readCredential(body);
+    const participantId = requiredString(body, "targetId", 64);
+    await stub.markActive(credential, participantId);
+    return new Response(null, { status: 204, headers: { "cache-control": "no-store" } });
+  }
+
+  if (request.method === "GET" && action === "events") {
+    if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
+      throw new HttpError(
+        426,
+        "websocket_required",
+        "This control-plane endpoint requires WebSocket upgrade.",
+      );
+    }
+    const url = new URL(request.url);
+    const participantId = url.searchParams.get("participant") ?? "";
+    const rejoinToken = url.searchParams.get("token") ?? "";
+    if (!participantId || !rejoinToken) {
+      throw new HttpError(
+        401,
+        "participant_auth_required",
+        "Participant control credentials are required.",
+      );
+    }
+    return stub.fetch(request);
+  }
+
+  return null;
 }
 
 /**
