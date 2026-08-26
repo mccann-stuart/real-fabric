@@ -9,10 +9,6 @@
       "!!.wrangler",
       "!!.claude",
       "!!.codex",
-      "!!security/checkpoints",
-      "!!security/coverage.json",
-      "!!security/findings.json",
-      "!!security/scan-manifest.json",
       "!!worker-configuration.d.ts"
     ]
   },

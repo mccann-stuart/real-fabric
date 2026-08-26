@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   CAPTURE_FRAME_SAMPLES,
-  inspectAudioWorkletCaptureSupport,
   inspectCaptureSupport,
   PcmFrameAssembler,
 } from "../src/client/audio/UniversalAudioCaptureAdapter";
@@ -19,18 +18,13 @@ describe("Standards §6 — universal audio capture boundary", () => {
   });
 
   it("selects AudioWorklet when the Chromium-only processor is absent", () => {
-    const environment = {
+    const support = inspectCaptureSupport({
       AudioData: class {} as unknown as typeof AudioData,
       AudioContext: class {} as unknown as typeof AudioContext,
       AudioWorkletNode: class {} as unknown as typeof AudioWorkletNode,
-    };
-    const support = inspectCaptureSupport(environment);
+    });
 
     expect(support).toMatchObject({ available: true, path: "audio_worklet" });
-    expect(inspectAudioWorkletCaptureSupport(environment)).toMatchObject({
-      available: true,
-      path: "audio_worklet",
-    });
   });
 
   it("reports the missing capture capability instead of claiming a fallback", () => {
