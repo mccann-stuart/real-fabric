@@ -36,7 +36,7 @@ The configured Cloudflare isolated relay, provisioned credential and draft-16 cl
 |---|---|---|
 | **Required** | [QUIC RFC 9000](https://www.rfc-editor.org/info/rfc9000) | UDP-based secure multiplexed transport. |
 | **Required** | [HTTP/3 RFC 9114](https://www.rfc-editor.org/info/rfc9114) and Extended CONNECT [RFC 9220](https://www.rfc-editor.org/info/rfc9220) | HTTP/3 session establishment for WebTransport. |
-| **Required transport prerequisite** | HTTP Datagrams and Capsules [RFC 9297](https://www.rfc-editor.org/info/rfc9297) and QUIC DATAGRAM [RFC 9221](https://www.rfc-editor.org/info/rfc9221) | Negotiated by WebTransport-over-HTTP/3 and MOQT. Real Fabric currently carries audio objects on streams rather than its application datagram path. |
+| **Required transport prerequisite** | HTTP Datagrams and Capsules [RFC 9297](https://www.rfc-editor.org/info/rfc9297) and QUIC DATAGRAM [RFC 9221](https://www.rfc-editor.org/info/rfc9221) | Negotiated by WebTransport-over-HTTP/3 and MOQT. Real Fabric currently carries audio objects on streams rather than its application datagram path: the adapter opens the session with `enableDatagrams: false`. |
 | **Required** | [W3C WebTransport Candidate Recommendation](https://www.w3.org/TR/webtransport/) | `requireUnreliable: true` prevents a reliable-only HTTP/2/TCP first hop. The adapter also requires `reliability === "supports-unreliable"` after connection. |
 | **Draft-sensitive** | [IETF WebTransport over HTTP/3 draft 16](https://datatracker.ietf.org/doc/draft-ietf-webtrans-http3/16/) | Current HTTP/3 protocol definition beneath the browser API. It is not yet an RFC. |
 | **Draft-sensitive** | [IETF MOQT draft 19](https://datatracker.ietf.org/doc/draft-ietf-moq-transport/) | Current work in progress. The configured runtime remains draft 16 because `moqtail@0.12.1` and the relay frame it; draft 20 remains the product target. No wire upgrade occurs until client and relay support the same draft. |
@@ -71,7 +71,7 @@ Apple currently publishes [Safari 27](https://developer.apple.com/documentation/
 | iPadOS, Android or other narrow devices | Any browser | **Read-only.** | Separately approved product scope and complete acceptance matrix. |
 | Other desktop combinations | Any browser | **Unsupported / unverified.** | Capability implementation and the full H3 acceptance suite. |
 
-User-agent parsing checks iPhone before Macintosh tokens, reads Safari's major version from `Version/` rather than the WebKit `Safari/` build, and fails closed when the iOS major cannot be identified.
+User-agent parsing checks iPhone before Macintosh tokens, reads Safari's major version from `Version/` rather than the WebKit `Safari/` build, and fails closed when the iOS major cannot be identified. Two further classifications follow from the same code rather than from the table: macOS Chrome below the 141 floor is **unsupported**, not read-only, because it names the floor it missed; and Edge, Opera, Brave and Samsung Internet are never accepted as Chrome, whatever Chromium version they report.
 
 ## 4. Foreground iPhone lifecycle
 
@@ -84,7 +84,7 @@ User-agent parsing checks iPhone before Macintosh tokens, reads Safari's major v
 
 ## 5. Evidence and acceptance
 
-The automated suite has **152 passing tests across ten files**. It covers the iOS/Safari version floor and exclusions, HTTP/3-only constructor options, reliable-only refusal at both probe and MOQT adapter boundaries, low-latency reporting, Opus option negotiation and rejection, Audio Session and wake-lock state, explicit activation, interruption teardown, playback deduplication across resume, plus the existing Worker, room, transport, routing, audio and telemetry contracts.
+The automated suite has **206 tests across seventeen files**. It covers the iOS/Safari version floor and exclusions, HTTP/3-only constructor options, reliable-only refusal at both probe and MOQT adapter boundaries, low-latency reporting, Opus option negotiation and rejection, Audio Session and wake-lock state, explicit activation, interruption teardown, playback deduplication across resume, plus the existing Worker, room, transport, routing, audio and telemetry contracts.
 
 Automated tests do not prove:
 
