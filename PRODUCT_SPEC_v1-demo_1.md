@@ -30,8 +30,8 @@ This section records implementation state; it does not weaken the acceptance cri
 - Dynamic device tracking, packet-loss concealment, bounded recovery and silence-gated drift correction are implemented and unit-tested; they have not passed acoustic or live-relay acceptance.
 - A bounded capture adapter retains `MediaStreamTrackProcessor` as the preferred Chrome path and adds an exact-frame AudioWorklet path for future desktop evaluation. Selection and framing are unit-tested; real-browser and acoustic parity remain open.
 - Concurrent-room limits, relay credential rate-limiting and the per-room AI cost ceiling remain product requirements rather than implemented controls.
-- Capture, relay-accepted publication and local subscription intent are separate states. Room membership completes before audio; **Start audio** and **Resume audio** initiate AudioContext activation, microphone capture and MOQT from the user action. `PUBLISH_OK` is required before the uplink or publish event appears; a rejected request stops capture and its exact sanitised refusal remains in same-tab session history.
-- The automated suite contains 152 passing tests across ten files. The Objects and Latency tabs compare exposed session figures with specification-defined budgets or targets and identify diagnostic-only figures as `Reported · no gate`; acoustic loopback remains `Not exposed`. Gate 1 interoperability, physical-device Safari 27 acceptance, measured capacity, the audible ten-minute run and two clean venue-network script runs remain open.
+- Capture, relay-accepted publication and local subscription intent are separate states. `PUBLISH_OK` is required before the uplink or publish event appears; a rejected request stops capture and its exact sanitised refusal remains in same-tab session history.
+- The automated suite contains 135 passing tests across nine files. The Objects and Latency tabs compare exposed session figures with specification-defined budgets or targets and identify diagnostic-only figures as `Reported · no gate`; acoustic loopback remains `Not exposed`. Gate 1 interoperability, cross-browser acceptance, measured capacity, the audible ten-minute run and two clean venue-network script runs remain open.
 
 ---
 
@@ -70,15 +70,15 @@ v1 has failed if any of these is untrue.
 
 ### 0.2 Firm exclusions for v1
 
-Video, screen share, recording, dial-in, moderation, accounts, captions, a WebRTC comparison, mobile outside the named foreground iPhone Safari candidate, end-to-end encryption opaque to the AIs, and any claim of MOQT interoperability or production readiness.
+Video, screen share, recording, dial-in, moderation, accounts, captions, a WebRTC comparison, mobile, end-to-end encryption opaque to the AIs, and any claim of MOQT interoperability or production readiness.
 
 ### 0.3 Deferred, to be built
 
 | Item | Why not v1 |
 |---|---|
 | Captions and the `transcript/` track | Next task; it must include an explicit retention, privacy and screen-space design before implementation |
-| Additional desktop browsers | H3 requires every capable combination to be tested and named; the current code recognises provisional Chrome 141+ on macOS only on desktop |
-| General iOS and Android support | Top-level Safari 27+ on iPhone with iOS 27+ is a foreground-only provisional candidate. Other mobile configurations, continuous background audio and installed Home Screen mode remain outside this scope. |
+| Additional desktop browsers | H3 requires every capable combination to be tested and named; the current code recognises only provisional Chrome 141+ on macOS |
+| iOS and Android | Autoplay gating, route changes, background suspension |
 | AI-to-AI conversation | Enabled by H10's default but deliberately off; see FR4 for the loop risk |
 | Global mute — one participant silencing another for everyone | Needs an authority model the demo does not have. v1 routing is per-listener only |
 | Viewer comprehension study | Needs a study design nobody runs before a conference deadline |
@@ -743,14 +743,14 @@ The real acceptance test. Three and a half minutes, in order.
 | AI worker transport: raw QUIC or WebTransport | AI Lead | Gate 1 | Open; no live AI worker exists |
 | Recognition, model and synthesis providers; retention terms; per-room cost ceiling | Product Owner | Gate 2 start | Not implemented |
 | Addressing mechanism: hold-to-ask or wake name | UX Lead | Gate 2 exit | Hold-to-ask is wired; wake names are stored but not detected |
-| Supported browser, OS and major-version matrix | QA Lead | Gate 2 exit | Open; current implementation recognises provisional Chrome 141+ on macOS and top-level Safari 27+ on iPhone with iOS 27+, both pending applicable real-browser acceptance |
+| Supported browser, OS and major-version matrix | QA Lead | Gate 2 exit | Open; current implementation recognises provisional Chrome 141+ on macOS only |
 | Grid layout threshold and ordering rule | UX Lead | Gate 2 exit | Compact threshold = 8 |
 | Reference network definition | QA Lead | Gate 2 exit | Open; wired or good Wi-Fi remains the provisional test condition |
 
 ## 15. Source basis
 
 - [RFC 9000](https://www.rfc-editor.org/info/rfc9000/) — IETF Standards Track, May 2021.
-- [W3C WebTransport Candidate Recommendation](https://www.w3.org/TR/webtransport/) — browser streams and datagrams API.
+- [W3C WebTransport Working Draft](https://www.w3.org/TR/webtransport/) — browser streams and datagrams API; explicitly work in progress.
 - [MDN WebTransport](https://developer.mozilla.org/en-US/docs/Web/API/WebTransport) — Baseline 2026, with older-device and subfeature caveats.
 - [IETF MOQT draft](https://datatracker.ietf.org/doc/draft-ietf-moq-transport/) — datatracker at `-19` as checked on 25 August 2026; **`-20` is not yet published**. Not an RFC.
 - [Cloudflare isolated relay API](https://blog.cloudflare.com/moq-relays/) — isolated relays and separate publisher/subscriber credentials; Cloudflare reports draft-16 production support, July 2026.
@@ -758,7 +758,5 @@ The real acceptance test. Three and a half minutes, in order.
 - [MoQ ecosystem directory](https://moqtap.com/directory/) — implementations by draft version; useful for the Gate 1 client survey.
 - [Cloudflare relay launch](https://blog.cloudflare.com/moq/) — launched across 330+ cities, August 2025.
 - [Safari 26.4 release notes](https://developer.apple.com/documentation/safari-release-notes/safari-26_4-release-notes) — WebTransport added in Safari 26.4.
-- [Safari 27 release notes](https://developer.apple.com/documentation/safari-release-notes/safari-27-release-notes) and [iOS 27 release notes](https://developer.apple.com/documentation/ios-ipados-release-notes/ios-ipados-27-release-notes) — the provisional physical-device candidate; beta status is not acceptance evidence.
-- [WebKit bug 319818](https://bugs.webkit.org/show_bug.cgi?id=319818) — reported Safari WebTransport flow-control deadlock after 16 MB received or 7,600 streams; the iPhone soak must cross both thresholds without hanging.
 
 **Recheck `-20` publication and relay deployment weekly until Gate 1 closes.** The pin is the project's largest external dependency, and its status is the one fact in this document most likely to change without notice.
