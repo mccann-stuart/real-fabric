@@ -1,8 +1,16 @@
-import { useState } from "react";
-import type { RoomSnapshot } from "../../shared/contracts";
+import { type KeyboardEvent, type ReactNode, useState } from "react";
+import {
+  BARGE_IN_BUDGET_MS,
+  ROUTING_CHANGE_BUDGET_MS,
+  type RoomSnapshot,
+} from "../../shared/contracts";
 import { LATENCY_STAGES, LATENCY_TARGETS, TOTAL_BUDGET_MS } from "../../shared/latency";
 import { type Measurement, measured, notExposed } from "../../shared/measurement";
+import { MAXIMUM_BUFFER_MS } from "../audio/AdaptiveJitterBuffer";
+import { DEFAULT_BITRATE } from "../audio/CaptureController";
 import type { LadderState } from "../audio/DegradationLadder";
+import { MAXIMUM_CORRECTION_RATIO } from "../audio/DriftEstimator";
+import { AUDIO_FRAME_DURATION_MS, AUDIO_OBJECT_HEADER_BYTES } from "../audio/frame";
 import type { SessionMetrics, SessionPhase } from "../session/RoomSession";
 import type { SessionEvent } from "../session/SessionEventLog";
 import type { MoqNegotiation } from "../transport/MoqTransportAdapter";
@@ -34,6 +42,20 @@ export interface InspectorProps {
 
 type Tab = "signal" | "graph" | "objects" | "latency" | "events";
 
+const INSPECTOR_TABS = [
+  ["signal", "Signal", "Signal path"],
+  ["graph", "Graph", "Subscription graph"],
+  ["objects", "Objects", "Objects"],
+  ["latency", "Latency", "Latency"],
+  ["events", "Events", "Events"],
+] as const satisfies ReadonlyArray<readonly [Tab, string, string]>;
+
+const OBJECTS_PER_SECOND_PER_ACTIVE_SPEAKER = 1_000 / AUDIO_FRAME_DURATION_MS;
+const DEFAULT_OBJECT_BYTES =
+  DEFAULT_BITRATE / 8 / OBJECTS_PER_SECOND_PER_ACTIVE_SPEAKER + AUDIO_OBJECT_HEADER_BYTES;
+const MAXIMUM_DRIFT_PPM = Math.round((MAXIMUM_CORRECTION_RATIO - 1) * 1_000_000);
+const SESSION_READY_BUDGET_MS = 5_000;
+
 export function Inspector({
   room,
   viewerId,
@@ -50,6 +72,26 @@ export function Inspector({
 }: InspectorProps) {
   const [tab, setTab] = useState<Tab>("signal");
 
+  const moveTabFocus = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    let nextIndex: number | null = null;
+    if (event.key === "ArrowRight") nextIndex = (index + 1) % INSPECTOR_TABS.length;
+    if (event.key === "ArrowLeft") {
+      nextIndex = (index - 1 + INSPECTOR_TABS.length) % INSPECTOR_TABS.length;
+    }
+    if (event.key === "Home") nextIndex = 0;
+    if (event.key === "End") nextIndex = INSPECTOR_TABS.length - 1;
+    if (nextIndex === null) return;
+
+    event.preventDefault();
+    const nextTab = INSPECTOR_TABS[nextIndex];
+    if (!nextTab) return;
+    setTab(nextTab[0]);
+    event.currentTarget.parentElement
+      ?.querySelectorAll<HTMLButtonElement>("[role='tab']")
+      .item(nextIndex)
+      .focus();
+  };
+
   return (
     <aside className={`inspector${open ? " inspector--open" : ""}`} aria-label="Protocol inspector">
       <div className="inspector__mobile-heading">
@@ -60,22 +102,19 @@ export function Inspector({
       </div>
 
       <div className="inspector__tabs" role="tablist">
-        {(
-          [
-            ["signal", "Signal path"],
-            ["graph", "Subscription graph"],
-            ["objects", "Objects"],
-            ["latency", "Latency"],
-            ["events", "Events"],
-          ] as Array<[Tab, string]>
-        ).map(([id, label]) => (
+        {INSPECTOR_TABS.map(([id, label, accessibleLabel], index) => (
           <button
             key={id}
+            id={`inspector-tab-${id}`}
             type="button"
             role="tab"
+            aria-label={accessibleLabel}
+            aria-controls="inspector-panel"
             aria-selected={tab === id}
+            tabIndex={tab === id ? 0 : -1}
             className={tab === id ? "active" : ""}
             onClick={() => setTab(id)}
+            onKeyDown={(event) => moveTabFocus(event, index)}
           >
             {label}
           </button>
@@ -92,7 +131,12 @@ export function Inspector({
         </b>
       </div>
 
-      <div className="inspector__body">
+      <div
+        id="inspector-panel"
+        className="inspector__body"
+        role="tabpanel"
+        aria-labelledby={`inspector-tab-${tab}`}
+      >
         {tab === "signal" ? (
           <Signal
             room={room}
@@ -191,6 +235,18 @@ function Signal({
           </dd>
         </div>
         <div>
+          <dt>WebTransport reliability</dt>
+          <dd>
+            {negotiation?.transportReliability ?? "Not exposed — no session has completed setup"}
+          </dd>
+        </div>
+        <div>
+          <dt>Congestion control</dt>
+          <dd>
+            {negotiation?.congestionControl ?? "Not exposed — no session has completed setup"}
+          </dd>
+        </div>
+        <div>
           <dt>SERVER_SETUP</dt>
           <dd>
             {negotiation ? (
@@ -246,105 +302,281 @@ function Signal({
 
 function Objects({ metrics, degradation }: { metrics: SessionMetrics; degradation: LadderState }) {
   return (
-    <dl className="object-list">
-      <MeasurementRow
-        label="Object rate"
-        measurement={metrics.objectsPerSecond}
-        format={(value) => value.toFixed(1)}
-        unit="obj/s"
-      />
-      <MeasurementRow label="Late drops" measurement={metrics.lateDrops} />
-      <MeasurementRow label="Cancelled on barge-in" measurement={metrics.cancelledDrops} />
-      {/* §10.5: concealment is counted and shown, not hidden behind the gap. */}
-      <MeasurementRow label="Concealed frames" measurement={metrics.concealedFrames} />
-      <MeasurementRow label="Comfort noise frames" measurement={metrics.comfortNoiseFrames} />
-      <MeasurementRow label="Audio inputs" measurement={metrics.audioInputs} />
-      <MeasurementRow label="Device changes" measurement={metrics.deviceChanges} />
-      <MeasurementRow
-        label="Worst buffer"
-        measurement={metrics.worstBufferMs}
-        format={(value) => String(Math.round(value))}
-        unit="ms"
-      />
-      <MeasurementRow
-        label="Opus DTX"
-        measurement={metrics.dtxEnabled}
-        format={(value) => (value ? "Enabled" : "Not supported by this encoder")}
-      />
-      <div className="measurement-row">
-        <dt>Capacity state</dt>
-        <dd>
-          {degradation.step === 0
-            ? "Within measured capacity"
-            : `Degradation step ${degradation.step} — ${degradation.announcement ?? ""}`}
-        </dd>
-      </div>
-      <div className="measurement-row">
-        <dt>Decoders released</dt>
-        <dd>{degradation.releasedDecoders.length}</dd>
-      </div>
-    </dl>
+    <div className="comparison-view">
+      <ComparisonTable caption="Object delivery">
+        <ComparisonRow
+          label="Published objects"
+          budget="Reported · no gate"
+          measurement={metrics.publishedObjects}
+        />
+        <ComparisonRow
+          label="Inbound objects"
+          budget="Reported · no gate"
+          measurement={metrics.subscribedObjects}
+        />
+        <ComparisonRow
+          label="Inbound object rate"
+          budget={`≈${OBJECTS_PER_SECOND_PER_ACTIVE_SPEAKER} obj/s × active speakers`}
+          measurement={metrics.objectsPerSecond}
+          format={(value) => value.toFixed(1)}
+          unit="obj/s"
+        />
+        <ComparisonRow
+          label="Mean object size"
+          budget={`≈${DEFAULT_OBJECT_BYTES} B at 32 kbit/s`}
+          measurement={metrics.meanObjectBytes}
+          format={(value) => String(Math.round(value))}
+          unit="B"
+        />
+        <ComparisonRow
+          label="Late-drop rate"
+          budget="Reported · no gate"
+          measurement={metrics.lateDropRate}
+          format={(value) => (value * 100).toFixed(2)}
+          unit="%"
+        />
+        <ComparisonRow
+          label="Late drops"
+          budget="Reported · no gate"
+          measurement={metrics.lateDrops}
+        />
+        <ComparisonRow
+          label="Cancelled on barge-in"
+          budget="Reported · no gate"
+          measurement={metrics.cancelledDrops}
+        />
+        {/* §10.5: concealment is counted and shown, not hidden behind the gap. */}
+        <ComparisonRow
+          label="Concealed frames"
+          budget="Reported · no gate"
+          measurement={metrics.concealedFrames}
+        />
+        <ComparisonRow
+          label="Comfort noise frames"
+          budget="Reported · no gate"
+          measurement={metrics.comfortNoiseFrames}
+        />
+      </ComparisonTable>
+
+      <ComparisonTable caption="Client capacity">
+        <ComparisonRow
+          label="Worst track buffer"
+          budget={`≤${MAXIMUM_BUFFER_MS} ms hard bound`}
+          measurement={metrics.worstBufferMs}
+          format={(value) => String(Math.round(value))}
+          unit="ms"
+          withinBudget={(value) => value <= MAXIMUM_BUFFER_MS}
+        />
+        <ComparisonRow
+          label="Aggregate buffer"
+          budget="Reported · no gate"
+          measurement={metrics.aggregateBufferMs}
+          format={(value) => String(Math.round(value))}
+          unit="ms"
+        />
+        <ComparisonRow
+          label="Worst clock skew"
+          budget={`≤${MAXIMUM_DRIFT_PPM.toLocaleString("en-GB")} ppm correctable`}
+          measurement={metrics.worstDriftPpm}
+          format={(value) => String(Math.round(value))}
+          unit="ppm"
+          withinBudget={(value) => value <= MAXIMUM_DRIFT_PPM}
+        />
+        <ComparisonRow
+          label="Active decoders"
+          budget="Reported · no gate"
+          measurement={metrics.activeDecoders}
+        />
+        <ComparisonRow
+          label="Capacity state"
+          budget="Protection inactive"
+          measurement={measured(degradation.step)}
+          format={(value) => (value === 0 ? "Protection inactive" : `Protection step ${value}`)}
+          withinBudget={(value) => value === 0}
+        />
+        <ComparisonRow
+          label="Decoders released"
+          budget="0 before degradation"
+          measurement={measured(degradation.releasedDecoders.length)}
+          withinBudget={(value) => value === 0}
+        />
+        <ComparisonRow
+          label="Opus DTX"
+          budget="Required when exposed"
+          measurement={metrics.dtxEnabled}
+          format={(value) => (value ? "Enabled" : "Not supported by this encoder")}
+          withinBudget={(value) => value}
+        />
+        <ComparisonRow
+          label="Capture path"
+          budget="Reported · no gate"
+          measurement={metrics.capturePath}
+          format={(value) =>
+            value === "track_processor" ? "MediaStreamTrackProcessor" : "AudioWorklet adapter"
+          }
+        />
+        <ComparisonRow
+          label="Audio inputs"
+          budget="Reported · no gate"
+          measurement={metrics.audioInputs}
+        />
+        <ComparisonRow
+          label="Device changes"
+          budget="Reported · no gate"
+          measurement={metrics.deviceChanges}
+        />
+      </ComparisonTable>
+      {degradation.announcement ? (
+        <p className="comparison-note">{degradation.announcement}</p>
+      ) : null}
+    </div>
   );
 }
 
 function Latency({ metrics }: { metrics: SessionMetrics }) {
   return (
-    <div className="latency-view">
-      <table>
-        <thead>
-          <tr>
-            <th>Stage</th>
-            <th>Budget</th>
-            <th>Measured</th>
-          </tr>
-        </thead>
-        <tbody>
-          {LATENCY_STAGES.map((stage) => (
-            <tr key={stage.id}>
-              <th scope="row">{stage.label}</th>
-              <td>{stage.budgetMs} ms</td>
-              <td>
-                <MeasurementValue
-                  measurement={measuredStage(stage.id, stage.note, metrics)}
-                  format={(value) => String(Math.round(value))}
-                  unit="ms"
-                />
-              </td>
-            </tr>
-          ))}
-          <tr className="latency-total">
-            <th scope="row">Total</th>
-            <td>≈{TOTAL_BUDGET_MS} ms</td>
-            <td>
-              <MeasurementValue
-                measurement={notExposed<number>(
-                  "End-to-end latency needs the acoustic loopback method in §9.4; a single client cannot observe it.",
-                )}
-              />
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      <p className="latency-note">
-        Target p50 under {LATENCY_TARGETS.p50Ms} ms and p95 under {LATENCY_TARGETS.p95Ms} ms at the
-        reference composition ({LATENCY_TARGETS.composition}). Figures without a composition are
-        meaningless once membership is open.
-      </p>
-      <dl className="object-list">
-        <MeasurementRow
+    <div className="comparison-view latency-view">
+      <ComparisonTable caption="Per-stream stage latency">
+        {LATENCY_STAGES.map((stage) => (
+          <ComparisonRow
+            key={stage.id}
+            label={stage.label}
+            budget={`${stage.budgetMs} ms`}
+            measurement={measuredStage(stage.id, stage.note, metrics)}
+            format={(value) => String(Math.round(value))}
+            unit="ms"
+            withinBudget={(value) => value <= stage.budgetMs}
+          />
+        ))}
+        <ComparisonRow
+          label="Total"
+          budget={`≈${TOTAL_BUDGET_MS} ms`}
+          measurement={notExposed<number>(
+            "End-to-end latency needs the acoustic loopback method in §9.4; a single client cannot observe it.",
+          )}
+          format={(value) => String(Math.round(value))}
+          unit="ms"
+          withinBudget={(value) => value <= TOTAL_BUDGET_MS}
+          emphasised
+        />
+      </ComparisonTable>
+
+      <ComparisonTable caption="Interaction and acceptance latency">
+        <ComparisonRow
+          label="Session ready"
+          budget={`≤${SESSION_READY_BUDGET_MS.toLocaleString("en-GB")} ms`}
+          measurement={metrics.transportReadyMs}
+          format={(value) => String(Math.round(value))}
+          unit="ms"
+          withinBudget={(value) => value <= SESSION_READY_BUDGET_MS}
+        />
+        <ComparisonRow
+          label="First received audio"
+          budget="Reported · no gate"
+          measurement={metrics.firstAudioMs}
+          format={(value) => String(Math.round(value))}
+          unit="ms"
+        />
+        <ComparisonRow
           label="Last barge-in"
+          budget={`≤${BARGE_IN_BUDGET_MS} ms`}
           measurement={metrics.lastBargeInMs}
           format={(value) => String(Math.round(value))}
           unit="ms"
+          withinBudget={(value) => value <= BARGE_IN_BUDGET_MS}
         />
-        <MeasurementRow
+        <ComparisonRow
           label="Last routing change"
+          budget={`≤${ROUTING_CHANGE_BUDGET_MS} ms`}
           measurement={metrics.lastRoutingChangeMs}
           format={(value) => String(Math.round(value))}
           unit="ms"
+          withinBudget={(value) => value <= ROUTING_CHANGE_BUDGET_MS}
         />
-      </dl>
+        <ComparisonRow
+          label="Acoustic loopback p50"
+          budget={`<${LATENCY_TARGETS.p50Ms} ms`}
+          measurement={notExposed<number>(
+            "The §9.4 acoustic loopback measurement has not run in this browser session.",
+          )}
+          format={(value) => String(Math.round(value))}
+          unit="ms"
+        />
+        <ComparisonRow
+          label="Acoustic loopback p95"
+          budget={`<${LATENCY_TARGETS.p95Ms} ms`}
+          measurement={notExposed<number>(
+            "The §9.4 acoustic loopback measurement has not run in this browser session.",
+          )}
+          format={(value) => String(Math.round(value))}
+          unit="ms"
+        />
+      </ComparisonTable>
+      <p className="latency-note">
+        Measured values are from this browser session. The p50 and p95 acceptance targets require
+        ten acoustic loopback runs at the reference composition ({LATENCY_TARGETS.composition}).
+        Figures without a composition are meaningless once membership is open.
+      </p>
     </div>
+  );
+}
+
+function ComparisonTable({ caption, children }: { caption: string; children: ReactNode }) {
+  return (
+    <table className="comparison-table">
+      <caption>{caption}</caption>
+      <thead>
+        <tr>
+          <th>Metric</th>
+          <th>Budget / target</th>
+          <th>Measured</th>
+        </tr>
+      </thead>
+      <tbody>{children}</tbody>
+    </table>
+  );
+}
+
+function ComparisonRow<T>({
+  label,
+  budget,
+  measurement,
+  format,
+  unit,
+  withinBudget,
+  emphasised = false,
+}: {
+  label: string;
+  budget: string;
+  measurement: Measurement<T>;
+  format?: (value: T) => string;
+  unit?: string;
+  withinBudget?: (value: T) => boolean;
+  emphasised?: boolean;
+}) {
+  const outcome =
+    measurement.exposed && withinBudget
+      ? withinBudget(measurement.value)
+        ? "within"
+        : "over"
+      : null;
+  return (
+    <tr className={emphasised ? "comparison-row--emphasised" : undefined}>
+      <th scope="row">{label}</th>
+      <td>{budget}</td>
+      <td>
+        <MeasurementValue
+          measurement={measurement}
+          {...(format ? { format } : {})}
+          {...(unit ? { unit } : {})}
+        />
+        {outcome ? (
+          <small className={`comparison-outcome comparison-outcome--${outcome}`}>
+            {outcome === "within" ? "Within" : "Over"}
+          </small>
+        ) : null}
+      </td>
+    </tr>
   );
 }
 

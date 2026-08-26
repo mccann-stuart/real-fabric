@@ -4,6 +4,7 @@ import {
   type Participant,
   type RoutingPreference,
 } from "../../shared/contracts";
+import type { TrackSubscriptionState } from "../session/RoomSession";
 
 /**
  * §4.2: each card shows role, mute and speaking state, connection state and
@@ -20,6 +21,8 @@ export interface ParticipantCardProps {
   /** Live capture level for the viewer's own card, 0 to 1. */
   level?: number;
   speaking?: boolean;
+  subscription?: TrackSubscriptionState | undefined;
+  onSubscription?: ((participantId: string, enabled: boolean) => void) | undefined;
   onRouting?: (aiId: string, hearsMe: boolean, iHearIt: boolean) => void;
   onAddressDown?: (aiId: string) => void;
   onAddressUp?: (aiId: string) => void;
@@ -33,6 +36,8 @@ export function ParticipantCard({
   connectedHumanIds,
   level = 0,
   speaking = false,
+  subscription,
+  onSubscription,
   onRouting,
   onAddressDown,
   onAddressUp,
@@ -48,10 +53,28 @@ export function ParticipantCard({
           : "Listening";
 
   const row = routing.find((entry) => entry.aiId === participant.id && entry.humanId === viewerId);
+  const subscriptionControl =
+    !current && !participant.simulated && subscription && onSubscription ? (
+      <div className="track-controls">
+        <Toggle
+          label={isAi ? "I hear it" : "I hear them"}
+          checked={subscription.intent}
+          onChange={(enabled) => onSubscription(participant.id, enabled)}
+        />
+        <small
+          className={`track-status track-status--${subscription.status}`}
+          title={subscription.detail}
+        >
+          {subscriptionLabel(subscription.status)}
+        </small>
+      </div>
+    ) : null;
 
   return (
     <article
-      className={`participant-card participant-card--${participant.role} participant-card--${slug(activity)}`}
+      className={`participant-card participant-card--${participant.role} participant-card--${
+        current ? "self" : "remote"
+      } participant-card--${slug(activity)}`}
       data-participant={participant.id}
     >
       <span className="participant-card__avatar" aria-hidden="true">
@@ -86,6 +109,8 @@ export function ParticipantCard({
         )}
       </div>
 
+      {!isAi ? subscriptionControl : null}
+
       {isAi && onRouting ? (
         <div className="routing-controls">
           <Toggle
@@ -93,17 +118,25 @@ export function ParticipantCard({
             checked={row?.hearsMe ?? false}
             onChange={(hearsMe) => onRouting(participant.id, hearsMe, row?.iHearIt ?? true)}
           />
-          <Toggle
-            label="I hear it"
-            checked={row?.iHearIt ?? true}
-            onChange={(iHearIt) => onRouting(participant.id, row?.hearsMe ?? false, iHearIt)}
-          />
+          {subscriptionControl}
           <button
             className="ask-button"
             type="button"
             onPointerDown={() => onAddressDown?.(participant.id)}
             onPointerUp={() => onAddressUp?.(participant.id)}
             onPointerLeave={() => onAddressUp?.(participant.id)}
+            onKeyDown={(event) => {
+              if ((event.key === " " || event.key === "Enter") && !event.repeat) {
+                event.preventDefault();
+                onAddressDown?.(participant.id);
+              }
+            }}
+            onKeyUp={(event) => {
+              if (event.key === " " || event.key === "Enter") {
+                event.preventDefault();
+                onAddressUp?.(participant.id);
+              }
+            }}
           >
             Hold to ask {participant.displayName}
           </button>
@@ -144,4 +177,17 @@ function Toggle({
 
 function slug(value: string): string {
   return value.toLowerCase().replace(/\s+/g, "-");
+}
+
+function subscriptionLabel(status: TrackSubscriptionState["status"]): string {
+  switch (status) {
+    case "subscribed":
+      return "Subscribed";
+    case "subscribing":
+      return "Subscribing…";
+    case "waiting":
+      return "Waiting for track";
+    default:
+      return "Unsubscribed";
+  }
 }

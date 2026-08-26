@@ -8,6 +8,7 @@
 
 export type FailureCode =
   | "transport_unsupported"
+  | "transport_reliable_only"
   | "udp_blocked"
   | "microphone_denied"
   | "microphone_no_device"
@@ -15,6 +16,7 @@ export type FailureCode =
   | "draft_endpoint_missing"
   | "relay_auth_unavailable"
   | "relay_protocol_error"
+  | "relay_request_refused"
   | "namespace_discovery_unavailable"
   | "participant_disconnected"
   | "reloading"
@@ -54,6 +56,17 @@ const REGISTRY: Record<FailureCode, FailureState> = {
     severity: "blocking",
     blocksPublication: true,
   },
+  transport_reliable_only: {
+    code: "transport_reliable_only",
+    title: "HTTP/3 transport required",
+    experience:
+      "WebTransport reported a reliable-only first hop. Real Fabric requires UDP-capable HTTP/3 and QUIC for audio.",
+    behaviour:
+      "The partial session is closed. HTTP/2, TCP, WebRTC and WebSocket audio are not attempted.",
+    recovery: "Retry once, then switch to the documented phone hotspot.",
+    severity: "blocking",
+    blocksPublication: true,
+  },
   udp_blocked: {
     code: "udp_blocked",
     title: "HTTP/3 or UDP blocked",
@@ -71,7 +84,7 @@ const REGISTRY: Record<FailureCode, FailureState> = {
     experience: "Listening and inspection continue. Nothing is published from this browser.",
     behaviour: "Publication stays closed. Subscriptions and the inspector are unaffected.",
     recovery:
-      "Grant microphone access in the browser site settings, then run the microphone test again.",
+      "Grant microphone access in the browser site settings, then use the in-room retry action.",
     severity: "degraded",
     blocksPublication: true,
   },
@@ -80,7 +93,7 @@ const REGISTRY: Record<FailureCode, FailureState> = {
     title: "No microphone input device",
     experience: "No capture device was found. Listening and inspection continue.",
     behaviour: "Publication stays closed. Subscriptions and the inspector are unaffected.",
-    recovery: "Connect a microphone or headset, then run the microphone test again.",
+    recovery: "Connect a microphone or headset, then use the in-room retry action.",
     severity: "degraded",
     blocksPublication: true,
   },
@@ -128,13 +141,25 @@ const REGISTRY: Record<FailureCode, FailureState> = {
     severity: "blocking",
     blocksPublication: true,
   },
+  relay_request_refused: {
+    code: "relay_request_refused",
+    title: "Relay rejected a publish request",
+    experience:
+      "MOQT setup completed, but the relay rejected this participant's track publication request.",
+    behaviour:
+      "Publication stops for this browser. The inspector retains the relay's request error code and reason; no transport fallback is attempted.",
+    recovery: "Check namespace ownership and the relay credential's publish scope.",
+    severity: "blocking",
+    blocksPublication: true,
+  },
   namespace_discovery_unavailable: {
     code: "namespace_discovery_unavailable",
     title: "SUBSCRIBE_NAMESPACE unavailable",
     experience: "Membership still works. The inspector states which discovery mechanism is in use.",
     behaviour:
       "Discovery falls back to the room service control channel. Audio object arrival remains the source of truth for connected.",
-    recovery: "None required. Record the endpoint's capability against Gate 1 output four.",
+    recovery:
+      "None required. The configured draft-16 endpoint is recorded as using control-channel discovery.",
     severity: "degraded",
     blocksPublication: false,
   },
@@ -198,8 +223,9 @@ const REGISTRY: Record<FailureCode, FailureState> = {
   },
   beyond_measured_capacity: {
     code: "beyond_measured_capacity",
-    title: "Beyond measured capacity",
-    experience: "The engaged degradation step is named in the room. No join is ever refused.",
+    title: "Capacity protection engaged",
+    experience:
+      "The client crossed a protective load threshold. This is not presented as measured capacity until Gate 2 records a reference result.",
     behaviour:
       "The ladder raises the nominal buffer, releases decoders for long-silent tracks, then unsubscribes the least recently active participants.",
     recovery: "None required. The ladder recovers as the active speaker count drops.",

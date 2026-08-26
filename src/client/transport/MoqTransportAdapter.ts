@@ -9,7 +9,11 @@ import {
   MOQtailClient,
   MoqtObject,
   ObjectForwardingPreference,
+  type Publish,
+  PublishOk,
+  ReasonPhrase,
   RequestError,
+  RequestErrorCode,
   ServerSetup,
   SetupParameter,
   SetupParameters,
@@ -105,6 +109,8 @@ export interface MoqNegotiation {
   serverSetup: SetupParameterRecord[];
   /** Requests the relay will accept. Zero would mean it grants nothing. */
   maxRequestId: number | null;
+  transportReliability: MoqSessionStats["transportReliability"];
+  congestionControl: MoqSessionStats["congestionControl"];
   negotiatedAt: number;
 }
 
@@ -116,6 +122,8 @@ export interface MoqSessionStats {
   publishedObjects: number;
   subscribedObjects: number;
   transportRttMs: number | "Not exposed";
+  transportReliability: "supports-unreliable" | "reliable-only" | "pending" | "Not exposed";
+  congestionControl: "low-latency" | "throughput" | "default" | "Not exposed";
   /** Null until CLIENT_SETUP and SERVER_SETUP have both been validated. */
   negotiation: MoqNegotiation | null;
 }
@@ -126,12 +134,47 @@ export class MoqTransportError extends Error {
       | "draft_mismatch"
       | "draft_unavailable"
       | "relay_configuration"
+      | "reliable_transport"
       | "relay_unavailable"
+      | "request_refused"
       | "protocol_error",
     message: string,
+    readonly request: MoqRequestRefusal | null = null,
   ) {
     super(message);
   }
+}
+
+export type MoqRequestOperation =
+  | "track_publication"
+  | "track_subscription"
+  | "namespace_subscription";
+
+/** Exact, sanitised relay refusal evidence retained for the inspector. */
+export interface MoqRequestRefusal {
+  operation: MoqRequestOperation;
+  errorCode: number;
+  reason: string;
+}
+
+export function isTrackNotFoundError(error: unknown): error is MoqTransportError {
+  return (
+    error instanceof MoqTransportError &&
+    error.code === "request_refused" &&
+    error.request?.operation === "track_subscription" &&
+    error.request.errorCode === 16 &&
+    /track not found/i.test(error.request.reason)
+  );
+}
+
+export interface MoqTransportCallbacks {
+  onUnexpectedTermination?: (error: MoqTransportError) => void;
+  /** A subscribed namespace announced a newly available publication. */
+  onNamespacePublished?: () => void;
+  /** Whether a PUBLISH pushed through the room namespace should be accepted. */
+  shouldAcceptPublishedTrack?: (track: TrackAddress) => boolean;
+  /** A PUBLISH was accepted and is ready for the ordinary subscribe path. */
+  onTrackPublished?: (track: TrackAddress) => void;
 }
 
 interface Publication {
@@ -140,12 +183,20 @@ interface Publication {
   controller: ReadableStreamDefaultController<MoqtObject>;
 }
 
+interface PushedSubscription {
+  requestId: bigint;
+  stream: ReadableStream<MoqtObject>;
+}
+
 export class MoqTransportAdapter {
   private client: MOQtailClient | null = null;
   private publications = new Map<string, Publication>();
+  private pendingPublications = new Map<string, Promise<Publication>>();
   private subscriptions = new Map<string, bigint>();
+  private pushedSubscriptions = new Map<string, PushedSubscription>();
   private namespaceCancels = new Map<string, () => Promise<void>>();
   private nextAlias = 1n;
+  private connectionGeneration = 0;
   private stats: MoqSessionStats = {
     state: "idle",
     draft: "Not exposed",
@@ -154,10 +205,15 @@ export class MoqTransportAdapter {
     publishedObjects: 0,
     subscribedObjects: 0,
     transportRttMs: "Not exposed",
+    transportReliability: "Not exposed",
+    congestionControl: "Not exposed",
     negotiation: null,
   };
 
+  constructor(private readonly callbacks: MoqTransportCallbacks = {}) {}
+
   async connect(endpoint: string, credential: string, draft: string): Promise<void> {
+    const connectionGeneration = ++this.connectionGeneration;
     const profile = DRAFT_REGISTRY[draft as MoqDraft];
     if (!profile) {
       throw new MoqTransportError(
@@ -220,6 +276,12 @@ export class MoqTransportAdapter {
         // same version here produced ["moqt-16", "moqt-16"], which Chrome
         // rejects before a WebTransport handshake.
         setupParameters: new SetupParameters().addMaxRequestId(CLIENT_MAX_REQUEST_ID),
+        transportOptions: {
+          // W3C WebTransport: require a UDP-capable first hop so Safari cannot
+          // carry this MOQT session over the HTTP/2/TCP reliable-only mode.
+          requireUnreliable: true,
+          congestionControl: "low-latency",
+        },
         enableDatagrams: false,
         callbacks: {
           onMessageSent: (message) => {
@@ -228,17 +290,77 @@ export class MoqTransportAdapter {
           onMessageReceived: (message) => {
             if (message instanceof ServerSetup) serverSetupObserved = true;
           },
-          onSessionTerminated: () => {
+          onSessionTerminated: (reason) => {
+            if (
+              connectionGeneration !== this.connectionGeneration ||
+              this.stats.state !== "connected"
+            ) {
+              return;
+            }
             this.stats = { ...this.stats, state: "closed" };
+            this.client = null;
+            for (const publication of this.publications.values()) {
+              try {
+                publication.controller.close();
+              } catch {
+                // The terminated transport may already have closed the stream.
+              }
+            }
+            this.publications.clear();
+            this.pendingPublications.clear();
+            this.subscriptions.clear();
+            this.pushedSubscriptions.clear();
+            this.namespaceCancels.clear();
+            this.callbacks.onUnexpectedTermination?.(
+              new MoqTransportError(
+                "relay_unavailable",
+                `The established MOQT session ended unexpectedly: ${terminationReason(reason, credential)}`,
+              ),
+            );
           },
         },
       });
+      // Draft-specific namespace notifications stay inside the adapter.
+      // RoomSession only learns that its ordinary subscription set should be
+      // reconciled; it never depends on MOQtail's wire types.
+      this.client.onPeerNamespace = () => this.callbacks.onNamespacePublished?.();
+      // SUBSCRIBE_NAMESPACE defaults to requesting pushed publications as
+      // well as namespace announcements. MOQtail exposes the incoming PUBLISH
+      // to its caller but deliberately does not decide whether to accept it.
+      // Make that decision here, inside the draft boundary, and retain the
+      // stream for the existing subscribe() API.
+      this.client.onPeerPublish = (message, stream) => {
+        void this.handlePeerPublish(message, stream).catch((error: unknown) => {
+          this.callbacks.onUnexpectedTermination?.(
+            new MoqTransportError(
+              "relay_unavailable",
+              `The MOQT session could not answer a pushed publication: ${safeError(error, credential)}`,
+            ),
+          );
+        });
+      };
     } catch (error) {
       this.stats = { ...this.stats, state: "failed" };
       throw new MoqTransportError(
         "relay_unavailable",
         `MOQT draft ${draft} could not connect to '${endpointName}': ${safeError(error, credential)}`,
       );
+    }
+
+    const webTransport = transportDiagnostics(this.client);
+    this.stats = {
+      ...this.stats,
+      transportReliability: webTransport.reliability,
+      congestionControl: webTransport.congestionControl,
+    };
+    const reliabilityError = requiredTransportReliabilityError(
+      webTransport.reliability,
+      endpointName,
+    );
+    if (reliabilityError) {
+      await this.close("non-UDP WebTransport refused").catch(() => undefined);
+      this.stats = { ...this.stats, state: "failed" };
+      throw reliabilityError;
     }
 
     try {
@@ -314,32 +436,26 @@ export class MoqTransportAdapter {
       clientSetup: describeParameters(input.clientSetup ?? [], input.credential),
       serverSetup: describeParameters(serverSetup.setupParameters, input.credential),
       maxRequestId: budget,
+      transportReliability: this.stats.transportReliability,
+      congestionControl: this.stats.congestionControl,
       negotiatedAt: Date.now(),
     };
   }
 
   async publish(track: TrackAddress, object: MediaObject): Promise<void> {
-    const client = this.requireClient();
     const key = trackKey(track);
     let publication = this.publications.get(key);
     if (!publication) {
-      const fullName = FullTrackName.tryNew(track.namespace, track.name);
-      let controller: ReadableStreamDefaultController<MoqtObject> | undefined;
-      const stream = new ReadableStream<MoqtObject>({ start: (value) => (controller = value) });
-      if (!controller)
-        throw new MoqTransportError("protocol_error", "The publication stream did not initialise.");
-      client.addOrUpdateTrack({
-        fullTrackName: fullName,
-        trackSource: { live: new LiveTrackSource(stream) },
-        publisherPriority: 0,
-      });
-      await client.publishNamespace(fullName.namespace);
-      const result = await client.publish(fullName, true, this.nextAlias++);
-      if (result instanceof RequestError) {
-        throw new MoqTransportError("protocol_error", "The relay refused the track publication.");
+      let pending = this.pendingPublications.get(key);
+      if (!pending) {
+        pending = this.openPublication(track);
+        this.pendingPublications.set(key, pending);
       }
-      publication = { address: track, fullName, controller };
-      this.publications.set(key, publication);
+      try {
+        publication = await pending;
+      } finally {
+        if (this.pendingPublications.get(key) === pending) this.pendingPublications.delete(key);
+      }
     }
 
     publication.controller.enqueue(
@@ -356,11 +472,59 @@ export class MoqTransportAdapter {
     this.stats = { ...this.stats, publishedObjects: this.stats.publishedObjects + 1 };
   }
 
+  private async openPublication(track: TrackAddress): Promise<Publication> {
+    const client = this.requireClient();
+    const connectionGeneration = this.connectionGeneration;
+    const fullName = FullTrackName.tryNew(track.namespace, track.name);
+    let controller: ReadableStreamDefaultController<MoqtObject> | undefined;
+    const stream = new ReadableStream<MoqtObject>({ start: (value) => (controller = value) });
+    if (!controller) {
+      throw new MoqTransportError("protocol_error", "The publication stream did not initialise.");
+    }
+    // MOQtail otherwise assigns the registered track a random alias, while
+    // publish() advertises the caller-supplied alias. PublishPublication uses
+    // the registered alias in subgroup headers, so both values must be the
+    // same or the relay will stop every media stream after accepting PUBLISH.
+    const trackAlias = this.nextAlias++;
+    client.addOrUpdateTrack({
+      fullTrackName: fullName,
+      trackSource: { live: new LiveTrackSource(stream) },
+      publisherPriority: 0,
+      trackAlias,
+    });
+    // Cloudflare's draft-16 feature matrix exposes PUBLISH/PUBLISH_OK but not
+    // PUBLISH_NAMESPACE. The track's full namespace is already carried by
+    // PUBLISH, so sending the unsupported namespace request first can prevent
+    // a credential that is otherwise allowed to publish from ever reaching
+    // the supported request.
+    const result = await client.publish(fullName, true, trackAlias);
+    if (result instanceof RequestError) {
+      throw requestRefusal("track_publication", "track publication", result);
+    }
+    if (connectionGeneration !== this.connectionGeneration || client !== this.client) {
+      controller.close();
+      throw new MoqTransportError(
+        "relay_unavailable",
+        "The MOQT session ended while the track publication was opening.",
+      );
+    }
+    const publication = { address: track, fullName, controller };
+    this.publications.set(trackKey(track), publication);
+    return publication;
+  }
+
   async subscribe(
     track: TrackAddress,
     startPosition?: { groupId: number; objectId: number },
   ): Promise<ReadableStream<MediaObject>> {
     const client = this.requireClient();
+    const key = trackKey(track);
+    const pushed = this.pushedSubscriptions.get(key);
+    if (pushed) {
+      this.pushedSubscriptions.delete(key);
+      this.subscriptions.set(key, pushed.requestId);
+      return this.mediaStream(pushed.stream);
+    }
     const fullName = FullTrackName.tryNew(track.namespace, track.name);
     const result = await client.subscribe({
       fullTrackName: fullName,
@@ -373,11 +537,24 @@ export class MoqTransportAdapter {
         : {}),
     });
     if (result instanceof RequestError) {
-      throw new MoqTransportError("protocol_error", "The relay refused the track subscription.");
+      // A namespace-pushed PUBLISH can cross this explicit SUBSCRIBE on the
+      // wire. If it was accepted while this request was pending, use that
+      // established subscription instead of surfacing a duplicate race.
+      const concurrentPush = this.pushedSubscriptions.get(key);
+      if (concurrentPush) {
+        this.pushedSubscriptions.delete(key);
+        this.subscriptions.set(key, concurrentPush.requestId);
+        return this.mediaStream(concurrentPush.stream);
+      }
+      throw requestRefusal("track_subscription", "track subscription", result);
     }
-    this.subscriptions.set(trackKey(track), result.requestId);
+    this.subscriptions.set(key, result.requestId);
+    return this.mediaStream(result.stream);
+  }
+
+  private mediaStream(stream: ReadableStream<MoqtObject>): ReadableStream<MediaObject> {
     const adapter = this;
-    return result.stream.pipeThrough(
+    return stream.pipeThrough(
       new TransformStream<MoqtObject, MediaObject>({
         transform(object, controller) {
           if (!object.payload) return;
@@ -395,11 +572,61 @@ export class MoqTransportAdapter {
     );
   }
 
+  private async handlePeerPublish(
+    message: Publish,
+    stream: ReadableStream<MoqtObject>,
+  ): Promise<void> {
+    const client = this.requireClient();
+    const track = trackAddress(message.fullTrackName);
+    const key = trackKey(track);
+    const accepted = this.callbacks.shouldAcceptPublishedTrack?.(track) ?? true;
+
+    if (!accepted) {
+      await client.controlStream.send(
+        new RequestError(
+          message.requestId,
+          RequestErrorCode.Uninterested,
+          0n,
+          new ReasonPhrase("uninterested"),
+        ),
+      );
+      await stream.cancel("publication not selected").catch(() => undefined);
+      return;
+    }
+
+    if (this.subscriptions.has(key) || this.pushedSubscriptions.has(key)) {
+      await client.controlStream.send(
+        new RequestError(
+          message.requestId,
+          RequestErrorCode.DuplicateSubscription,
+          0n,
+          new ReasonPhrase("duplicate subscription"),
+        ),
+      );
+      await stream.cancel("duplicate publication").catch(() => undefined);
+      return;
+    }
+
+    this.pushedSubscriptions.set(key, { requestId: message.requestId, stream });
+    try {
+      await client.controlStream.send(new PublishOk(message.requestId, []));
+    } catch (error) {
+      this.pushedSubscriptions.delete(key);
+      await stream.cancel("publication acknowledgement failed").catch(() => undefined);
+      throw error;
+    }
+    this.callbacks.onTrackPublished?.(track);
+  }
+
   async subscribeNamespace(namespace: string): Promise<void> {
     const client = this.requireClient();
     const result = await client.subscribeNamespace(Tuple.fromUtf8Path(namespace));
     if (result.response instanceof RequestError) {
-      throw new MoqTransportError("protocol_error", `The relay refused namespace '${namespace}'.`);
+      throw requestRefusal(
+        "namespace_subscription",
+        `namespace '${namespace}' subscription`,
+        result.response,
+      );
     }
     this.namespaceCancels.set(namespace, result.cancel);
   }
@@ -418,14 +645,22 @@ export class MoqTransportAdapter {
   }
 
   async close(reason: string): Promise<void> {
+    // Mark an intentional close before disconnecting. MOQtail invokes the
+    // termination callback during disconnect, and that must not start recovery.
+    this.connectionGeneration += 1;
+    this.stats = { ...this.stats, state: "closed" };
     for (const cancel of this.namespaceCancels.values()) await cancel();
     this.namespaceCancels.clear();
     for (const publication of this.publications.values()) publication.controller.close();
     this.publications.clear();
+    this.pendingPublications.clear();
+    for (const pushed of this.pushedSubscriptions.values()) {
+      await pushed.stream.cancel("transport closed").catch(() => undefined);
+    }
+    this.pushedSubscriptions.clear();
     if (this.client) await this.client.disconnect(reason);
     this.client = null;
     this.subscriptions.clear();
-    this.stats = { ...this.stats, state: "closed" };
   }
 
   private requireClient(): MOQtailClient {
@@ -436,8 +671,74 @@ export class MoqTransportAdapter {
   }
 }
 
+function transportDiagnostics(client: MOQtailClient | null): {
+  reliability: MoqSessionStats["transportReliability"];
+  congestionControl: MoqSessionStats["congestionControl"];
+} {
+  // MOQtail 0.12.1 owns the WebTransport instance but does not expose a public
+  // diagnostic accessor. Keep this narrow compatibility shim inside the one
+  // draft-sensitive adapter rather than leaking it into room or UI code.
+  const transport = (
+    client as unknown as {
+      webTransport?: {
+        reliability?: MoqSessionStats["transportReliability"];
+        congestionControl?: MoqSessionStats["congestionControl"];
+      };
+    } | null
+  )?.webTransport;
+  return {
+    reliability: transport?.reliability ?? "Not exposed",
+    congestionControl: transport?.congestionControl ?? "Not exposed",
+  };
+}
+
+export function requiredTransportReliabilityError(
+  reliability: MoqSessionStats["transportReliability"],
+  endpointName: string,
+): MoqTransportError | null {
+  if (reliability === "supports-unreliable") return null;
+  if (reliability === "reliable-only") {
+    return new MoqTransportError(
+      "reliable_transport",
+      `WebTransport to '${endpointName}' reported a reliable-only first hop. MOQT audio requires UDP-capable HTTP/3 and QUIC; no HTTP/2 or TCP fallback was attempted.`,
+    );
+  }
+  return new MoqTransportError(
+    "protocol_error",
+    `WebTransport to '${endpointName}' did not expose UDP-capable reliability after setup. The session was closed rather than assuming HTTP/3.`,
+  );
+}
+
+function requestErrorMessage(operation: string, error: RequestError): string {
+  const reason = error.reasonPhrase.phrase.trim();
+  return `The relay refused the ${operation} (code ${error.errorCode})${
+    reason ? `: ${reason}` : "."
+  }`;
+}
+
+function requestRefusal(
+  operation: MoqRequestOperation,
+  label: string,
+  error: RequestError,
+): MoqTransportError {
+  return new MoqTransportError("request_refused", requestErrorMessage(label, error), {
+    operation,
+    errorCode: error.errorCode,
+    reason: error.reasonPhrase.phrase.trim(),
+  });
+}
+
 function trackKey(track: TrackAddress): string {
   return `${track.namespace}/${track.name}`;
+}
+
+function trackAddress(fullName: FullTrackName): TrackAddress {
+  return {
+    // MOQtail's diagnostic path includes a leading slash, while tryNew()
+    // accepts and Real Fabric stores canonical slash-separated tuple fields.
+    namespace: fullName.namespace.fields.map((field) => field.toUtf8()).join("/"),
+    name: new TextDecoder("utf-8", { fatal: true }).decode(fullName.name),
+  };
 }
 
 /**
@@ -493,6 +794,12 @@ function describeParameters(pairs: KeyValuePair[], credential: string): SetupPar
 function safeError(error: unknown, credential: string): string {
   if (!(error instanceof Error)) return "unknown transport failure";
   return redactCredential(error.message, credential).slice(0, 240);
+}
+
+function terminationReason(reason: unknown, credential: string): string {
+  return reason === undefined
+    ? "the peer closed the control stream without a reason"
+    : safeError(reason, credential);
 }
 
 function redactCredential(value: string, credential: string): string {

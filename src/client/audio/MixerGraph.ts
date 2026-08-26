@@ -17,6 +17,11 @@ export interface TrackMixStats {
   ratio: number;
 }
 
+export interface MixerGraphCallbacks {
+  /** Fires only after the context has previously reached running. */
+  onSuspended?: () => void;
+}
+
 interface WorkletStatsMessage {
   type: "stats";
   at: number;
@@ -26,37 +31,79 @@ interface WorkletStatsMessage {
 export class MixerGraph {
   private context: AudioContext | null = null;
   private node: AudioWorkletNode | null = null;
+  private starting: Promise<void> | null = null;
+  private closed = false;
+  private removeUnlockListeners: (() => void) | null = null;
   private tracks = new Set<string>();
   private latest: TrackMixStats[] = [];
   private startedAt: number | null = null;
+  private hasRun = false;
 
-  /**
-   * Requires a user gesture upstream: the AudioContext will not start
-   * otherwise, and a silent suspended context is exactly the kind of quiet
-   * failure H14 forbids.
-   */
+  constructor(private readonly callbacks: MixerGraphCallbacks = {}) {}
+
   async start(): Promise<void> {
-    if (this.context) return;
+    if (this.closed) return;
+    if (this.context) {
+      this.requestResume();
+      return;
+    }
+    if (this.starting) return this.starting;
+
+    const attempt = this.startOnce();
+    this.starting = attempt;
+    try {
+      await attempt;
+    } finally {
+      if (this.starting === attempt) this.starting = null;
+    }
+  }
+
+  private async startOnce(): Promise<void> {
     const context = new AudioContext({
       sampleRate: MEDIA_SAMPLE_RATE,
       latencyHint: "interactive",
     });
-    await context.audioWorklet.addModule(WORKLET_URL);
-    const node = new AudioWorkletNode(context, PROCESSOR_NAME, {
-      numberOfInputs: 0,
-      numberOfOutputs: 1,
-      outputChannelCount: [1],
-    });
-    node.port.onmessage = (event: MessageEvent<WorkletStatsMessage>) => {
-      if (event.data?.type === "stats") this.latest = event.data.tracks;
-    };
-    node.connect(context.destination);
-    if (context.state === "suspended") await context.resume();
+    try {
+      // Issue resume before the first await. Safari can then associate the
+      // request with the Start/Resume tap even though loading the worklet is
+      // asynchronous.
+      const resumeRequest = context.state === "suspended" ? context.resume() : Promise.resolve();
+      await Promise.all([resumeRequest, context.audioWorklet.addModule(WORKLET_URL)]);
+      if (this.closed) {
+        await context.close().catch(() => undefined);
+        return;
+      }
+      const node = new AudioWorkletNode(context, PROCESSOR_NAME, {
+        numberOfInputs: 0,
+        numberOfOutputs: 1,
+        outputChannelCount: [1],
+      });
+      node.port.onmessage = (event: MessageEvent<WorkletStatsMessage>) => {
+        if (event.data?.type === "stats") this.latest = event.data.tracks;
+      };
+      node.connect(context.destination);
 
-    this.context = context;
-    this.node = node;
-    this.startedAt = Date.now();
-    for (const trackId of this.tracks) this.post({ type: "add_track", trackId });
+      this.context = context;
+      this.node = node;
+      this.startedAt = Date.now();
+      this.hasRun = context.state === "running";
+      context.addEventListener("statechange", this.onContextStateChange);
+      for (const trackId of this.tracks) this.post({ type: "add_track", trackId });
+
+      // Chrome may suspend a new AudioContext after the asynchronous room
+      // join has consumed the entry click's activation. Do not let that block
+      // getUserMedia; retry immediately and on the next in-page interaction.
+      this.installUnlockListeners();
+      this.requestResume();
+    } catch (error) {
+      if (context.state !== "closed") await context.close().catch(() => undefined);
+      throw error;
+    }
+  }
+
+  /** Capture becoming active can make an immediate playback resume possible. */
+  resume(): void {
+    this.requestResume();
   }
 
   get running(): boolean {
@@ -120,8 +167,8 @@ export class MixerGraph {
   /** Browser-reported output latency, where the browser exposes it (H15). */
   outputLatencyMs(): Measurement<number> {
     const latency = this.context?.outputLatency;
-    if (typeof latency !== "number" || Number.isNaN(latency)) {
-      return notExposed("This browser does not report AudioContext output latency.");
+    if (typeof latency !== "number" || !Number.isFinite(latency) || latency <= 0) {
+      return notExposed("This browser does not report a positive AudioContext output latency.");
     }
     return measured(latency * 1_000);
   }
@@ -133,6 +180,9 @@ export class MixerGraph {
 
   /** §4.4: leaving closes the worklet, the context and every track buffer. */
   async close(): Promise<void> {
+    this.closed = true;
+    this.removeUnlockListeners?.();
+    this.removeUnlockListeners = null;
     this.post({ type: "close" });
     this.node?.disconnect();
     this.node = null;
@@ -141,10 +191,47 @@ export class MixerGraph {
     this.startedAt = null;
     const context = this.context;
     this.context = null;
-    if (context && context.state !== "closed") await context.close();
+    if (context) {
+      context.removeEventListener("statechange", this.onContextStateChange);
+      if (context.state !== "closed") await context.close();
+    }
   }
 
   private post(message: Record<string, unknown>, transfer: Transferable[] = []): void {
     this.node?.port.postMessage(message, transfer);
+  }
+
+  private requestResume(): void {
+    const context = this.context;
+    if (context?.state !== "suspended") return;
+    void context.resume().then(
+      () => {
+        if (context.state !== "running") return;
+        this.hasRun = true;
+        this.removeUnlockListeners?.();
+        this.removeUnlockListeners = null;
+      },
+      () => undefined,
+    );
+  }
+
+  private readonly onContextStateChange = () => {
+    const state = this.context?.state;
+    if (state === "running") {
+      this.hasRun = true;
+      return;
+    }
+    if (state === "suspended" && this.hasRun) this.callbacks.onSuspended?.();
+  };
+
+  private installUnlockListeners(): void {
+    if (this.removeUnlockListeners || typeof document === "undefined") return;
+    const unlock = () => this.requestResume();
+    document.addEventListener("pointerdown", unlock, true);
+    document.addEventListener("keydown", unlock, true);
+    this.removeUnlockListeners = () => {
+      document.removeEventListener("pointerdown", unlock, true);
+      document.removeEventListener("keydown", unlock, true);
+    };
   }
 }

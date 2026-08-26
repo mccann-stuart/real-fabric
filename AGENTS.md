@@ -27,6 +27,28 @@ The product specification is binding except for this explicit override:
 
 If this file and the product specification otherwise conflict, preserve the hard product requirements and ask only when the choice would materially change user-visible behaviour, security or data handling.
 
+## Current implementation truth
+
+As reconciled on 26 August 2026 with the current repository state:
+
+- The React/Vite client, SQLite Durable Object room service, control-plane WebSocket, presenter simulation, browser media components, inspector, telemetry and failure registry are implemented with 216 automated tests across eighteen files.
+- The inspector's Objects and Latency tabs compare exposed session measurements with specification-defined budgets or targets. Diagnostic-only values say `Reported · no gate`, and acoustic loopback acceptance remains `Not exposed` until it actually runs.
+- `wrangler.jsonc` pins MOQT draft 16, configures the Cloudflare isolated relay URL, and deliberately keeps `MOQT_TRANSPORT_VERIFIED=false`, `MOQ_ROUTING_ENFORCEMENT=cooperative` and `MOQ_DISCOVERY=unknown`.
+- `moqtail@0.12.1` frames draft 16. `MoqTransportAdapter` attempts draft-16 transport with provisioned token in URL path, uses the relay-supported `PUBLISH` request directly, and answers permitted room-namespace pushes with `PUBLISH_OK` before routing their object streams through the ordinary subscription path. A narrow pnpm patch preserves the caught MOQtail control-stream termination cause. Live transport is not yet trace-verified (`MOQT_TRANSPORT_VERIFIED=false`).
+- Provisioned relay-token handling is implemented, but it has a known P1: unauthenticated room creation and open room joining return the configured `MOQ_RELAY_TOKEN` to the browser. The credential grants publish and subscribe across the whole relay and can be reused outside the room service until expiry or revocation.
+- Cloudflare's current V1 MoQ token API presents no compatible complete fix: tokens apply to an entire relay and constrain only `publish` and `subscribe`; labels do not enforce room, namespace, track or participant scope, and each relay accepts at most ten registered tokens. Unique short-lived per-client tokens improve expiry and revocation but do not close the P1 and conflict with open membership at the provider limit. A distinct relay per room isolates rooms but still does not enforce participant namespaces.
+- Treat the shared credential disclosure as unresolved, not as an accepted production risk or a passed Gate 1 control. Do not claim tenant isolation or credential-enforced routing, and do not describe application-signed claims, token labels, client checks or coarse per-client relay tokens as a fix. Keep code unchanged until a relay credential model can enforce room and participant scope without adding a participant cap, unless a later explicit user request changes that decision.
+- `NetworkProbe` implements a draft-free relay reachability check alongside `/api/health`.
+- Dynamic device tracking, packet-loss concealment, bounded recovery and silence-gated drift correction are implemented and unit-tested, but lack live acoustic acceptance.
+- Room entry establishes membership and the control plane without starting audio. **Start audio** and **Resume audio** initiate capture, AudioContext activation and MOQT from a user action. Permission denial or missing hardware falls back visibly to listen-only. Background, lock, page-hide, Audio Session interruption or an already-running AudioContext suspension tears audio down into `resume_required`; capture never restarts automatically. Capture is shown separately from relay-accepted publication; `publishing`, the inspector uplink and the publish event begin only after `PUBLISH_OK`, and a refusal stops capture while retaining its exact code and reason across a same-tab reload.
+- Human clients default to being interested in every other permitted real-party audio track and expose local subscribe/unsubscribe controls. A namespace-pushed track is accepted by default; an explicit listening opt-out answers `UNINTERESTED`. Code-16 `Track not found` responses use a capped exponential retry sequence; a late MOQT namespace announcement or accepted pushed publication retries immediately. Accepted subscriptions alone appear in the inspector graph.
+- A bounded `UniversalAudioCaptureAdapter` retains `MediaStreamTrackProcessor` as the preferred Chrome path and adds an exact-frame AudioWorklet path for future desktop evaluation. Path selection and framing are unit-tested, but the alternative path has not passed real-browser or acoustic parity, so it does not expand H3 support.
+- Presenter AI responses are scripted and labelled. There is no live recognition, model, synthesis or AI-worker transport pipeline.
+- H3 now requires a documented matrix of all supported browser, OS and major-version combinations. The client recognises provisional Chrome 141+ on macOS and top-level Safari 27+ on iPhone with iOS 27+; both still require their applicable real-browser acceptance evidence.
+- Unit tests do not satisfy the live trace, acoustic latency, measured-capacity, audible ten-minute or two-clean-run acceptance gates.
+
+Keep this snapshot current when implementation status changes. Never convert an implemented component or a passing unit test into a claim that a live acceptance boundary has passed.
+
 ## Product invariants
 
 - Live audio uses MOQT objects over WebTransport, HTTP/3 and QUIC through a real MoQ relay. There is no WebRTC or WebSocket audio fallback.
@@ -46,7 +68,7 @@ If this file and the product specification otherwise conflict, preserve the hard
 
 ## v1 boundaries
 
-Video, screen sharing, recording, captions, dial-in, accounts, mobile publishing, moderation, WebRTC comparison, or production-readiness claims will come later.
+Video, screen sharing, recording, captions, dial-in, accounts, moderation, WebRTC comparison, general mobile publishing outside the named foreground iPhone Safari candidate, or production-readiness claims will come later.
 
 Presenter simulation is required, but simulated participants and scripted AI responses must be unmistakably labelled. Simulation must never masquerade as a working relay or AI pipeline.
 
@@ -117,7 +139,7 @@ Use the design references in `design/concepts/` as the visual direction:
 
 Avoid decorative card grids, bento layouts, neon glow, purple gradients, fake metrics, avatars, stock imagery and generic dashboard chrome.
 
-The desktop room keeps the participant surface primary and the protocol inspector persistently visible. Narrow screens are read-only and must state that desktop Chrome is required for live audio until a mobile configuration has been verified.
+The desktop room keeps the participant surface primary and the protocol inspector persistently visible. Narrow screens remain read-only except for the qualifying top-level iPhone Safari 27+/iOS 27+ candidate, which restores routing, inspector and foreground Start/Resume controls while remaining provisionally labelled until physical-device acceptance.
 
 Preserve these entry strings unless the product specification changes:
 
@@ -132,6 +154,7 @@ Preserve these entry strings unless the product specification changes:
 
 - Share links contain only a non-guessable room join code, never relay credentials.
 - Mint short-lived, least-privilege relay credentials server-side.
+- The current Cloudflare relay cannot enforce the required room and participant scope. Preserve the P1 disclosure warning above until a real relay-boundary fix is implemented and verified; token rotation alone is not remediation.
 - Keep Cloudflare account tokens and relay secrets in Worker secrets, never source, configuration or client bundles.
 - Use opaque relay-visible room and participant identifiers.
 - Store only the minimum ephemeral room state required for rejoin and routing.
@@ -149,7 +172,7 @@ Preserve these entry strings unless the product specification changes:
 
 ### OneDrive dependency storage
 
-This checkout is stored in OneDrive, so `node_modules` must remain physically outside both the repository and OneDrive.
+The canonical checkout and Git metadata are stored in OneDrive, and linked Codex worktrees may live elsewhere. For every checkout or worktree, `node_modules` must remain physically outside both the repository and OneDrive.
 
 - The only approved physical dependency directory for this checkout is `/Users/mccannstuart/.node_modules`.
 - The repository path `node_modules` must be a symbolic link to that directory. Never replace it with a physical directory.
@@ -211,8 +234,10 @@ Also verify in a real browser:
 - per-AI routing controls and inspector edge changes;
 - unsupported-browser and relay-unavailable states;
 - microphone permission denial and no-input-device states;
-- desktop and narrow read-only layouts;
+- desktop, qualifying iPhone and other narrow read-only layouts;
 - no WebRTC or WebSocket audio path in code or network traffic.
+
+The current `/preflight` page separates required WebTransport reliability, Opus encoder and decoder, capture, playout and microphone gates from optional Audio Session, wake lock, DTX and congestion-control diagnostics. It runs a draft-free UDP-capable WebTransport probe, but no live result may be recorded as passed until a real browser completes it successfully.
 
 When a live draft-20 relay exists, the release gate additionally requires a reproducible trace proving MOQT over WebTransport and HTTP/3/QUIC, plus the product specification’s ten-minute reference-composition run and complete demo script twice.
 

@@ -1,4 +1,4 @@
-import { SELF } from "cloudflare:test";
+import { env, runInDurableObject, SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import type { CreateRoomResponse } from "../src/shared/contracts";
 
@@ -95,7 +95,7 @@ describe("Real Fabric Worker", () => {
     });
     const created = (await createdResponse.json()) as CreateRoomResponse;
     const response = await SELF.fetch(
-      `https://real-fabric.test/api/rooms/${created.room.code}/events?participant=${created.participant.id}&token=${created.rejoinToken}`,
+      `https://real-fabric.test/api/rooms/${created.room.code}/events`,
       { headers: { upgrade: "websocket" } },
     );
 
@@ -103,6 +103,15 @@ describe("Real Fabric Worker", () => {
     const socket = response.webSocket;
     expect(socket).not.toBeNull();
     socket?.accept();
+
+    socket?.send(
+      JSON.stringify({
+        type: "auth",
+        participantId: created.participant.id,
+        token: created.rejoinToken,
+      }),
+    );
+
     const snapshot = await nextMessage(socket as WebSocket);
     expect(JSON.parse(String(snapshot.data))).toMatchObject({ type: "snapshot" });
 
@@ -111,8 +120,113 @@ describe("Real Fabric Worker", () => {
     expect(pong.data).toBe("pong");
     socket?.close(1000, "test complete");
   });
+
+  it("closes WebSocket connections that send an invalid participant token", async () => {
+    const createdResponse = await SELF.fetch("https://real-fabric.test/api/rooms", {
+      method: "POST",
+      headers: { "content-type": "application/json", "cf-connecting-ip": "192.0.2.47" },
+      body: JSON.stringify({ displayName: "Dorothy" }),
+    });
+    const created = (await createdResponse.json()) as CreateRoomResponse;
+
+    const response = await SELF.fetch(
+      `https://real-fabric.test/api/rooms/${created.room.code}/events`,
+      { headers: { upgrade: "websocket" } },
+    );
+    expect(response.status).toBe(101);
+    const socket = response.webSocket;
+    socket?.accept();
+
+    const closed = nextClose(socket as WebSocket);
+    socket?.send(
+      JSON.stringify({
+        type: "auth",
+        participantId: created.participant.id,
+        token: "invalid-token",
+      }),
+    );
+
+    expect((await closed).code).toBe(4401);
+  });
+
+  it("does not accept legacy query-string credentials", async () => {
+    const createdResponse = await SELF.fetch("https://real-fabric.test/api/rooms", {
+      method: "POST",
+      headers: { "content-type": "application/json", "cf-connecting-ip": "192.0.2.48" },
+      body: JSON.stringify({ displayName: "Radia" }),
+    });
+    const created = (await createdResponse.json()) as CreateRoomResponse;
+    const response = await SELF.fetch(
+      `https://real-fabric.test/api/rooms/${created.room.code}/events?participant=${created.participant.id}&token=${created.rejoinToken}`,
+      { headers: { upgrade: "websocket" } },
+    );
+    expect(response.status).toBe(101);
+    const socket = response.webSocket as WebSocket;
+    socket.accept();
+
+    const closed = nextClose(socket);
+    socket.send("ping");
+    expect((await closed).code).toBe(4401);
+  });
+
+  it("rejects oversized authentication messages before parsing them", async () => {
+    const createdResponse = await SELF.fetch("https://real-fabric.test/api/rooms", {
+      method: "POST",
+      headers: { "content-type": "application/json", "cf-connecting-ip": "192.0.2.49" },
+      body: JSON.stringify({ displayName: "Vint" }),
+    });
+    const created = (await createdResponse.json()) as CreateRoomResponse;
+    const response = await SELF.fetch(
+      `https://real-fabric.test/api/rooms/${created.room.code}/events`,
+      { headers: { upgrade: "websocket" } },
+    );
+    expect(response.status).toBe(101);
+    const socket = response.webSocket as WebSocket;
+    socket.accept();
+
+    const closed = nextClose(socket);
+    socket.send("x".repeat(513));
+    expect((await closed).code).toBe(1009);
+  });
+
+  it("closes a connection whose initial authentication deadline expires", async () => {
+    const createdResponse = await SELF.fetch("https://real-fabric.test/api/rooms", {
+      method: "POST",
+      headers: { "content-type": "application/json", "cf-connecting-ip": "192.0.2.50" },
+      body: JSON.stringify({ displayName: "Barbara" }),
+    });
+    const created = (await createdResponse.json()) as CreateRoomResponse;
+    const response = await SELF.fetch(
+      `https://real-fabric.test/api/rooms/${created.room.code}/events`,
+      { headers: { upgrade: "websocket" } },
+    );
+    expect(response.status).toBe(101);
+    const socket = response.webSocket as WebSocket;
+    socket.accept();
+
+    const rooms = env.ROOMS;
+    if (!rooms)
+      throw new Error("The ROOMS binding is required for the authentication-timeout test.");
+    const stub = rooms.getByName(created.room.code);
+    const closed = nextClose(socket);
+    await runInDurableObject(stub, async (instance, state) => {
+      const serverSocket = state.getWebSockets()[0];
+      expect(serverSocket).toBeDefined();
+      serverSocket?.serializeAttachment({
+        participantId: null,
+        authDeadline: Date.now() - 1,
+      });
+      await instance.alarm();
+    });
+
+    expect((await closed).code).toBe(4408);
+  });
 });
 
 function nextMessage(socket: WebSocket): Promise<MessageEvent> {
   return new Promise((resolve) => socket.addEventListener("message", resolve, { once: true }));
+}
+
+function nextClose(socket: WebSocket): Promise<CloseEvent> {
+  return new Promise((resolve) => socket.addEventListener("close", resolve, { once: true }));
 }

@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { Participant } from "../../shared/contracts";
 import { notExposed } from "../../shared/measurement";
+import { currentUserAgentFacts, matchConfiguration } from "../../shared/pinnedConfiguration";
 import {
   clearSession,
   configurePresenter,
@@ -10,29 +11,69 @@ import {
 } from "../api";
 import { Brand } from "../components/Brand";
 import { DemoScriptPanel } from "../components/DemoScriptPanel";
-import { FailureList } from "../components/FailureBanner";
 import { Inspector } from "../components/Inspector";
+import { LeaveRoomDialog } from "../components/LeaveRoomDialog";
 import { ParticipantCard } from "../components/ParticipantCard";
-import { PinnedConfigBanner } from "../components/PinnedConfigBanner";
 import { PresenterStrip } from "../components/PresenterStrip";
+import { RoomStatusStack } from "../components/RoomStatusStack";
+import { RoomTopBar } from "../components/RoomTopBar";
 import { useRoomSession } from "../hooks/useRoomSession";
-import { type DemoContext, DemoRunner } from "../presenter/DemoScript";
+import { DemoRunner } from "../presenter/DemoScript";
 import { layoutParticipants } from "../room/participantLayout";
+import { microphoneAction, representedFailureCodes } from "../room/roomPresentation";
 
 export function RoomPage({ code, navigate }: { code: string; navigate: (path: string) => void }) {
   const [stored] = useState<StoredSession | null>(() => loadSession(code));
   const presenterMode = sessionStorage.getItem(`real-fabric:presenter:${code}`) === "true";
-  const { state, session, reclaimed, error, startPublishing, retry, leave } = useRoomSession(
+  const { state, session, reclaimed, error, startAudio, setMuted, retry, leave } = useRoomSession(
     stored,
     presenterMode,
   );
+  const [configuration] = useState(() => matchConfiguration(currentUserAgentFacts()));
+  const iphoneAudioCandidate = configuration.device === "iPhone" && configuration.liveAudioEligible;
   const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const [leaving, setLeaving] = useState(false);
+  const [leaveError, setLeaveError] = useState<string | null>(null);
+  const leaveDialog = useRef<HTMLDialogElement>(null);
   const runner = useRef(new DemoRunner());
   const [runnerTick, setRunnerTick] = useState(0);
   const prominentIds = useRef<string[]>([]);
 
   const room = state?.room ?? null;
   const viewerId = stored?.participantId ?? "";
+  const micAction = microphoneAction(state?.capture, state?.publishing ?? false, state?.phase);
+  const hiddenFailureCodes = representedFailureCodes(
+    state?.capture,
+    Boolean(state?.degradation.announcement),
+  );
+
+  const copyInvite = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(`${location.origin}/room/${code}`);
+      setCopyState("copied");
+    } catch {
+      setCopyState("failed");
+    }
+  }, [code]);
+
+  const confirmLeave = useCallback(async () => {
+    if (leaving) return;
+    setLeaving(true);
+    setLeaveError(null);
+    try {
+      await leave();
+      clearSession(code);
+      navigate("/");
+    } catch (leaveFailure) {
+      setLeaveError(
+        leaveFailure instanceof Error
+          ? `The room could not be left: ${leaveFailure.message}`
+          : "The room could not be left. Try again.",
+      );
+      setLeaving(false);
+    }
+  }, [code, leave, leaving, navigate]);
 
   const connectedHumanIds = useMemo(
     () =>
@@ -42,17 +83,6 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
     [room],
   );
 
-  const subscribedIds = useMemo(
-    () =>
-      (room?.participants ?? [])
-        .filter(
-          (participant) =>
-            participant.id !== viewerId && !participant.simulated && participant.state !== "left",
-        )
-        .map((participant) => participant.id),
-    [room, viewerId],
-  );
-
   const changeRouting = useCallback(
     (aiId: string, hearsMe: boolean, iHearIt: boolean) => {
       void session?.changeRouting(aiId, hearsMe, iHearIt);
@@ -60,7 +90,22 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
     [session],
   );
 
-  const demoContext = useCallback((): DemoContext => {
+  const changeSubscription = useCallback(
+    (participantId: string, enabled: boolean) => {
+      const participant = room?.participants.find((candidate) => candidate.id === participantId);
+      if (participant?.role === "ai") {
+        const row = room?.routing.find(
+          (candidate) => candidate.aiId === participantId && candidate.humanId === viewerId,
+        );
+        void session?.changeRouting(participantId, row?.hearsMe ?? false, enabled);
+        return;
+      }
+      void session?.setSubscription(participantId, enabled);
+    },
+    [room, session, viewerId],
+  );
+
+  const demoContext = useCallback(() => {
     const metrics = state?.metrics;
     const speaking = (room?.participants ?? []).filter(
       (participant) => participant.role === "ai" && participant.pipeline === "speaking",
@@ -130,8 +175,12 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
       viewerId={viewerId}
       routing={room?.routing ?? []}
       connectedHumanIds={connectedHumanIds}
-      level={participant.id === viewerId ? (state?.micLevel ?? 0) : 0}
-      speaking={participant.id === viewerId ? (state?.speaking ?? false) : false}
+      level={participant.id === viewerId && !state?.muted ? (state?.micLevel ?? 0) : 0}
+      speaking={participant.id === viewerId && !state?.muted ? (state?.speaking ?? false) : false}
+      subscription={state?.subscriptions.find(
+        (subscription) => subscription.participantId === participant.id,
+      )}
+      onSubscription={changeSubscription}
       onRouting={changeRouting}
       onAddressDown={(aiId) => void session?.address(aiId)}
       onAddressUp={(aiId) => void session?.endTurn(aiId)}
@@ -139,116 +188,47 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
   );
 
   return (
-    <main className="room-page">
-      <header className="room-topbar">
-        <Brand />
-        <span>
-          Room <b>{code}</b>
-        </span>
-        {/* H4: stated in the room as well as before joining. */}
-        <span className="headphones headphones--small">⌁ Headphones required</span>
-        <button
-          className="button button--compact"
-          type="button"
-          onClick={() => void navigator.clipboard.writeText(`${location.origin}/room/${code}`)}
-        >
-          Copy invite
-        </button>
-        {state?.publishing ? null : (
-          <button
-            className="button button--compact button--primary"
-            type="button"
-            onClick={() => void startPublishing()}
-          >
-            Start microphone
-          </button>
-        )}
-        <button
-          className="button button--compact button--danger"
-          type="button"
-          onClick={() => {
-            void leave().then(() => {
-              clearSession(code);
-              navigate("/");
-            });
-          }}
-        >
-          Leave room
-        </button>
-      </header>
-
-      {/* H3 */}
-      <PinnedConfigBanner />
-      <div className="mobile-warning" role="status">
-        <b>!</b> Desktop Chrome required for live audio
-      </div>
-
-      {reclaimed ? (
-        <p className="reclaim-banner" role="status">
-          Identity and routing reclaimed inside the 60-second window. Nothing was played twice.
-        </p>
-      ) : null}
-
-      {state?.phase.name === "terminal" ? (
-        <p className="error-banner" role="alert">
-          Reconnection was abandoned after 30 seconds.{" "}
-          <button type="button" onClick={() => void retry()}>
-            Retry now
-          </button>
-        </p>
-      ) : null}
-
-      {error ? (
-        <p className="error-banner" role="alert">
-          {error}
-        </p>
-      ) : null}
-
-      {/* H7: the engaged degradation step is named, never silent. */}
-      {state?.degradation.announcement ? (
-        <p className="degradation-banner" role="status">
-          <b>Capacity:</b> {state.degradation.announcement}
-        </p>
-      ) : null}
-
-      {/* §11.3: listen-only is a named mode, not a microphone button that
-          silently does nothing. The retry is offered where the reason is given. */}
-      {state?.capture.name === "listen_only" ? (
-        <p className="degradation-banner" role="status">
-          <b>Listen-only:</b> {state.capture.reason} Listening and the inspector are unaffected.{" "}
-          <button type="button" onClick={() => void startPublishing()}>
-            Try the microphone again
-          </button>
-        </p>
-      ) : null}
-      {state?.capture.name === "listen_only_device_available" ? (
-        <p className="degradation-banner" role="status">
-          <b>Microphone available:</b> {state.capture.reason}{" "}
-          <button type="button" onClick={() => void startPublishing()}>
-            Start microphone
-          </button>
-        </p>
-      ) : null}
-
-      {/* H14 */}
-      <FailureList
-        codes={state?.failures ?? []}
-        onDismiss={(failureCode) => session?.clearFailure(failureCode)}
+    <main className={`room-page${iphoneAudioCandidate ? " room-page--ios-live-audio" : ""}`}>
+      <h1 className="sr-only">Real Fabric room {code}</h1>
+      <RoomTopBar
+        code={code}
+        copyState={copyState}
+        onCopyInvite={() => void copyInvite()}
+        micAction={micAction}
+        liveAudioEligible={configuration.liveAudioEligible}
+        onStartAudio={() => void startAudio()}
+        onOpenLeaveDialog={() => {
+          setLeaveError(null);
+          leaveDialog.current?.showModal();
+        }}
       />
 
-      {room && !room.composition.valid ? (
-        <p className="error-banner" role="alert">
-          This room has no connected human. Any composition with at least one human is valid; this
-          one is not.
-        </p>
-      ) : null}
+      <LeaveRoomDialog
+        dialogRef={leaveDialog}
+        code={code}
+        leaveError={leaveError}
+        leaving={leaving}
+        onCancel={() => setLeaveError(null)}
+        onConfirmLeave={() => void confirmLeave()}
+      />
+
+      <RoomStatusStack
+        state={state}
+        reclaimed={reclaimed}
+        error={error}
+        iphoneAudioCandidate={iphoneAudioCandidate}
+        hiddenFailureCodes={hiddenFailureCodes}
+        onRetry={() => void retry()}
+        onDismissFailure={(failureCode) => session?.clearFailure(failureCode)}
+      />
 
       <div className="room-layout">
         <section
           className={`participant-surface participant-surface--${layout.layout}`}
           aria-label="Room participants"
         >
-          <p className="mobile-readonly">▣ Read-only room view</p>
+          <h2 className="sr-only">Room participants</h2>
+          {!iphoneAudioCandidate ? <p className="mobile-readonly">▣ Read-only room view</p> : null}
           <div className="participant-grid participant-grid--prominent">
             {layout.prominent.map(renderCard)}
           </div>
@@ -276,7 +256,7 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
             degradation={state.degradation}
             events={state.events}
             publishing={state.publishing}
-            subscribedIds={subscribedIds}
+            subscribedIds={state.subscribedParticipantIds}
             negotiation={state.negotiation}
             network={state.network}
             open={inspectorOpen}
@@ -333,13 +313,50 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
         </>
       ) : null}
 
-      <button
-        className="mobile-inspector-button"
-        type="button"
-        onClick={() => setInspectorOpen(true)}
-      >
-        Open inspector
-      </button>
+      {iphoneAudioCandidate ? (
+        <nav className="mobile-audio-rail" aria-label="Foreground audio controls">
+          {micAction.visible ? (
+            <button
+              className="mobile-audio-rail__primary"
+              disabled={micAction.disabled}
+              type="button"
+              onClick={() => void startAudio()}
+            >
+              {micAction.label}
+            </button>
+          ) : (
+            <span className="mobile-audio-rail__status">Audio live</span>
+          )}
+          <button
+            type="button"
+            disabled={!state?.publishing}
+            onClick={() => setMuted(!(state?.muted ?? false))}
+          >
+            {state?.muted ? "Unmute" : "Mute"}
+          </button>
+          <button type="button" onClick={() => setInspectorOpen(true)}>
+            Inspector
+          </button>
+          <button
+            className="mobile-audio-rail__danger"
+            type="button"
+            onClick={() => {
+              setLeaveError(null);
+              leaveDialog.current?.showModal();
+            }}
+          >
+            Leave
+          </button>
+        </nav>
+      ) : (
+        <button
+          className="mobile-inspector-button"
+          type="button"
+          onClick={() => setInspectorOpen(true)}
+        >
+          Open inspector
+        </button>
+      )}
     </main>
   );
 }

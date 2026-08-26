@@ -1,0 +1,519 @@
+{
+  "completeness": "complete",
+  "deferred": [],
+  "documentType": "codex-security.coverage",
+  "excludePaths": [],
+  "explicitExclusions": [],
+  "includePaths": ["."],
+  "inventoryStrategy": "repository",
+  "mode": "repository",
+  "openQuestions": [],
+  "scanId": "57e664f1-aa19-4e8c-a020-d7ef4fe380bc",
+  "schemaVersion": "1.0",
+  "surfaces": [
+    {
+      "disposition": "reported",
+      "id": "surface_baseline_audit",
+      "label": "Independent baseline security audit",
+      "notes": "Reviewed 47 of 93 authorised files and returned six pending candidates; no separate receipt file was created. All returned candidates were source-validated, merged where duplicated, and closed as reported or rejected.",
+      "receiptRefs": [],
+      "riskArea": "Repository-wide baseline review"
+    },
+    {
+      "disposition": "reported",
+      "id": "surface_media_resource_investigation",
+      "label": "Media and request-resource boundary investigation",
+      "notes": "Focused source review returned four pending candidates; captured before parent merge or validation. All returned candidates were source-validated, merged where duplicated, and closed as reported or rejected.",
+      "receiptRefs": [],
+      "riskArea": "Untrusted relay objects, browser media buffers, relay authorisation and Worker body parsing"
+    },
+    {
+      "disposition": "reported",
+      "id": "surface_control_boundary_investigation",
+      "label": "Control-plane authorisation and abuse-boundary investigation",
+      "notes": "Focused source review returned eleven pending candidates; captured before parent merge, deduplication or validation. All returned candidates were source-validated, merged where duplicated, and closed as reported or rejected.",
+      "receiptRefs": [],
+      "riskArea": "Relay credentials, presenter and AI authority, routing privacy, WebSocket and Durable Object resource boundaries"
+    },
+    {
+      "disposition": "reported",
+      "id": "surface_remaining_inventory_review",
+      "label": "Remaining authorised inventory review",
+      "notes": "Completed review of the outstanding inventory. Returned eight pending candidates, mostly independent corroboration of existing control/media candidates, plus one narrow read-only capture candidate. All returned candidates were source-validated, merged where duplicated, and closed as reported or rejected.",
+      "receiptRefs": [],
+      "riskArea": "Previously uncovered client UI, capture, tests, documentation, generated types, lockfile and design assets"
+    },
+    {
+      "disposition": "reported",
+      "id": "surface_validation_01",
+      "label": "Validated finding: Room creation and joining disclose a relay-wide publish/subscribe bearer",
+      "notes": "Validated by source trace at revision a784122aa18c6b7fbee1ae53d34b054a24d71f0b; merged candidate IDs: baseline-relay-wide-credential, media-relay-wide-credential, control-relay-credential-create, control-relay-credential-join.",
+      "receiptRefs": [],
+      "riskArea": "broken-access-control"
+    },
+    {
+      "disposition": "reported",
+      "id": "surface_validation_02",
+      "label": "Validated finding: Any joined human can execute presenter and AI lifecycle controls",
+      "notes": "Validated by source trace at revision a784122aa18c6b7fbee1ae53d34b054a24d71f0b; merged candidate IDs: baseline-presenter-global-controls, control-presenter-simulation-authorisation, control-ai-lifecycle-authorisation, remaining-ai-creation-authorisation, remaining-ai-removal-authorisation, remaining-ai-pipeline-authorisation, remaining-presenter-client-only, remaining-ai-to-ai-authorisation.",
+      "receiptRefs": [],
+      "riskArea": "missing-authorization"
+    },
+    {
+      "disposition": "reported",
+      "id": "surface_validation_03",
+      "label": "Validated finding: Unvalidated AI identifiers can wedge or pre-empt the global floor",
+      "notes": "Validated by source trace at revision a784122aa18c6b7fbee1ae53d34b054a24d71f0b; merged candidate IDs: control-floor-target-validation.",
+      "receiptRefs": [],
+      "riskArea": "improper-input-validation"
+    },
+    {
+      "disposition": "reported",
+      "id": "surface_validation_04",
+      "label": "Validated finding: Public room snapshots disclose every human's per-AI routing preferences",
+      "notes": "Validated by source trace at revision a784122aa18c6b7fbee1ae53d34b054a24d71f0b; merged candidate IDs: control-routing-row-disclosure.",
+      "receiptRefs": [],
+      "riskArea": "sensitive-data-exposure"
+    },
+    {
+      "disposition": "reported",
+      "id": "surface_validation_05",
+      "label": "Validated finding: A reusable participant bearer is placed in the WebSocket query string",
+      "notes": "Validated by source trace at revision a784122aa18c6b7fbee1ae53d34b054a24d71f0b; merged candidate IDs: baseline-websocket-query-token, control-websocket-query-token.",
+      "receiptRefs": [],
+      "riskArea": "credential-exposure"
+    },
+    {
+      "disposition": "reported",
+      "id": "surface_validation_06",
+      "label": "Validated finding: One participant token can open unbounded concurrent control sockets",
+      "notes": "Validated by source trace at revision a784122aa18c6b7fbee1ae53d34b054a24d71f0b; merged candidate IDs: control-concurrent-websockets.",
+      "receiptRefs": [],
+      "riskArea": "resource-exhaustion"
+    },
+    {
+      "disposition": "reported",
+      "id": "surface_validation_07",
+      "label": "Validated finding: Unthrottled open-room joins permit unbounded participant and routing allocation",
+      "notes": "Validated by source trace at revision a784122aa18c6b7fbee1ae53d34b054a24d71f0b; merged candidate IDs: control-unthrottled-joins, baseline-join-websocket-resource-limits.",
+      "receiptRefs": [],
+      "riskArea": "resource-exhaustion"
+    },
+    {
+      "disposition": "reported",
+      "id": "surface_validation_08",
+      "label": "Validated finding: Worker parses unbounded JSON bodies before rate limiting or authentication",
+      "notes": "Validated by source trace at revision a784122aa18c6b7fbee1ae53d34b054a24d71f0b; merged candidate IDs: baseline-unbounded-json-body, media-unbounded-json-body.",
+      "receiptRefs": [],
+      "riskArea": "resource-exhaustion"
+    },
+    {
+      "disposition": "reported",
+      "id": "surface_validation_09",
+      "label": "Validated finding: Playback deduplication retains unbounded object identifiers per group",
+      "notes": "Validated by source trace at revision a784122aa18c6b7fbee1ae53d34b054a24d71f0b; merged candidate IDs: media-unbounded-playback-deduplication, remaining-playback-deduplication.",
+      "receiptRefs": [],
+      "riskArea": "resource-exhaustion"
+    },
+    {
+      "disposition": "reported",
+      "id": "surface_validation_10",
+      "label": "Validated finding: Media bursts trigger count-unbounded sorting and decoder submission",
+      "notes": "Validated by source trace at revision a784122aa18c6b7fbee1ae53d34b054a24d71f0b; merged candidate IDs: media-jitter-decoder-burst, remaining-jitter-cardinality, baseline-inbound-media-budget.",
+      "receiptRefs": [],
+      "riskArea": "algorithmic-complexity"
+    },
+    {
+      "disposition": "reported",
+      "id": "surface_validation_11",
+      "label": "Validated finding: Unknown room-code probes initialise persistent SQLite Durable Objects",
+      "notes": "Validated by source trace at revision a784122aa18c6b7fbee1ae53d34b054a24d71f0b; merged candidate IDs: control-arbitrary-room-do-initialisation.",
+      "receiptRefs": [],
+      "riskArea": "resource-exhaustion"
+    },
+    {
+      "disposition": "reported",
+      "id": "surface_validation_12",
+      "label": "Validated finding: Narrow read-only clients still start microphone capture and publication",
+      "notes": "Validated by source trace at revision a784122aa18c6b7fbee1ae53d34b054a24d71f0b; merged candidate IDs: remaining-narrow-capture.",
+      "receiptRefs": [],
+      "riskArea": "privacy-violation"
+    },
+    {
+      "disposition": "reported",
+      "id": "surface_validation_13",
+      "label": "Validated finding: Any participant can spoof another participant's activity",
+      "notes": "Validated by source trace at revision a784122aa18c6b7fbee1ae53d34b054a24d71f0b; merged candidate IDs: control-activity-target-spoofing.",
+      "receiptRefs": [],
+      "riskArea": "object-authorization"
+    },
+    {
+      "candidateId": "baseline-inbound-media-budget",
+      "counterEvidence": [
+        "Malformed frames are rejected and one payload is capped at 65,535 bytes.",
+        "Old jitter frames, old groups and the mixer ring are bounded.",
+        "WebTransport flow control does not establish application budgets."
+      ],
+      "disposition": "rejected",
+      "id": "surface_rejected_baseline_inbound_media_budget",
+      "label": "Merged duplicate candidate: Inbound media objects have no per-track object-count or byte budget",
+      "mergedIntoRuleIds": [
+        "resource-exhaustion.unbounded-playback-dedupe",
+        "resource-exhaustion.media-burst-sorting"
+      ],
+      "notes": "Rejected as a separate finding after source validation because it describes the same broken control, attack path and effective remediation as resource-exhaustion.unbounded-playback-dedupe, resource-exhaustion.media-burst-sorting. Its evidence remains represented by the validated finding locations and this closure surface.",
+      "originalEvidence": [
+        "Unique IDs in one group are not count-bounded.",
+        "Four retained groups do not cap IDs per group.",
+        "A 200 ms rule does not cap a burst.",
+        "Per-insert sorting creates superlinear CPU work."
+      ],
+      "receiptRefs": [],
+      "riskArea": "Duplicate candidate reconciliation"
+    },
+    {
+      "candidateId": "remaining-jitter-cardinality",
+      "counterEvidence": [
+        "Older frames, cancellation groups and per-frame length are bounded.",
+        "External relay flow control is unverified."
+      ],
+      "disposition": "rejected",
+      "id": "surface_rejected_remaining_jitter_cardinality",
+      "label": "Merged duplicate candidate: Time-window pruning does not bound jitter-buffer burst cardinality",
+      "mergedIntoRuleIds": ["resource-exhaustion.media-burst-sorting"],
+      "notes": "Rejected as a separate finding after source validation because it describes the same broken control, attack path and effective remediation as resource-exhaustion.media-burst-sorting. Its evidence remains represented by the validated finding locations and this closure surface.",
+      "originalEvidence": [
+        "Automatic human subscriptions exist.",
+        "Normal tests send one frame per 20 ms and small sets."
+      ],
+      "receiptRefs": [],
+      "riskArea": "Duplicate candidate reconciliation"
+    },
+    {
+      "candidateId": "remaining-playback-deduplication",
+      "counterEvidence": ["Four groups are retained.", "Close/forget clears state."],
+      "disposition": "rejected",
+      "id": "surface_rejected_remaining_playback_deduplication",
+      "label": "Merged duplicate candidate: Playback deduplication is unbounded within a single object group",
+      "mergedIntoRuleIds": ["resource-exhaustion.unbounded-playback-dedupe"],
+      "notes": "Rejected as a separate finding after source validation because it describes the same broken control, attack path and effective remediation as resource-exhaustion.unbounded-playback-dedupe. Its evidence remains represented by the validated finding locations and this closure surface.",
+      "originalEvidence": [
+        "Malformed payloads consume state before decodeAudioObject.",
+        "Normal mapping expects 50 objects/group but does not enforce it."
+      ],
+      "receiptRefs": [],
+      "riskArea": "Duplicate candidate reconciliation"
+    },
+    {
+      "candidateId": "media-unbounded-json-body",
+      "counterEvidence": [
+        "Content-Type is checked.",
+        "Join checks room existence.",
+        "Platform limits make each request finite but do not supply a small app bound."
+      ],
+      "disposition": "rejected",
+      "id": "surface_rejected_media_unbounded_json_body",
+      "label": "Merged duplicate candidate: Worker parses unbounded JSON bodies before rate limiting or participant authentication",
+      "mergedIntoRuleIds": ["resource-exhaustion.unbounded-json-body"],
+      "notes": "Rejected as a separate finding after source validation because it describes the same broken control, attack path and effective remediation as resource-exhaustion.unbounded-json-body. Its evidence remains represented by the validated finding locations and this closure surface.",
+      "originalEvidence": [
+        "No Content-Length check, streaming counter or 413 response exists.",
+        "Legitimate fields are tiny.",
+        "Creation limiter runs after parse."
+      ],
+      "receiptRefs": [],
+      "riskArea": "Duplicate candidate reconciliation"
+    },
+    {
+      "candidateId": "baseline-join-websocket-resource-limits",
+      "counterEvidence": [
+        "Room codes are non-guessable.",
+        "Rooms expire, creation is limited and Cloudflare has ceilings.",
+        "Product forbids a participant-count admission cap."
+      ],
+      "disposition": "rejected",
+      "id": "surface_rejected_baseline_join_websocket_resource_limits",
+      "label": "Merged duplicate candidate: Room joins and control WebSockets have no per-room or per-credential resource limits",
+      "mergedIntoRuleIds": [
+        "resource-exhaustion.concurrent-control-sockets",
+        "resource-exhaustion.unthrottled-open-joins"
+      ],
+      "notes": "Rejected as a separate finding after source validation because it describes the same broken control, attack path and effective remediation as resource-exhaustion.concurrent-control-sockets, resource-exhaustion.unthrottled-open-joins. Its evidence remains represented by the validated finding locations and this closure surface.",
+      "originalEvidence": [
+        "No join velocity or socket-per-credential limit exists.",
+        "Participant insertion adds routing work.",
+        "A credential is replayable across concurrent sockets."
+      ],
+      "receiptRefs": [],
+      "riskArea": "Duplicate candidate reconciliation"
+    },
+    {
+      "candidateId": "control-websocket-query-token",
+      "counterEvidence": [
+        "Application logs omit query strings.",
+        "External full-URL logging is unverified.",
+        "Token is random, hashed at rest and bounded by leave/room expiry."
+      ],
+      "disposition": "rejected",
+      "id": "surface_rejected_control_websocket_query_token",
+      "label": "Merged duplicate candidate: A reusable participant bearer is placed in the WebSocket query string instead of a single-use socket ticket",
+      "mergedIntoRuleIds": ["credential-exposure.websocket-query-bearer"],
+      "notes": "Rejected as a separate finding after source validation because it describes the same broken control, attack path and effective remediation as credential-exposure.websocket-query-bearer. Its evidence remains represented by the validated finding locations and this closure surface.",
+      "originalEvidence": [
+        "Full bearer is appended as token=.",
+        "No independent token expiry or consumption exists.",
+        "Reclaim returns the same token and can act while connected."
+      ],
+      "receiptRefs": [],
+      "riskArea": "Duplicate candidate reconciliation"
+    },
+    {
+      "candidateId": "control-presenter-simulation-authorisation",
+      "counterEvidence": [
+        "Attacker needs a valid human credential.",
+        "Simulation counts and AI-to-AI turns are bounded; room expires."
+      ],
+      "disposition": "rejected",
+      "id": "surface_rejected_control_presenter_simulation_authorisation",
+      "label": "Merged duplicate candidate: Any joined human can perform presenter-only simulation and AI-to-AI safety mutations",
+      "mergedIntoRuleIds": ["authorization.any-human-global-room-control"],
+      "notes": "Rejected as a separate finding after source validation because it describes the same broken control, attack path and effective remediation as authorization.any-human-global-room-control. Its evidence remains represented by the validated finding locations and this closure surface.",
+      "originalEvidence": [
+        "Spec names these as presenter actions.",
+        "No creator/presenter role is stored.",
+        "sessionStorage is never verified as authority."
+      ],
+      "receiptRefs": [],
+      "riskArea": "Duplicate candidate reconciliation"
+    },
+    {
+      "candidateId": "control-ai-lifecycle-authorisation",
+      "counterEvidence": [
+        "A valid human credential is required.",
+        "SQL limits removal/pipeline changes to AI rows.",
+        "Room lifetime bounds persistence."
+      ],
+      "disposition": "rejected",
+      "id": "surface_rejected_control_ai_lifecycle_authorisation",
+      "label": "Merged duplicate candidate: Any joined human can create, remove or falsify global AI state",
+      "mergedIntoRuleIds": ["authorization.any-human-global-room-control"],
+      "notes": "Rejected as a separate finding after source validation because it describes the same broken control, attack path and effective remediation as authorization.any-human-global-room-control. Its evidence remains represented by the validated finding locations and this closure surface.",
+      "originalEvidence": [
+        "Tests require only any valid token.",
+        "No AI ownership or presenter role exists.",
+        "Role predicates protect row types, not which human may control them."
+      ],
+      "receiptRefs": [],
+      "riskArea": "Duplicate candidate reconciliation"
+    },
+    {
+      "candidateId": "remaining-ai-creation-authorisation",
+      "counterEvidence": [
+        "Valid token required.",
+        "Room lifetime bounds persistence.",
+        "No participant-count cap is intentional.",
+        "Live AI cost is not implemented."
+      ],
+      "disposition": "rejected",
+      "id": "surface_rejected_remaining_ai_creation_authorisation",
+      "label": "Merged duplicate candidate: Any joined human can create unbounded room-wide AI participants",
+      "mergedIntoRuleIds": ["authorization.any-human-global-room-control"],
+      "notes": "Rejected as a separate finding after source validation because it describes the same broken control, attack path and effective remediation as authorization.any-human-global-room-control. Its evidence remains represented by the validated finding locations and this closure surface.",
+      "originalEvidence": [
+        "Anyone with a valid link may join.",
+        "Each AI seeds routing for every human.",
+        "Spec requires lifecycle/cost controls."
+      ],
+      "receiptRefs": [],
+      "riskArea": "Duplicate candidate reconciliation"
+    },
+    {
+      "candidateId": "remaining-ai-removal-authorisation",
+      "counterEvidence": [
+        "Target restricted to AI rows.",
+        "Record is marked left.",
+        "Valid token required."
+      ],
+      "disposition": "rejected",
+      "id": "surface_rejected_remaining_ai_removal_authorisation",
+      "label": "Merged duplicate candidate: Any joined human can remove any AI from the room",
+      "mergedIntoRuleIds": ["authorization.any-human-global-room-control"],
+      "notes": "Rejected as a separate finding after source validation because it describes the same broken control, attack path and effective remediation as authorization.any-human-global-room-control. Its evidence remains represented by the validated finding locations and this closure surface.",
+      "originalEvidence": [
+        "Operation is independently reachable.",
+        "Removal also changes floor state."
+      ],
+      "receiptRefs": [],
+      "riskArea": "Duplicate candidate reconciliation"
+    },
+    {
+      "candidateId": "remaining-ai-pipeline-authorisation",
+      "counterEvidence": [
+        "Valid token required.",
+        "Target update restricted to AI rows.",
+        "No live AI worker exists."
+      ],
+      "disposition": "rejected",
+      "id": "surface_rejected_remaining_ai_pipeline_authorisation",
+      "label": "Merged duplicate candidate: Any joined human can falsify any AI pipeline state",
+      "mergedIntoRuleIds": ["authorization.any-human-global-room-control"],
+      "notes": "Rejected as a separate finding after source validation because it describes the same broken control, attack path and effective remediation as authorization.any-human-global-room-control. Its evidence remains represented by the validated finding locations and this closure surface.",
+      "originalEvidence": [
+        "Parser validates enum but not authority.",
+        "Broadcast updates shared room state."
+      ],
+      "receiptRefs": [],
+      "riskArea": "Duplicate candidate reconciliation"
+    },
+    {
+      "candidateId": "remaining-presenter-client-only",
+      "counterEvidence": [
+        "Simulation is labelled.",
+        "Counts are bounded.",
+        "Valid human token required."
+      ],
+      "disposition": "rejected",
+      "id": "surface_rejected_remaining_presenter_client_only",
+      "label": "Merged duplicate candidate: Client-only presenter mode does not protect presenter simulation controls",
+      "mergedIntoRuleIds": ["authorization.any-human-global-room-control"],
+      "notes": "Rejected as a separate finding after source validation because it describes the same broken control, attack path and effective remediation as authorization.any-human-global-room-control. Its evidence remains represented by the validated finding locations and this closure surface.",
+      "originalEvidence": [
+        "Tests reject only invalid credentials.",
+        "Server clamps counts but has no presenter distinction."
+      ],
+      "receiptRefs": [],
+      "riskArea": "Duplicate candidate reconciliation"
+    },
+    {
+      "candidateId": "remaining-ai-to-ai-authorisation",
+      "counterEvidence": [
+        "Disabled by default.",
+        "Turns are capped.",
+        "No live AI pipeline exists."
+      ],
+      "disposition": "rejected",
+      "id": "surface_rejected_remaining_ai_to_ai_authorisation",
+      "label": "Merged duplicate candidate: Any joined human can enable or disable room-wide AI-to-AI exchange",
+      "mergedIntoRuleIds": ["authorization.any-human-global-room-control"],
+      "notes": "Rejected as a separate finding after source validation because it describes the same broken control, attack path and effective remediation as authorization.any-human-global-room-control. Its evidence remains represented by the validated finding locations and this closure surface.",
+      "originalEvidence": [
+        "Every human receives the accepted credential shape.",
+        "Existing test exercises only creator."
+      ],
+      "receiptRefs": [],
+      "riskArea": "Duplicate candidate reconciliation"
+    },
+    {
+      "candidateId": "media-relay-wide-credential",
+      "counterEvidence": [
+        "Credential is omitted from snapshots and held in memory.",
+        "Identifiers are high entropy.",
+        "Ordinary client restricts itself.",
+        "Relay acceptance, ACLs, expiry and collision semantics are unverified."
+      ],
+      "disposition": "rejected",
+      "id": "surface_rejected_media_relay_wide_credential",
+      "label": "Merged duplicate candidate: A static relay-wide credential is returned to every participant without room, publisher or subscription scope",
+      "mergedIntoRuleIds": ["access-control.relay-wide-browser-bearer"],
+      "notes": "Rejected as a separate finding after source validation because it describes the same broken control, attack path and effective remediation as access-control.relay-wide-browser-bearer. Its evidence remains represented by the validated finding locations and this closure surface.",
+      "originalEvidence": [
+        "One environment secret is used without claim minting.",
+        "Creation is public.",
+        "Adapter operations are not reconciled to routing.",
+        "Routing is cooperative."
+      ],
+      "receiptRefs": [],
+      "riskArea": "Duplicate candidate reconciliation"
+    },
+    {
+      "candidateId": "control-relay-credential-create",
+      "counterEvidence": [
+        "Creation is throttled.",
+        "Responses are no-store and logs/rendering redact the token.",
+        "Relay acceptance, expiry and enforcement are trace-unverified."
+      ],
+      "disposition": "rejected",
+      "id": "surface_rejected_control_relay_credential_create",
+      "label": "Merged duplicate candidate: Unauthenticated room creation discloses a Worker-wide relay publish/subscribe bearer",
+      "mergedIntoRuleIds": ["access-control.relay-wide-browser-bearer"],
+      "notes": "Rejected as a separate finding after source validation because it describes the same broken control, attack path and effective remediation as access-control.relay-wide-browser-bearer. Its evidence remains represented by the validated finding locations and this closure surface.",
+      "originalEvidence": [
+        "No minting, claims, room binding, participant binding or expiry exists.",
+        "Worker comments describe publish and subscribe authority.",
+        "Adapter accepts arbitrary track and namespace arguments."
+      ],
+      "receiptRefs": [],
+      "riskArea": "Duplicate candidate reconciliation"
+    },
+    {
+      "candidate": {
+        "attacker": "A holder of a valid room code.",
+        "confidence": "high",
+        "counterevidence": [
+          "Room codes are high entropy and rooms last at most twenty minutes.",
+          "Credential is absent from public snapshots and logs.",
+          "Relay acceptance and undocumented scope are unverified."
+        ],
+        "cwe": "CWE-522",
+        "impact": "A room-code holder can obtain the bearer and target namespace inputs, then attempt routing bypass, unauthorised subscription or publication subject to relay semantics.",
+        "locations": [
+          {
+            "lines": "117-143",
+            "path": "src/worker/index.ts",
+            "role": "entrypoint"
+          },
+          {
+            "lines": "289-304",
+            "path": "src/worker/index.ts",
+            "role": "root_control"
+          },
+          {
+            "lines": "143-180",
+            "path": "src/worker/room.ts",
+            "role": "join"
+          },
+          {
+            "lines": "17-36",
+            "path": "src/shared/tracks.ts",
+            "role": "namespace"
+          },
+          {
+            "lines": "361-483",
+            "path": "src/client/transport/MoqTransportAdapter.ts",
+            "role": "sink"
+          }
+        ],
+        "recommended_remediation": "Mint a scoped credential after a controlled join; rate-limit issuance per source and room without imposing a participant-count cap.",
+        "rule": "Open-room joining independently discloses the same relay-wide bearer without an issuance throttle",
+        "severity": "high",
+        "source_to_sink": "POST /api/rooms/:code/join returns the same Worker token without a join or issuance limiter, together with snapshot identifiers used by deterministic track names.",
+        "supporting_source_evidence": [
+          "Join requires only room-code knowledge.",
+          "Every join receives the same credential.",
+          "Snapshot and deterministic naming expose namespace inputs.",
+          "No issuance budget exists."
+        ],
+        "violated_security_invariant": "Open joining must not grant relay authority beyond the participant's permitted tracks and issuance must be throttled."
+      },
+      "candidateId": "control-relay-credential-join",
+      "counterEvidence": [
+        "Room codes are high entropy and rooms last at most twenty minutes.",
+        "Credential is absent from public snapshots and logs.",
+        "Relay acceptance and undocumented scope are unverified."
+      ],
+      "disposition": "rejected",
+      "id": "surface_rejected_control_relay_credential_join",
+      "label": "Merged duplicate candidate: Open-room joining independently discloses the same relay-wide bearer without an issuance throttle",
+      "mergedIntoRuleIds": ["access-control.relay-wide-browser-bearer"],
+      "notes": "Rejected as a separate finding after source validation because it describes the same broken control, attack path and effective remediation as access-control.relay-wide-browser-bearer. Its evidence remains represented by the validated finding locations and this closure surface.",
+      "originalEvidence": [
+        "Join requires only room-code knowledge.",
+        "Every join receives the same credential.",
+        "Snapshot and deterministic naming expose namespace inputs.",
+        "No issuance budget exists."
+      ],
+      "receiptRefs": [],
+      "riskArea": "Duplicate candidate reconciliation"
+    }
+  ]
+}

@@ -1,5 +1,13 @@
 import { type Measurement, measured, notExposed } from "../../shared/measurement";
 import { AUDIO_FRAME_DURATION_MS } from "./frame";
+import {
+  type AudioCaptureAdapter,
+  CAPTURE_FRAME_SAMPLES,
+  CAPTURE_SAMPLE_RATE,
+  type CapturePath,
+  createAudioCaptureAdapter,
+  inspectCaptureSupport,
+} from "./UniversalAudioCaptureAdapter";
 import { VoiceActivityDetector } from "./VoiceActivityDetector";
 
 /**
@@ -11,7 +19,6 @@ import { VoiceActivityDetector } from "./VoiceActivityDetector";
  * rather than assumed.
  */
 
-export const CAPTURE_SAMPLE_RATE = 48_000;
 export const DEFAULT_BITRATE = 32_000;
 
 export interface CaptureOptions {
@@ -24,25 +31,17 @@ export interface CaptureOptions {
   onError?: (error: Error) => void;
 }
 
-interface AudioDataReader {
-  read(): Promise<{ done: boolean; value?: AudioData }>;
-  cancel(): Promise<void>;
-}
-
-/** Chromium's insertable-streams surface. Absent elsewhere, and not shimmed. */
-interface TrackProcessorConstructor {
-  new (init: { track: MediaStreamTrack }): { readable: ReadableStream<AudioData> };
-}
-
 export class CaptureController {
   private stream: MediaStream | null = null;
   private encoder: AudioEncoder | null = null;
-  private reader: AudioDataReader | null = null;
+  private adapter: AudioCaptureAdapter | null = null;
   private readonly detector = new VoiceActivityDetector();
   private dtx: Measurement<boolean> = notExposed("Capture has not started.");
+  private path: Measurement<CapturePath> = notExposed("Capture has not started.");
   private encodedFrames = 0;
   private encodedBytes = 0;
   private draining = false;
+  private muted = false;
 
   /**
    * Starts capture and encode. Throws a specific error for each §10 capture
@@ -58,14 +57,8 @@ export class CaptureController {
     if (!("AudioEncoder" in globalThis)) {
       throw new Error("WebCodecs AudioEncoder is not exposed by this browser.");
     }
-    const processorConstructor = (
-      globalThis as unknown as { MediaStreamTrackProcessor?: TrackProcessorConstructor }
-    ).MediaStreamTrackProcessor;
-    if (!processorConstructor) {
-      throw new Error(
-        "MediaStreamTrackProcessor is not exposed by this browser, so captured audio cannot reach the Opus encoder.",
-      );
-    }
+    const support = inspectCaptureSupport();
+    if (!support.available) throw new Error(support.reason);
 
     // H4: echo cancellation is a defence, not the mechanism. Headphones are.
     this.stream = await navigator.mediaDevices.getUserMedia({
@@ -79,63 +72,50 @@ export class CaptureController {
       video: false,
     });
 
-    const bitrate = options.bitrate ?? DEFAULT_BITRATE;
-    this.dtx = await probeDtx(bitrate);
-    const configuration = buildConfiguration(bitrate, this.dtx);
+    try {
+      const bitrate = options.bitrate ?? DEFAULT_BITRATE;
+      const support = await probeOpusEncoderSupport(bitrate);
+      if (!support.supported || !support.configuration) throw new Error(support.reason);
+      this.dtx = support.dtx;
+      const configuration = support.configuration;
 
-    this.encoder = new AudioEncoder({
-      output: (chunk) => {
-        this.encodedFrames += 1;
-        this.encodedBytes += chunk.byteLength;
-        options.onEncodedFrame(chunk);
-      },
-      error: (error) => {
-        // Never swallowed: an encoder that dies must surface as a failure state.
-        options.onError?.(new Error(`Opus encoder failed: ${error.name}`));
-      },
-    });
-    this.encoder.configure(configuration);
+      this.encoder = new AudioEncoder({
+        output: (chunk) => {
+          this.encodedFrames += 1;
+          this.encodedBytes += chunk.byteLength;
+          options.onEncodedFrame(chunk);
+        },
+        error: (error) => {
+          // Never swallowed: an encoder that dies must surface as a failure state.
+          options.onError?.(new Error(`Opus encoder failed: ${error.name}`));
+        },
+      });
+      this.encoder.configure(configuration);
 
-    const track = this.stream.getAudioTracks()[0];
-    if (!track) {
+      const scratch = new Float32Array(CAPTURE_FRAME_SAMPLES);
+      this.adapter = createAudioCaptureAdapter();
+      this.setMuted(this.muted);
+      await this.adapter.start(this.stream, {
+        onFrame: (data) => {
+          try {
+            data.copyTo(scratch, { planeIndex: 0, frameCount: CAPTURE_FRAME_SAMPLES });
+            const event = this.detector.observe(scratch);
+            if (event === "onset") options.onOnset?.();
+            if (event === "release") options.onRelease?.();
+            this.encoder?.encode(data);
+          } catch (error) {
+            options.onError?.(error instanceof Error ? error : new Error("Capture encode failed."));
+          }
+        },
+        onError: (error) => options.onError?.(error),
+      });
+      this.path = measured(this.adapter.path);
+      this.encodedFrames = 0;
+      this.encodedBytes = 0;
+      return this.stream;
+    } catch (error) {
       await this.stop();
-      throw new Error("The microphone stream carries no audio track.");
-    }
-    const processor = new processorConstructor({ track });
-    this.reader = processor.readable.getReader() as unknown as AudioDataReader;
-    void this.pump(options);
-    return this.stream;
-  }
-
-  private async pump(options: CaptureOptions): Promise<void> {
-    const reader = this.reader;
-    if (!reader) return;
-    const scratch = new Float32Array(2_048);
-    while (this.reader === reader) {
-      let result: { done: boolean; value?: AudioData };
-      try {
-        result = await reader.read();
-      } catch (error) {
-        if (this.reader === reader) {
-          options.onError?.(error instanceof Error ? error : new Error("Capture read failed."));
-        }
-        return;
-      }
-      if (result.done || !result.value) return;
-      const data = result.value;
-      try {
-        const frames = Math.min(scratch.length, data.numberOfFrames);
-        const view = scratch.subarray(0, frames);
-        data.copyTo(view, { planeIndex: 0, frameCount: frames });
-        const event = this.detector.observe(view);
-        if (event === "onset") options.onOnset?.();
-        if (event === "release") options.onRelease?.();
-        this.encoder?.encode(data);
-      } catch (error) {
-        options.onError?.(error instanceof Error ? error : new Error("Capture encode failed."));
-      } finally {
-        data.close();
-      }
+      throw error;
     }
   }
 
@@ -144,12 +124,25 @@ export class CaptureController {
     return this.dtx;
   }
 
+  capturePath(): Measurement<CapturePath> {
+    return this.path;
+  }
+
   get speaking(): boolean {
     return this.detector.isSpeaking;
   }
 
   get level(): number {
     return this.detector.level;
+  }
+
+  setMuted(muted: boolean): void {
+    this.muted = muted;
+    for (const track of this.stream?.getAudioTracks() ?? []) track.enabled = !muted;
+  }
+
+  get isMuted(): boolean {
+    return this.muted;
   }
 
   /** Object rate is roughly (active speakers x 50) per second, per §6.3. */
@@ -167,10 +160,10 @@ export class CaptureController {
   async stop(): Promise<void> {
     if (this.draining) return;
     this.draining = true;
-    const reader = this.reader;
-    this.reader = null;
+    const adapter = this.adapter;
+    this.adapter = null;
     try {
-      await reader?.cancel();
+      await adapter?.stop();
     } catch {
       // A cancelled reader on a stopped track is expected during teardown.
     }
@@ -185,48 +178,128 @@ export class CaptureController {
       this.stream = null;
       this.detector.reset();
       this.dtx = notExposed("Capture has stopped.");
+      this.path = notExposed("Capture has stopped.");
       this.draining = false;
     }
   }
 }
 
-interface OpusEncoderConfig extends AudioEncoderConfig {
-  opus?: { frameDuration?: number; usedtx?: boolean };
-}
-
-function buildConfiguration(bitrate: number, dtx: Measurement<boolean>): OpusEncoderConfig {
-  return {
-    codec: "opus",
-    sampleRate: CAPTURE_SAMPLE_RATE,
-    numberOfChannels: 1,
-    bitrate,
-    opus: {
-      // Microseconds, per the WebCodecs Opus registration.
-      frameDuration: AUDIO_FRAME_DURATION_MS * 1_000,
-      ...(dtx.exposed && dtx.value ? { usedtx: true } : {}),
-    },
+export interface OpusEncoderConfig extends AudioEncoderConfig {
+  opus?: {
+    frameDuration?: number;
+    usedtx?: boolean;
+    application?: "voip" | "audio" | "lowdelay";
+    signal?: "auto" | "music" | "voice";
   };
 }
 
-async function probeDtx(bitrate: number): Promise<Measurement<boolean>> {
-  const candidate: OpusEncoderConfig = {
+export interface OpusEncoderProbe {
+  supported: boolean;
+  configuration: OpusEncoderConfig | null;
+  dtx: Measurement<boolean>;
+  application: Measurement<"voip">;
+  signal: Measurement<"voice">;
+  reason: string;
+}
+
+export async function probeOpusEncoderSupport(
+  bitrate = DEFAULT_BITRATE,
+): Promise<OpusEncoderProbe> {
+  if (!("AudioEncoder" in globalThis)) {
+    const reason = "WebCodecs AudioEncoder is not exposed by this browser.";
+    return unsupportedOpusProbe(reason);
+  }
+  const required: OpusEncoderConfig = {
     codec: "opus",
     sampleRate: CAPTURE_SAMPLE_RATE,
     numberOfChannels: 1,
     bitrate,
-    opus: { frameDuration: AUDIO_FRAME_DURATION_MS * 1_000, usedtx: true },
   };
   try {
-    const result = await AudioEncoder.isConfigSupported(candidate);
+    const result = await AudioEncoder.isConfigSupported(required);
     if (!result.supported) {
-      return measured(false);
+      return unsupportedOpusProbe(
+        "This browser rejected 48 kHz mono Opus at 32 kbit/s with 20 ms input frames.",
+      );
     }
-    // Chromium echoes back the accepted config. If it dropped `usedtx`, the
-    // encoder does not support it and claiming otherwise would be a fiction.
-    const echoed = result.config as OpusEncoderConfig | undefined;
-    if (echoed?.opus && echoed.opus.usedtx !== true) return measured(false);
-    return measured(true);
+
+    // Optional Opus controls are negotiated independently. A browser that
+    // rejects DTX or a voice hint can still carry the required Opus stream;
+    // unsupported values are omitted rather than making encode unavailable.
+    const opus: NonNullable<OpusEncoderConfig["opus"]> = {};
+    const frameDuration = AUDIO_FRAME_DURATION_MS * 1_000;
+    if (await acceptsOpusOption(required, opus, "frameDuration", frameDuration)) {
+      opus.frameDuration = frameDuration;
+    }
+    if (await acceptsOpusOption(required, opus, "application", "voip")) {
+      opus.application = "voip";
+    }
+    if (await acceptsOpusOption(required, opus, "signal", "voice")) {
+      opus.signal = "voice";
+    }
+    if (await acceptsOpusOption(required, opus, "usedtx", true)) {
+      opus.usedtx = true;
+    }
+
+    return {
+      supported: true,
+      configuration: {
+        codec: "opus",
+        sampleRate: CAPTURE_SAMPLE_RATE,
+        numberOfChannels: 1,
+        bitrate,
+        ...(Object.keys(opus).length > 0 ? { opus } : {}),
+      },
+      dtx:
+        opus.usedtx === true
+          ? measured(true)
+          : notExposed("The accepted Opus configuration did not report DTX."),
+      application:
+        opus.application === "voip"
+          ? measured("voip")
+          : notExposed("The accepted Opus configuration did not report the VoIP application hint."),
+      signal:
+        opus.signal === "voice"
+          ? measured("voice")
+          : notExposed("The accepted Opus configuration did not report the voice signal hint."),
+      reason: "Opus encode is available; optional DTX and voice hints are reported separately.",
+    };
   } catch {
-    return notExposed("This browser does not report whether Opus DTX is supported.");
+    return unsupportedOpusProbe(
+      "This browser could not evaluate the required Opus encoder configuration.",
+    );
   }
+}
+
+async function acceptsOpusOption<K extends keyof NonNullable<OpusEncoderConfig["opus"]>>(
+  required: OpusEncoderConfig,
+  accepted: NonNullable<OpusEncoderConfig["opus"]>,
+  key: K,
+  value: NonNullable<OpusEncoderConfig["opus"]>[K],
+): Promise<boolean> {
+  try {
+    const result = await AudioEncoder.isConfigSupported({
+      ...required,
+      opus: { ...accepted, [key]: value },
+    });
+    const echoed = (result.config as OpusEncoderConfig | undefined)?.opus;
+    const echoedOptions = echoed as Record<string, unknown> | undefined;
+    const preservesAccepted = Object.entries(accepted).every(
+      ([acceptedKey, acceptedValue]) => echoedOptions?.[acceptedKey] === acceptedValue,
+    );
+    return result.supported === true && preservesAccepted && echoedOptions?.[String(key)] === value;
+  } catch {
+    return false;
+  }
+}
+
+function unsupportedOpusProbe(reason: string): OpusEncoderProbe {
+  return {
+    supported: false,
+    configuration: null,
+    dtx: notExposed(reason),
+    application: notExposed(reason),
+    signal: notExposed(reason),
+    reason,
+  };
 }
