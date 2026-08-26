@@ -26,7 +26,11 @@ import {
 } from "../src/shared/contracts";
 import { ALL_FAILURE_CODES, allFailureStates, failureState } from "../src/shared/failures";
 import { formatMeasurement, measured, notExposed } from "../src/shared/measurement";
-import { matchConfiguration, PINNED_CONFIGURATION } from "../src/shared/pinnedConfiguration";
+import {
+  currentUserAgentFacts,
+  matchConfiguration,
+  PINNED_CONFIGURATION,
+} from "../src/shared/pinnedConfiguration";
 import {
   audioTrack,
   fanOut,
@@ -155,6 +159,81 @@ describe("H3 — one pinned browser, others warned", () => {
   it("does not present a provisional pin as a decision", () => {
     expect(PINNED_CONFIGURATION.status).toBe("provisional");
     expect(PINNED_CONFIGURATION.note).toMatch(/Gate 2/);
+  });
+
+  it("extracts user agent facts from the global navigator object", () => {
+    const originalNavigator = globalThis.navigator;
+
+    try {
+      // 1. Legacy browser without userAgentData
+      Object.defineProperty(globalThis, "navigator", {
+        value: { userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)" },
+        configurable: true,
+        writable: true,
+      });
+      expect(currentUserAgentFacts()).toEqual({
+        userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+      });
+
+      // 2. Modern browser with brands and platform in userAgentData
+      const mockBrands = [{ brand: "Google Chrome", version: "141" }];
+      Object.defineProperty(globalThis, "navigator", {
+        value: {
+          userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/141.0.0.0",
+          userAgentData: {
+            brands: mockBrands,
+            platform: "macOS",
+          },
+        },
+        configurable: true,
+        writable: true,
+      });
+      const facts = currentUserAgentFacts();
+      expect(facts).toEqual({
+        userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/141.0.0.0",
+        brands: mockBrands,
+        platform: "macOS",
+      });
+      expect(matchConfiguration(facts).tested).toBe(true);
+
+      // 3. Modern browser with userAgentData having only brands
+      Object.defineProperty(globalThis, "navigator", {
+        value: {
+          userAgent: "Mozilla/5.0 Chrome/141.0.0.0",
+          userAgentData: {
+            brands: mockBrands,
+          },
+        },
+        configurable: true,
+        writable: true,
+      });
+      expect(currentUserAgentFacts()).toEqual({
+        userAgent: "Mozilla/5.0 Chrome/141.0.0.0",
+        brands: mockBrands,
+      });
+
+      // 4. Modern browser with userAgentData having only platform
+      Object.defineProperty(globalThis, "navigator", {
+        value: {
+          userAgent: "Mozilla/5.0 Chrome/141.0.0.0",
+          userAgentData: {
+            platform: "macOS",
+          },
+        },
+        configurable: true,
+        writable: true,
+      });
+      expect(currentUserAgentFacts()).toEqual({
+        userAgent: "Mozilla/5.0 Chrome/141.0.0.0",
+        platform: "macOS",
+      });
+    } finally {
+      Object.defineProperty(globalThis, "navigator", {
+        value: originalNavigator,
+        configurable: true,
+        writable: true,
+      });
+    }
   });
 });
 
