@@ -4,11 +4,52 @@ import {
   optionalString,
   readJsonObject,
   requiredBoolean,
+  requiredEnum,
   requiredInteger,
   requiredString,
 } from "../src/worker/validation";
 
 describe("request validation", () => {
+  describe("requiredEnum", () => {
+    const allowedValues = ["alpha", "beta", "gamma"] as const;
+
+    it("returns enum value when field is a valid allowed string", () => {
+      expect(requiredEnum({ mode: "alpha" }, "mode", allowedValues)).toBe("alpha");
+      expect(requiredEnum({ mode: "beta" }, "mode", allowedValues)).toBe("beta");
+      expect(requiredEnum({ mode: "gamma" }, "mode", allowedValues)).toBe("gamma");
+    });
+
+    it("throws HttpError 400 invalid_request for missing, non-string, or unallowed values", () => {
+      const invalidCases: Array<[string, Record<string, unknown>]> = [
+        ["missing field", {}],
+        ["null value", { mode: null }],
+        ["undefined value", { mode: undefined }],
+        ["numeric value", { mode: 123 }],
+        ["boolean value", { mode: true }],
+        ["object value", { mode: {} }],
+        ["array value", { mode: ["alpha"] }],
+        ["unallowed string value", { mode: "delta" }],
+        ["case mismatch string value", { mode: "ALPHA" }],
+      ];
+
+      for (const [description, body] of invalidCases) {
+        expect(
+          () => requiredEnum(body, "mode", allowedValues),
+          `failed for case: ${description}`,
+        ).toThrowError();
+        try {
+          requiredEnum(body, "mode", allowedValues);
+        } catch (error) {
+          expect(error).toMatchObject({
+            status: 400,
+            code: "invalid_request",
+            message: "Field 'mode' must be one of: alpha, beta, gamma.",
+          } satisfies Partial<HttpError>);
+        }
+      }
+    });
+  });
+
   describe("optionalString", () => {
     it("returns undefined when field is missing or undefined", () => {
       expect(optionalString({}, "rejoinToken", 10)).toBeUndefined();
