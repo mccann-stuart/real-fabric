@@ -33,6 +33,7 @@ import {
   parseTrackName,
   participantNamespace,
   presenceTrack,
+  trackKey,
 } from "../src/shared/tracks";
 
 function human(id: string, overrides: Partial<Participant> = {}): Participant {
@@ -100,6 +101,17 @@ describe("H2 — one independent track per participant, no mixing upstream", () 
     expect(participantNamespace("room1", "p1")).toBe("demo/room1/p1");
     expect(audioTrack("room1", "p1").namespace).not.toBe(audioTrack("room1", "p2").namespace);
     expect(audioTrack("room1", "p1").namespace.startsWith("demo/room1/")).toBe(true);
+  });
+
+  it("combines namespace and name into a single track key string", () => {
+    expect(trackKey({ namespace: "demo/room1/p1", name: "audio/p1" })).toBe(
+      "demo/room1/p1/audio/p1",
+    );
+    expect(trackKey(audioTrack("room1", "p1"))).toBe("demo/room1/p1/audio/p1");
+    expect(trackKey(presenceTrack("room1", "p1"))).toBe("demo/room1/p1/presence/p1");
+    expect(trackKey({ namespace: "", name: "" })).toBe("/");
+    expect(trackKey({ namespace: "ns", name: "" })).toBe("ns/");
+    expect(trackKey({ namespace: "", name: "name" })).toBe("/name");
   });
 
   it("keeps the uplink at one track regardless of audience size", () => {
