@@ -211,8 +211,9 @@ const REGISTRY: Record<FailureCode, FailureState> = {
   },
   beyond_measured_capacity: {
     code: "beyond_measured_capacity",
-    title: "Beyond measured capacity",
-    experience: "The engaged degradation step is named in the room. No join is ever refused.",
+    title: "Capacity protection engaged",
+    experience:
+      "The client crossed a protective load threshold. This is not presented as measured capacity until Gate 2 records a reference result.",
     behaviour:
       "The ladder raises the nominal buffer, releases decoders for long-silent tracks, then unsubscribes the least recently active participants.",
     recovery: "None required. The ladder recovers as the active speaker count drops.",

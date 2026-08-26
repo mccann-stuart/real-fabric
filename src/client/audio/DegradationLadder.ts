@@ -114,7 +114,9 @@ export function describeStep(step: DegradationStep, pausedCount: number): string
       return "Buffer raised — protecting audio on a strained connection";
     case 2:
       return "Decoders released for participants silent beyond 30 seconds — rebuilt on their next object";
-    case 3:
-      return `audio paused for ${pausedCount} participants — beyond measured capacity`;
+    case 3: {
+      const participant = pausedCount === 1 ? "participant" : "participants";
+      return `audio paused for ${pausedCount} ${participant} — capacity protection engaged`;
+    }
   }
 }

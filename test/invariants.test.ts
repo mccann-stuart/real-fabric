@@ -5,9 +5,15 @@ import { AdaptiveJitterBuffer } from "../src/client/audio/AdaptiveJitterBuffer";
 import { DegradationLadder, describeStep } from "../src/client/audio/DegradationLadder";
 import { DriftEstimator, MAXIMUM_CORRECTION_RATIO } from "../src/client/audio/DriftEstimator";
 import { PlaybackDeduplicator } from "../src/client/audio/PlaybackDeduplicator";
+import { prioritiseFailureCodes } from "../src/client/components/FailureBanner";
 import { buildEdges } from "../src/client/components/SubscriptionGraph";
 import { DEMO_STEPS, DemoRunner, evaluateStep } from "../src/client/presenter/DemoScript";
 import { COMPACT_THRESHOLD, layoutParticipants } from "../src/client/room/participantLayout";
+import {
+  microphoneAction,
+  punctuateReason,
+  representedFailureCodes,
+} from "../src/client/room/roomPresentation";
 import { ReconnectionPolicy, TERMINAL_AFTER_MS } from "../src/client/session/ReconnectionPolicy";
 import { SessionTelemetry } from "../src/client/telemetry/SessionTelemetry";
 import {
@@ -268,10 +274,11 @@ describe("H7 — no cap, visible degradation", () => {
     const third = ladder.evaluate(strained);
     expect(third.step).toBe(3);
     expect(third.unsubscribed.length).toBeGreaterThan(0);
-    // The specification fixes this wording.
+    // Synthetic protection thresholds must not masquerade as measured capacity.
     expect(third.announcement).toBe(
-      `audio paused for ${third.unsubscribed.length} participants — beyond measured capacity`,
+      `audio paused for ${third.unsubscribed.length} participants — capacity protection engaged`,
     );
+    expect(describeStep(3, 1)).toBe("audio paused for 1 participant — capacity protection engaged");
   });
 
   it("unsubscribes the least recently active first", () => {
@@ -317,6 +324,59 @@ describe("H7 — no cap, visible degradation", () => {
 
   it("says nothing at step zero and never invents a cap", () => {
     expect(describeStep(0, 0)).toBeNull();
+  });
+});
+
+describe("room status presentation", () => {
+  it("offers exactly one state-derived microphone action", () => {
+    expect(microphoneAction({ name: "idle" }, false)).toEqual({
+      disabled: false,
+      label: "Start microphone",
+      visible: true,
+    });
+    expect(
+      microphoneAction(
+        { name: "listen_only", failure: "microphone_denied", reason: "Denied" },
+        false,
+        { name: "live" },
+      ),
+    ).toEqual({ disabled: false, label: "Try microphone again", visible: true });
+    expect(
+      microphoneAction({ name: "opening_publication" }, false, {
+        name: "blocked",
+        failure: "relay_auth_unavailable",
+      }).visible,
+    ).toBe(false);
+    expect(
+      microphoneAction(
+        { name: "listen_only", failure: "relay_request_refused", reason: "Refused" },
+        false,
+        { name: "blocked", failure: "relay_request_refused" },
+      ).label,
+    ).toBe("Try microphone again");
+    expect(microphoneAction({ name: "publishing" }, true).visible).toBe(false);
+  });
+
+  it("does not duplicate failures already represented in the status rail", () => {
+    const represented = representedFailureCodes(
+      { name: "listen_only", failure: "relay_request_refused", reason: "Refused" },
+      true,
+    );
+    expect(represented).toEqual(["relay_request_refused", "beyond_measured_capacity"]);
+    expect(
+      prioritiseFailureCodes(
+        ["audio_behind", "relay_request_refused", "participant_disconnected"],
+        represented,
+      ),
+    ).toEqual(["audio_behind", "participant_disconnected"]);
+  });
+
+  it("orders the remaining failure rail by severity and punctuates technical reasons", () => {
+    expect(
+      prioritiseFailureCodes(["audio_behind", "participant_disconnected", "udp_blocked"]),
+    ).toEqual(["udp_blocked", "audio_behind", "participant_disconnected"]);
+    expect(punctuateReason("The relay refused publication")).toBe("The relay refused publication.");
+    expect(punctuateReason("Already complete.")).toBe("Already complete.");
   });
 });
 

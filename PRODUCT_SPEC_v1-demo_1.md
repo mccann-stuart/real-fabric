@@ -224,7 +224,7 @@ Leaving closes local publications and subscriptions, stops capture and signals t
 - Adaptive jitter buffer per track, nominal 60 ms, bounded 40–200 ms, adapting to observed inter-arrival jitter and underrun rate.
 - Drop objects too late to be useful, count the drop, conceal with Opus PLC. Sustained loss produces comfort noise, not silence.
 - Prevent duplicate playback after reconnect or reload using participant, group and object identifiers.
-- **Degradation ladder (H7).** When the client cannot sustain the active load, degrade in this order, announcing each step in the UI: raise nominal buffer; release decoders for tracks silent beyond 30 seconds and rebuild on first object; unsubscribe from least-recently-active participants and display *"audio paused for N participants — beyond measured capacity"*. Never degrade silently, and never refuse a join to avoid degrading.
+- **Degradation ladder (H7).** When the client cannot sustain the active load, degrade in this order, announcing each step in the UI: raise nominal buffer; release decoders for tracks silent beyond 30 seconds and rebuild on first object; unsubscribe from least-recently-active participants and display *"audio paused for N participants — capacity protection engaged"*. Until Gate 2 records reference-hardware measurements, synthetic load thresholds must not be described as measured capacity. Once that evidence exists, the status may say *"beyond measured capacity"* only when the measured boundary is actually crossed. Never degrade silently, and never refuse a join to avoid degrading.
 
 ### FR4 — AI participants
 
@@ -449,7 +449,7 @@ Every failure condition encountered in Real Fabric has a distinct, truthful, non
 | `ai_floor_contention` | AI floor contention | `transient` | No | The second addressed AI shows Thinking, then speaks. Speech never overlaps. | Floor control serialises AI publication. Concurrent AI speech is off by default. | None required. |
 | `ai_loop_capped` | AI-to-AI turn cap reached | `degraded` | No | The turn counter is visible and the exchange stops at the cap. | AI-to-AI subscription is off by default and hard-capped when a presenter enables it. | Address an AI directly to resume, or disable AI-to-AI routing. |
 | `relay_failed` | Relay session failed | `transient` | Yes | The room shows Reconnecting with a bounded retry and a visible attempt count. | Publications, subscriptions and the routing matrix are restored idempotently. A terminal error with a retry action appears after 30 seconds. | Wait for the bounded retry, then use the retry action if it becomes terminal. |
-| `beyond_measured_capacity` | Beyond measured capacity | `degraded` | No | The engaged degradation step is named in the room. No join is ever refused. | The ladder raises the nominal buffer, releases decoders for long-silent tracks, then unsubscribes the least recently active participants. | None required. The ladder recovers as the active speaker count drops. |
+| `beyond_measured_capacity` | Capacity protection engaged | `degraded` | No | The engaged degradation step is named in the room without presenting synthetic thresholds as measured capacity. No join is ever refused. | The ladder raises the nominal buffer, releases decoders for long-silent tracks, then unsubscribes the least recently active participants. | None required. The ladder recovers as the active speaker count drops. |
 | `audio_behind` | Audio falling behind | `degraded` | No | A quality warning with the late-drop count for the affected track. | Stale objects are dropped and counted, loss is concealed with Opus packet loss concealment, and latency stays bounded. | None required. Sustained loss produces comfort noise rather than silence. |
 | `drift_uncorrectable` | Clock drift beyond correction range | `degraded` | No | A quality warning on the affected track only. | That track's buffer is rebuilt at the next detected silence. | None required. |
 
@@ -564,10 +564,10 @@ Every failure condition encountered in Real Fabric has a distinct, truthful, non
 
 ### 10.5 Media playout, clock drift and capacity degradation failure modes
 
-1. **`beyond_measured_capacity` (Beyond measured capacity)**
+1. **`beyond_measured_capacity` (Capacity protection engaged)**
    - *Trigger:* Local CPU/decoding load exceeds capacity thresholds (active speaker count, jitter buffer underruns).
    - *Severity:* `degraded` (non-blocking; joins are never refused).
-   - *UX presentation:* Prominent status notification: *"audio paused for N participants — beyond measured capacity"*.
+   - *UX presentation:* Prominent status notification: *"audio paused for N participants — capacity protection engaged"*. Before Gate 2 records a reference result, synthetic strain triggers are never labelled as measured capacity.
    - *System behaviour:* Executes 3-tier degradation ladder: (1) raises nominal buffer to 120 ms, (2) releases decoders for tracks silent > 30 s, (3) unsubscribes least recently active speakers.
    - *Recovery:* None required. Restores subscriptions automatically as active speaker load subsides.
 
@@ -676,7 +676,7 @@ flowchart TD
   1. **Implemented and unit-tested:** control-channel discovery, attempted `SUBSCRIBE_NAMESPACE` when configured, SQLite room/routing state, 60-second rejoin, playback deduplication and the three-step degradation ladder:
      - *Step 1:* Expand nominal jitter buffer from 60 ms to 120 ms.
      - *Step 2:* Release decoders for tracks silent > 30 s.
-     - *Step 3:* Unsubscribe least-recently-active participants and display banner *"audio paused for N participants — beyond measured capacity"*.
+     - *Step 3:* Unsubscribe least-recently-active participants and display banner *"audio paused for N participants — capacity protection engaged"* until a measured reference boundary exists.
 - **Exit criteria (Gate 4 & Final Launch Gate):**
   - Every acceptance criterion in §13 passes.
   - The 3.5-minute demo script (§12) completes twice clean on a live network / mobile hotspot without operator intervention (H16).
