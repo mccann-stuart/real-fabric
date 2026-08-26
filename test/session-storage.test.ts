@@ -156,7 +156,7 @@ describe("session storage and API helper utilities", () => {
   });
 
   describe("roomEventsUrl", () => {
-    it("builds websocket URL with query params using current location", () => {
+    it("builds a credential-free WebSocket URL using the current location", () => {
       const session: StoredSession = {
         code: "ROOM1",
         participantId: "part-456",
@@ -170,8 +170,9 @@ describe("session storage and API helper utilities", () => {
 
       expect(["ws:", "wss:"]).toContain(parsed.protocol);
       expect(parsed.pathname).toBe("/api/rooms/ROOM1/events");
-      expect(parsed.searchParams.get("participant")).toBe("part-456");
-      expect(parsed.searchParams.get("token")).toBe("token-789");
+      expect(parsed.search).toBe("");
+      expect(url).not.toContain(session.participantId);
+      expect(url).not.toContain(session.rejoinToken);
     });
   });
 });

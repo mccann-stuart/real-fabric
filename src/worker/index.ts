@@ -296,16 +296,6 @@ async function handleRoomAction(
         "This control-plane endpoint requires WebSocket upgrade.",
       );
     }
-    const url = new URL(request.url);
-    const participantId = url.searchParams.get("participant") ?? "";
-    const rejoinToken = url.searchParams.get("token") ?? "";
-    if (!participantId || !rejoinToken) {
-      throw new HttpError(
-        401,
-        "participant_auth_required",
-        "Participant control credentials are required.",
-      );
-    }
     return stub.fetch(request);
   }
 
