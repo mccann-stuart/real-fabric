@@ -84,7 +84,7 @@ User-agent parsing checks iPhone before Macintosh tokens, reads Safari's major v
 
 ## 5. Evidence and acceptance
 
-The automated suite has **206 tests across seventeen files**. It covers the iOS/Safari version floor and exclusions, HTTP/3-only constructor options, reliable-only refusal at both probe and MOQT adapter boundaries, low-latency reporting, Opus option negotiation and rejection, Audio Session and wake-lock state, explicit activation, interruption teardown, playback deduplication across resume, plus the existing Worker, room, transport, routing, audio and telemetry contracts.
+The automated suite has **216 tests across eighteen files**. It covers the iOS/Safari version floor and exclusions, HTTP/3-only constructor options, reliable-only refusal at both probe and MOQT adapter boundaries, low-latency reporting, Opus option negotiation and rejection, Audio Session and wake-lock state, explicit activation, interruption teardown, playback deduplication across resume, plus the existing Worker, room, transport, routing, audio and telemetry contracts.
 
 Automated tests do not prove:
 
