@@ -35,7 +35,8 @@ export interface RoomSessionHandle {
   /** True when this mount reclaimed an identity after a reload, not on first join. */
   reclaimed: boolean;
   error: string;
-  startPublishing: () => Promise<void>;
+  startAudio: () => Promise<void>;
+  setMuted: (muted: boolean) => void;
   retry: () => Promise<void>;
   /** Closes locally and tells the room service, starting the 60-second window. */
   leave: () => Promise<void>;
@@ -102,16 +103,43 @@ export function useRoomSession(
   useEffect(() => {
     // A closed tab must start the 60-second window rather than leaving the
     // participant apparently connected until the room's hard stop.
-    const onPageHide = () => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        void sessionRef.current?.interruptAudio(
+          "Safari moved the room out of the foreground or locked the screen.",
+        );
+      }
+    };
+    const onPageHide = (event: PageTransitionEvent) => {
+      void sessionRef.current?.interruptAudio("The room page was hidden.");
+      // A bfcache page can return with the same control identity. A real
+      // unload still starts the 60-second rejoin window.
+      if (event.persisted) return;
       const session = currentRef.current;
       if (session) signalLeaveOnUnload(session);
     };
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (!event.persisted) return;
+      void sessionRef.current?.interruptAudio(
+        "Safari restored the room page; audio requires a new user action.",
+      );
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
     addEventListener("pagehide", onPageHide);
-    return () => removeEventListener("pagehide", onPageHide);
+    addEventListener("pageshow", onPageShow);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      removeEventListener("pagehide", onPageHide);
+      removeEventListener("pageshow", onPageShow);
+    };
   }, []);
 
-  const startPublishing = useCallback(async () => {
-    await sessionRef.current?.startPublishing();
+  const startAudio = useCallback(async () => {
+    await sessionRef.current?.startAudio();
+  }, []);
+
+  const setMuted = useCallback((muted: boolean) => {
+    sessionRef.current?.setMuted(muted);
   }, []);
 
   const retry = useCallback(async () => {
@@ -133,5 +161,14 @@ export function useRoomSession(
     }
   }, []);
 
-  return { state, session: sessionRef.current, reclaimed, error, startPublishing, retry, leave };
+  return {
+    state,
+    session: sessionRef.current,
+    reclaimed,
+    error,
+    startAudio,
+    setMuted,
+    retry,
+    leave,
+  };
 }
