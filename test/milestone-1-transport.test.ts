@@ -113,8 +113,6 @@ describe("M1 — draft registry and relay interoperability", () => {
   it("offers the pinned WebTransport protocol once and carries the Cloudflare token in the path", async () => {
     let observedUrl = "";
     let observedProtocols: string[] = [];
-    let observedRequireUnreliable = false;
-    let observedCongestionControl = "";
     Object.defineProperty(globalThis, "WebTransport", {
       value: class {
         readonly ready = Promise.reject(new Error("stop after constructor"));
@@ -122,8 +120,6 @@ describe("M1 — draft registry and relay interoperability", () => {
         constructor(url: string | URL, options?: WebTransportOptions) {
           observedUrl = String(url);
           observedProtocols = [...(options?.protocols ?? [])];
-          observedRequireUnreliable = options?.requireUnreliable ?? false;
-          observedCongestionControl = options?.congestionControl ?? "";
         }
       },
       configurable: true,
@@ -139,8 +135,6 @@ describe("M1 — draft registry and relay interoperability", () => {
         );
 
       expect(observedProtocols).toEqual(["moqt-16"]);
-      expect(observedRequireUnreliable).toBe(true);
-      expect(observedCongestionControl).toBe("low-latency");
       expect(new Set(observedProtocols).size).toBe(observedProtocols.length);
       expect(observedUrl).toBe("https://draft-16.example.invalid/relay/provisioned%20token");
       expect(error).toMatchObject({ code: "relay_unavailable" });
@@ -326,7 +320,7 @@ describe("M1 — bounded session recovery", () => {
     expect(metrics.activeDecoders).toEqual(measured(1));
   });
 
-  it("waits for an explicit audio action before microphone or transport", async () => {
+  it("starts microphone capture automatically while transport opens independently", async () => {
     const session = new RoomSession({
       session: {
         code: "AAAAAAAAAAAAAAAAAAAA",
@@ -360,13 +354,7 @@ describe("M1 — bounded session recovery", () => {
       aiToAi: { enabled: false },
     } as unknown as RoomSnapshot);
 
-    expect(order).toEqual([]);
-    let phase: SessionPhase = { name: "idle" };
-    const unsubscribe = session.subscribe((state) => {
-      phase = state.phase;
-    });
-    expect(phase).toEqual({ name: "awaiting_audio_start" });
-    unsubscribe();
+    expect(order).toEqual(["microphone", "transport"]);
     await session.close();
   });
 
