@@ -45,7 +45,33 @@ export class AdaptiveJitterBuffer<T> {
       this.cancelledDrops += 1;
       return;
     }
-    if (this.frames.some((candidate) => candidate.sequence === frame.sequence)) return;
+
+    // ⚡ Bolt Optimization: Audio frames arrive every 20ms (50Hz per track).
+    // Maintain sequence order with O(1) fast-path push for in-order arrivals and
+    // backward search for out-of-order frames, eliminating O(N log N) sorting per frame.
+    const len = this.frames.length;
+    const lastFrame = this.frames[len - 1];
+    if (len === 0 || (lastFrame && frame.sequence > lastFrame.sequence)) {
+      this.frames.push(frame);
+    } else {
+      let insertIndex = len;
+      for (let i = len - 1; i >= 0; i -= 1) {
+        const candidate = this.frames[i];
+        if (candidate) {
+          if (candidate.sequence === frame.sequence) {
+            return; // Duplicate frame
+          }
+          if (candidate.sequence < frame.sequence) {
+            insertIndex = i + 1;
+            break;
+          }
+        }
+        if (i === 0) {
+          insertIndex = 0;
+        }
+      }
+      this.frames.splice(insertIndex, 0, frame);
+    }
 
     if (this.lastArrivalAt !== null) {
       const intervalError = Math.abs(
@@ -56,14 +82,26 @@ export class AdaptiveJitterBuffer<T> {
     }
     this.lastArrivalAt = frame.receivedAt;
 
-    this.frames.push(frame);
-    this.frames.sort((left, right) => left.sequence - right.sequence);
-
-    // Anything older than the maximum bound can never be played usefully.
+    // ⚡ Bolt Optimization: Prune stale frames in-place without allocating a new
+    // array on every frame push (prevents GC churn at 50Hz).
     const staleBefore = frame.receivedAt - this.maximumMs;
-    const retained = this.frames.filter((candidate) => candidate.receivedAt >= staleBefore);
-    this.lateDrops += this.frames.length - retained.length;
-    this.frames = retained;
+    let writeIndex = 0;
+    let prunedCount = 0;
+    for (let readIndex = 0; readIndex < this.frames.length; readIndex += 1) {
+      const candidate = this.frames[readIndex];
+      if (candidate && candidate.receivedAt < staleBefore) {
+        prunedCount += 1;
+      } else if (candidate) {
+        if (writeIndex !== readIndex) {
+          this.frames[writeIndex] = candidate;
+        }
+        writeIndex += 1;
+      }
+    }
+    if (prunedCount > 0) {
+      this.lateDrops += prunedCount;
+      this.frames.length = writeIndex;
+    }
   }
 
   pull(now: number): T | undefined {
