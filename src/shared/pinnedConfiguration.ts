@@ -27,6 +27,20 @@ export const PINNED_CONFIGURATION: PinnedConfiguration = {
   note: "Provisional pin. Gate 2 browser-to-relay and acoustic acceptance remain open.",
 };
 
+/**
+ * macOS Safari reports a frozen `Mac OS X 10_15_7` token, so no operating-system
+ * major can be read from it. The pin therefore names a browser major only, and
+ * `minimumPlatformMajorVersion` is deliberately absent rather than guessed.
+ */
+export const MACOS_SAFARI_CONFIGURATION: PinnedConfiguration = {
+  browser: "Safari",
+  minimumMajorVersion: 27,
+  platform: "macOS",
+  device: "desktop",
+  status: "provisional",
+  note: "Provisional pin. Desktop Safari 27 runs the same capability gates as Chrome, but Gate 1 browser-to-relay and Gate 2 acoustic acceptance remain open.",
+};
+
 export const IOS_SAFARI_CONFIGURATION: PinnedConfiguration = {
   browser: "Safari",
   minimumMajorVersion: 27,
@@ -37,7 +51,11 @@ export const IOS_SAFARI_CONFIGURATION: PinnedConfiguration = {
   note: "Candidate configuration. A physical iPhone running iOS 27 and Safari 27 has not yet passed Gate 1 or Gate 2 acceptance.",
 };
 
-export const CONFIGURATION_TARGETS = [PINNED_CONFIGURATION, IOS_SAFARI_CONFIGURATION] as const;
+export const CONFIGURATION_TARGETS = [
+  PINNED_CONFIGURATION,
+  MACOS_SAFARI_CONFIGURATION,
+  IOS_SAFARI_CONFIGURATION,
+] as const;
 
 export function describePin(pin: PinnedConfiguration = PINNED_CONFIGURATION): string {
   const platformFloor = pin.minimumPlatformMajorVersion
@@ -69,12 +87,16 @@ export interface UserAgentFacts {
   platform?: string;
   /** Safari's non-standard standalone flag. Home Screen mode is not in this branch. */
   standalone?: boolean;
+  /** `navigator.maxTouchPoints`. The only exposed way to tell iPadOS desktop mode from a Mac. */
+  maxTouchPoints?: number;
 }
 
 /**
  * Deliberately strict user-agent classification. iPhone Safari is checked
  * before the Macintosh token because Apple user-agent strings may contain Mac
- * compatibility tokens. Unknown or embedded iOS browsers remain read-only.
+ * compatibility tokens. Unknown or embedded iOS browsers remain read-only, and
+ * a Macintosh user agent reporting touch points is iPadOS in desktop mode
+ * rather than an admitted Mac.
  */
 export function matchConfiguration(facts: UserAgentFacts): ConfigurationMatch {
   const platform = detectPlatform(facts);
@@ -108,6 +130,48 @@ export function matchConfiguration(facts: UserAgentFacts): ConfigurationMatch {
     });
   }
 
+  const desktopSafari = detectDesktopSafari(facts);
+  if (desktopSafari && platform === MACOS_SAFARI_CONFIGURATION.platform) {
+    // iPadOS Safari requests desktop sites by default and then reports the same
+    // Macintosh token as a Mac. Touch points are the only exposed difference,
+    // and Apple ships no touch-screen Mac, so a touch-capable "Mac" fails closed.
+    if ((facts.maxTouchPoints ?? 0) > 1) {
+      return result({
+        status: "readOnly",
+        browser: `Safari ${desktopSafari.majorVersion}`,
+        browserMajorVersion: desktopSafari.majorVersion,
+        platform,
+        device: "iPad",
+        target: null,
+        reasons: [
+          "This reports a Macintosh user agent with touch points, which is iPadOS Safari in desktop mode. iPadOS is outside the admitted device matrix.",
+        ],
+      });
+    }
+    if (desktopSafari.majorVersion < MACOS_SAFARI_CONFIGURATION.minimumMajorVersion) {
+      return result({
+        status: "unsupported",
+        browser: `Safari ${desktopSafari.majorVersion}`,
+        browserMajorVersion: desktopSafari.majorVersion,
+        platform,
+        device,
+        target: MACOS_SAFARI_CONFIGURATION,
+        reasons: [
+          `The macOS Safari floor is ${MACOS_SAFARI_CONFIGURATION.minimumMajorVersion}; this session reports ${desktopSafari.majorVersion}.`,
+        ],
+      });
+    }
+    return result({
+      status: MACOS_SAFARI_CONFIGURATION.status === "signed_off" ? "supported" : "provisional",
+      browser: `Safari ${desktopSafari.majorVersion}`,
+      browserMajorVersion: desktopSafari.majorVersion,
+      platform,
+      device,
+      target: MACOS_SAFARI_CONFIGURATION,
+      reasons: [MACOS_SAFARI_CONFIGURATION.note],
+    });
+  }
+
   if (platform === "iOS") {
     return result({
       status: "readOnly",
@@ -130,7 +194,7 @@ export function matchConfiguration(facts: UserAgentFacts): ConfigurationMatch {
     reasons: [
       chrome
         ? `The Chrome audio target runs on ${PINNED_CONFIGURATION.platform}; this session reports ${platform}.`
-        : `This browser does not identify as ${PINNED_CONFIGURATION.browser} or top-level iPhone Safari.`,
+        : `This browser does not identify as ${PINNED_CONFIGURATION.browser} or top-level Safari.`,
     ],
   });
 }
@@ -235,6 +299,24 @@ function detectChrome(facts: UserAgentFacts): { brand: string; majorVersion: num
   return { brand: "Google Chrome", majorVersion };
 }
 
+/**
+ * Top-level desktop Safari only. Every Chromium browser also carries a
+ * `Safari/` build token, so the Chromium and Gecko brands are excluded first,
+ * as is any browser exposing `userAgentData` brands, which WebKit does not.
+ */
+function detectDesktopSafari(facts: UserAgentFacts): { majorVersion: number } | null {
+  // `Mobile/` is the iPhone build token, handled by the iPhone branch above.
+  if (/Mobile\//.test(facts.userAgent)) return null;
+  if (/\b(Chrome|Chromium|Edg|OPR|Brave|SamsungBrowser|Firefox)\//.test(facts.userAgent)) {
+    return null;
+  }
+  if ((facts.brands ?? []).some((entry) => !/Not.?A.?Brand/i.test(entry.brand))) return null;
+  if (!/Safari\//.test(facts.userAgent)) return null;
+  const match = facts.userAgent.match(/Version\/(\d+)/);
+  const majorVersion = match?.[1] ? Number.parseInt(match[1], 10) : Number.NaN;
+  return Number.isFinite(majorVersion) ? { majorVersion } : null;
+}
+
 function detectSafari(facts: UserAgentFacts): { majorVersion: number } | null {
   if (/\b(CriOS|FxiOS|EdgiOS|OPiOS)\//.test(facts.userAgent)) return null;
   if (!/Mobile\//.test(facts.userAgent) || !/Safari\//.test(facts.userAgent)) return null;
@@ -287,9 +369,12 @@ function describeUnknownBrowser(facts: UserAgentFacts): string {
 
 /** Reads the current browser, for client-side use. */
 export function currentUserAgentFacts(): UserAgentFacts {
+  // This module is also compiled for the Worker, whose Navigator type exposes
+  // neither the DOM touch-point count nor these non-standard fields.
   const candidate = navigator as Navigator & {
     userAgentData?: { brands?: Array<{ brand: string; version: string }>; platform?: string };
     standalone?: boolean;
+    maxTouchPoints?: number;
   };
   const data = candidate.userAgentData;
   return {
@@ -297,5 +382,8 @@ export function currentUserAgentFacts(): UserAgentFacts {
     ...(data?.brands ? { brands: data.brands } : {}),
     ...(data?.platform ? { platform: data.platform } : {}),
     ...(candidate.standalone !== undefined ? { standalone: candidate.standalone } : {}),
+    ...(typeof candidate.maxTouchPoints === "number"
+      ? { maxTouchPoints: candidate.maxTouchPoints }
+      : {}),
   };
 }
