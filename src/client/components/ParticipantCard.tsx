@@ -1,5 +1,4 @@
 import {
-  type AiDisplayActivity,
   aiDisplayActivity,
   type Participant,
   type RoutingPreference,
@@ -43,7 +42,7 @@ export function ParticipantCard({
   onAddressUp,
 }: ParticipantCardProps) {
   const isAi = participant.role === "ai";
-  const activity: AiDisplayActivity | "Reconnecting" | "Speaking" | "Listening" =
+  const activity =
     participant.state === "reconnecting"
       ? "Reconnecting"
       : isAi
