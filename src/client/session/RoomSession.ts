@@ -959,7 +959,9 @@ export class RoomSession {
           onFirstObject: (trackId) => {
             if (this.firstAudioAt === null) this.firstAudioAt = this.now();
             this.log.record("first_object", trackId, { subject: participantId });
-            void markActive(this.options.session, this.options.session.participantId).catch(() => undefined);
+            void markActive(this.options.session, this.options.session.participantId).catch(
+              () => undefined,
+            );
           },
           onDriftCorrection: (correction) =>
             this.log.record(
