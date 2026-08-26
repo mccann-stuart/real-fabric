@@ -31,6 +31,7 @@ import {
   describePin,
   describeTargets,
   IOS_SAFARI_CONFIGURATION,
+  MACOS_SAFARI_CONFIGURATION,
   matchConfiguration,
   PINNED_CONFIGURATION,
   type PinnedConfiguration,
@@ -175,6 +176,65 @@ describe("H3 — one pinned browser, others warned", () => {
     expect(PINNED_CONFIGURATION.note).toMatch(/Gate 2/);
   });
 
+  describe("macOS Safari", () => {
+    // Safari exposes no userAgentData, and freezes the Mac OS X token at 10_15_7.
+    const MACOS_SAFARI_27 =
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.0 Safari/605.1.15";
+
+    it("admits top-level macOS Safari at the floor as provisional, not unsupported", () => {
+      const match = matchConfiguration({ userAgent: MACOS_SAFARI_27, maxTouchPoints: 0 });
+      expect(match).toMatchObject({
+        status: "provisional",
+        liveAudioEligible: true,
+        browser: "Safari 27",
+        browserMajorVersion: 27,
+        platform: "macOS",
+        device: "desktop",
+        target: MACOS_SAFARI_CONFIGURATION,
+      });
+      expect(match.reasons.join(" ")).toMatch(/Gate 1|Gate 2/);
+    });
+
+    it("keeps macOS Safari below the floor unsupported and names the floor it missed", () => {
+      const match = matchConfiguration({
+        userAgent: MACOS_SAFARI_27.replace("Version/27.0", "Version/26.0"),
+      });
+      expect(match.status).toBe("unsupported");
+      expect(match.liveAudioEligible).toBe(false);
+      expect(match.reasons.join(" ")).toMatch(/macOS Safari floor is 27.*reports 26/i);
+    });
+
+    it("never mistakes a Chromium or Gecko browser for macOS Safari", () => {
+      const impostors = [
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36 Edg/141.0.0.0",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36 OPR/120.0.0.0",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36 Brave/141.0.0.0",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7; rv:130.0) Gecko/20100101 Firefox/130.0",
+      ];
+      for (const userAgent of impostors) {
+        const match = matchConfiguration({ userAgent, maxTouchPoints: 0 });
+        expect(match.liveAudioEligible).toBe(false);
+        expect(match.target).not.toBe(MACOS_SAFARI_CONFIGURATION);
+      }
+    });
+
+    it("does not admit a Chromium browser that reports brands but no Chrome token", () => {
+      const match = matchConfiguration({
+        userAgent: MACOS_SAFARI_27,
+        brands: [{ brand: "Some Chromium Fork", version: "27" }],
+      });
+      expect(match.liveAudioEligible).toBe(false);
+    });
+
+    it("fails closed on iPadOS desktop mode, which reports the same Macintosh token", () => {
+      const match = matchConfiguration({ userAgent: MACOS_SAFARI_27, maxTouchPoints: 5 });
+      expect(match.status).toBe("readOnly");
+      expect(match.liveAudioEligible).toBe(false);
+      expect(match.device).toBe("iPad");
+      expect(match.reasons.join(" ")).toMatch(/iPadOS/i);
+    });
+  });
+
   describe("describePin & describeTargets", () => {
     it("describes the pinned configuration using default argument", () => {
       expect(describePin()).toBe("Google Chrome 141+ on macOS");
@@ -213,8 +273,15 @@ describe("H3 — one pinned browser, others warned", () => {
       expect(describePin(customIphonePin)).toBe("Safari 26+ on iPhone iOS");
     });
 
+    it("describes the macOS Safari configuration without an unreadable OS floor", () => {
+      expect(describePin(MACOS_SAFARI_CONFIGURATION)).toBe("Safari 27+ on macOS");
+      expect(MACOS_SAFARI_CONFIGURATION.minimumPlatformMajorVersion).toBeUndefined();
+    });
+
     it("describes all configured targets", () => {
-      expect(describeTargets()).toBe("Google Chrome 141+ on macOS; Safari 27+ on iPhone iOS 27+");
+      expect(describeTargets()).toBe(
+        "Google Chrome 141+ on macOS; Safari 27+ on macOS; Safari 27+ on iPhone iOS 27+",
+      );
     });
   });
 
