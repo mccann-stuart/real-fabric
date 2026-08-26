@@ -306,6 +306,12 @@ input::placeholder {
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
 }
+.preflight-grid--optional {
+  min-width: 0;
+  padding: 0;
+  border-right: 0;
+  border-left: 0;
+}
 .preflight-check {
   padding: 19px 16px;
   border-right: 1px solid var(--line);
@@ -433,8 +439,22 @@ input::placeholder {
 .mobile-readonly,
 .mobile-actions,
 .mobile-inspector-button,
+.mobile-audio-rail,
 .inspector__mobile-heading {
   display: none;
+}
+.audio-resume-banner,
+.audio-lifecycle-note {
+  margin: 12px 24px 0;
+  padding: 12px 18px;
+  border: 1px solid var(--amber);
+  color: #f6d36b;
+  background: rgba(241, 200, 73, 0.06);
+  font: 12px var(--mono);
+}
+.audio-lifecycle-note {
+  border-color: var(--line-strong);
+  color: var(--muted);
 }
 .room-layout {
   display: grid;
@@ -1013,6 +1033,63 @@ input::placeholder {
     background: transparent;
     color: #f3f4f2;
   }
+  .room-page--ios-live-audio .participant-surface {
+    padding-bottom: calc(92px + env(safe-area-inset-bottom, 0px));
+  }
+  .room-page--ios-live-audio .participant-card,
+  .room-page--ios-live-audio .participant-card--ai,
+  .room-page--ios-live-audio .participant-card--human.participant-card--remote {
+    grid-template-columns: minmax(112px, 0.8fr) 1fr;
+  }
+  .room-page--ios-live-audio .routing-controls,
+  .room-page--ios-live-audio .track-controls {
+    display: block;
+    grid-column: 1 / -1;
+    margin-top: 4px;
+  }
+  .room-page--ios-live-audio .mobile-actions,
+  .room-page--ios-live-audio .mobile-inspector-button {
+    display: none;
+  }
+  .mobile-audio-rail {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 12;
+    display: grid;
+    grid-template-columns: minmax(112px, 1.5fr) repeat(3, minmax(58px, 1fr));
+    gap: 1px;
+    padding: 8px 8px calc(8px + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid var(--line-strong);
+    background: rgba(7, 9, 10, 0.97);
+    box-shadow: 0 -10px 28px rgba(0, 0, 0, 0.45);
+  }
+  .mobile-audio-rail button,
+  .mobile-audio-rail__status {
+    min-width: 0;
+    min-height: 52px;
+    display: grid;
+    place-items: center;
+    padding: 7px;
+    border: 1px solid var(--line);
+    background: #111517;
+    color: #f3f4f2;
+    font: 11px var(--mono);
+    text-align: center;
+  }
+  .mobile-audio-rail button:disabled {
+    opacity: 0.45;
+  }
+  .mobile-audio-rail .mobile-audio-rail__primary,
+  .mobile-audio-rail__status {
+    border-color: var(--cyan);
+    color: var(--cyan);
+  }
+  .mobile-audio-rail .mobile-audio-rail__danger {
+    border-color: var(--coral);
+    color: var(--coral);
+  }
   .inspector {
     display: none;
   }
@@ -1025,6 +1102,9 @@ input::placeholder {
     background: #121619;
     box-shadow: 0 -20px 60px #000;
     overflow-y: auto;
+  }
+  .room-page--ios-live-audio .inspector--open {
+    bottom: calc(69px + env(safe-area-inset-bottom, 0px));
   }
   .inspector__mobile-heading {
     display: flex;
