@@ -51,10 +51,26 @@ export const IOS_SAFARI_CONFIGURATION: PinnedConfiguration = {
   note: "Candidate configuration. A physical iPhone running iOS 27 and Safari 27 has not yet passed Gate 1 or Gate 2 acceptance.",
 };
 
+/**
+ * Chrome for iOS renders in WebKit, not Blink, and its user agent carries no
+ * `Version/` token. The iOS major therefore carries the capability floor and
+ * the `CriOS` major names only the shell around the same engine Safari uses.
+ */
+export const IOS_CHROME_CONFIGURATION: PinnedConfiguration = {
+  browser: "Google Chrome",
+  minimumMajorVersion: 141,
+  platform: "iOS",
+  minimumPlatformMajorVersion: 27,
+  device: "iPhone",
+  status: "provisional",
+  note: "Candidate configuration. Chrome for iOS runs on WebKit, so it inherits the iOS 27 engine rather than the Chrome capability set, and shared WebKit ancestry is not acceptance evidence. No physical iPhone has passed Gate 1 or Gate 2 acceptance in Chrome for iOS.",
+};
+
 export const CONFIGURATION_TARGETS = [
   PINNED_CONFIGURATION,
   MACOS_SAFARI_CONFIGURATION,
   IOS_SAFARI_CONFIGURATION,
+  IOS_CHROME_CONFIGURATION,
 ] as const;
 
 export function describePin(pin: PinnedConfiguration = PINNED_CONFIGURATION): string {
@@ -92,9 +108,10 @@ export interface UserAgentFacts {
 }
 
 /**
- * Deliberately strict user-agent classification. iPhone Safari is checked
+ * Deliberately strict user-agent classification. iPhone browsers are checked
  * before the Macintosh token because Apple user-agent strings may contain Mac
- * compatibility tokens. Unknown or embedded iOS browsers remain read-only, and
+ * compatibility tokens. Only top-level Safari and Chrome for iOS are admitted
+ * on iPhone; other iOS browsers and embedded web views remain read-only, and
  * a Macintosh user agent reporting touch points is iPadOS in desktop mode
  * rather than an admitted Mac.
  */
@@ -102,7 +119,7 @@ export function matchConfiguration(facts: UserAgentFacts): ConfigurationMatch {
   const platform = detectPlatform(facts);
   const device = detectDevice(facts);
 
-  if (device === "iPhone") return matchIphoneSafari(facts, platform);
+  if (device === "iPhone") return matchIphone(facts, platform);
 
   const chrome = detectChrome(facts);
   if (chrome && platform === PINNED_CONFIGURATION.platform) {
@@ -199,7 +216,7 @@ export function matchConfiguration(facts: UserAgentFacts): ConfigurationMatch {
   });
 }
 
-function matchIphoneSafari(facts: UserAgentFacts, platform: string): ConfigurationMatch {
+function matchIphone(facts: UserAgentFacts, platform: string): ConfigurationMatch {
   const safari = detectSafari(facts);
   const osMajorVersion = detectIphoneOsMajor(facts.userAgent);
 
@@ -216,6 +233,9 @@ function matchIphoneSafari(facts: UserAgentFacts, platform: string): Configurati
     });
   }
 
+  const chrome = detectIphoneChrome(facts);
+  if (chrome) return matchIphoneChrome(chrome, platform, osMajorVersion);
+
   if (!safari) {
     return result({
       status: "readOnly",
@@ -226,7 +246,7 @@ function matchIphoneSafari(facts: UserAgentFacts, platform: string): Configurati
       device: "iPhone",
       target: IOS_SAFARI_CONFIGURATION,
       reasons: [
-        "This is not top-level Safari. Alternative iOS browsers and embedded web views remain read-only.",
+        "This is not top-level Safari or Chrome for iOS. Other iOS browsers and embedded web views remain read-only.",
       ],
     });
   }
@@ -272,6 +292,51 @@ function matchIphoneSafari(facts: UserAgentFacts, platform: string): Configurati
   });
 }
 
+/**
+ * The iOS major is the binding floor here: Chrome for iOS is a shell around the
+ * same WebKit build Safari uses, so the `CriOS` major cannot imply a Blink
+ * capability set. Both floors are still named so a refusal says which it missed.
+ */
+function matchIphoneChrome(
+  chrome: { majorVersion: number },
+  platform: string,
+  osMajorVersion: number | null,
+): ConfigurationMatch {
+  const minimumOs = IOS_CHROME_CONFIGURATION.minimumPlatformMajorVersion ?? 27;
+  const browser = `Google Chrome ${chrome.majorVersion}`;
+  const belowFloor =
+    osMajorVersion === null ||
+    osMajorVersion < minimumOs ||
+    chrome.majorVersion < IOS_CHROME_CONFIGURATION.minimumMajorVersion;
+  if (belowFloor) {
+    return result({
+      status: "readOnly",
+      browser,
+      browserMajorVersion: chrome.majorVersion,
+      platform,
+      osMajorVersion,
+      device: "iPhone",
+      target: IOS_CHROME_CONFIGURATION,
+      reasons: [
+        osMajorVersion === null
+          ? `The iOS version could not be identified, so the iOS ${minimumOs} floor cannot be verified.`
+          : `The working-audio floor is iOS ${minimumOs} and Chrome ${IOS_CHROME_CONFIGURATION.minimumMajorVersion}; this session reports iOS ${osMajorVersion} and Chrome ${chrome.majorVersion}.`,
+      ],
+    });
+  }
+
+  return result({
+    status: "provisional",
+    browser,
+    browserMajorVersion: chrome.majorVersion,
+    platform,
+    osMajorVersion,
+    device: "iPhone",
+    target: IOS_CHROME_CONFIGURATION,
+    reasons: [IOS_CHROME_CONFIGURATION.note],
+  });
+}
+
 function result(
   input: Omit<ConfigurationMatch, "liveAudioEligible" | "osMajorVersion"> & {
     osMajorVersion?: number | null;
@@ -313,6 +378,16 @@ function detectDesktopSafari(facts: UserAgentFacts): { majorVersion: number } | 
   if ((facts.brands ?? []).some((entry) => !/Not.?A.?Brand/i.test(entry.brand))) return null;
   if (!/Safari\//.test(facts.userAgent)) return null;
   const match = facts.userAgent.match(/Version\/(\d+)/);
+  const majorVersion = match?.[1] ? Number.parseInt(match[1], 10) : Number.NaN;
+  return Number.isFinite(majorVersion) ? { majorVersion } : null;
+}
+
+/**
+ * Chrome for iOS reports `CriOS/<chrome major>` and no `Version/` token, so the
+ * engine version is never readable from it. Only the shell major is returned.
+ */
+function detectIphoneChrome(facts: UserAgentFacts): { majorVersion: number } | null {
+  const match = facts.userAgent.match(/CriOS\/(\d+)/);
   const majorVersion = match?.[1] ? Number.parseInt(match[1], 10) : Number.NaN;
   return Number.isFinite(majorVersion) ? { majorVersion } : null;
 }

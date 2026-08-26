@@ -280,7 +280,7 @@ describe("H3 — one pinned browser, others warned", () => {
 
     it("describes all configured targets", () => {
       expect(describeTargets()).toBe(
-        "Google Chrome 141+ on macOS; Safari 27+ on macOS; Safari 27+ on iPhone iOS 27+",
+        "Google Chrome 141+ on macOS; Safari 27+ on macOS; Safari 27+ on iPhone iOS 27+; Google Chrome 141+ on iPhone iOS 27+",
       );
     });
   });
