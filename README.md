@@ -8,6 +8,14 @@ Real Fabric is a conference-stage demonstration of humans and AI agents speaking
 
 The room service, presenter simulation, client media pipeline, protocol inspector, provisioned relay-credential handling, network probe and Milestone 2 audio resilience are implemented. The Objects and Latency inspector tabs compare exposed session measurements with the specification's budgets or targets, while diagnostic-only values are labelled `Reported · no gate`. The production Worker is configured with the isolated `real-fabric-production` relay and a short-lived publish/subscribe token. The demo is **not transport-accepted**: Gate 1, a live AI pipeline, measured capacity, acoustic loopback, the audible ten-minute run and two clean venue-network runs remain open.
 
+### Known security issue — shared relay credential disclosure (P1)
+
+Unauthenticated room creation and open room joining currently return the configured `MOQ_RELAY_TOKEN` to the browser. That token grants publish and subscribe operations across the whole configured relay, so a caller can reuse it outside the room service, publish outside its participant namespace, subscribe outside application routing choices or access another room on the same relay until the token expires or is revoked. Keeping the token out of share links, storage, telemetry and logs does not reduce that authority.
+
+Cloudflare's current [MoQ token API](https://developers.cloudflare.com/api/resources/moq/subresources/relays/subresources/tokens/methods/create/) does not present a compatible complete fix. Its V1 tokens apply to an entire relay and constrain only `publish` and `subscribe`; labels are metadata, not room, namespace, track or participant enforcement, and a relay accepts at most ten registered tokens. Unique short-lived per-client tokens would improve expiry and revocation but would not close cross-room or participant-namespace reuse, while the ten-token limit conflicts with Real Fabric's open-membership invariant. A distinct relay per room would isolate rooms but still would not enforce participant namespaces.
+
+This P1 is therefore a known unresolved issue, not an accepted production risk or a completed Gate 1 control. The code is intentionally unchanged pending a relay credential model that can enforce room and participant scope without imposing a participant cap. Do not use the current shared-relay path for sensitive audio, claim tenant isolation or label cooperative routing as relay-enforced.
+
 Milestones 1 and 2 of the §11 release plan are built. Milestones 3 and 4 are not.
 
 **The build attempts a real MOQT session when the relay and its provisioned credential are configured, and still claims nothing it has not traced.** Those are separate facts, and the code keeps them separate:
@@ -88,7 +96,7 @@ These are read from Worker configuration rather than assumed, so recording a res
 | `MOQT_TRANSPORT_VERIFIED` | `false` | No browser-to-relay trace has passed. Gates the *claim*, not the *attempt*: the build connects for real and reports the result honestly either way. |
 | `MOQ_ROUTING_ENFORCEMENT` | `cooperative` | The current Cloudflare token grants relay-level publish and subscribe operations rather than per-participant track scope, so inbound routing is labelled cooperative, not enforced (FR8). |
 | `MOQ_DISCOVERY` | `unknown` | The client probes `SUBSCRIBE_NAMESPACE` after live MOQT setup, records the observed result in the inspector, and uses control-channel discovery only if the request is refused (FR7). |
-| `MOQ_RELAY_TOKEN` | configured | Cloudflare-provisioned publish-and-subscribe token stored as a Worker secret. The current operational token expires at `2026-09-01T20:38:32Z`; rotate it before another demo window. |
+| `MOQ_RELAY_TOKEN` | configured · known P1 | Cloudflare-provisioned publish-and-subscribe token stored as a Worker secret. Create and join responses currently disclose it to browsers, and Cloudflare V1 cannot restrict it to one room or participant. The current operational token expires at `2026-09-01T20:38:32Z`; rotation limits lifetime but does not fix the scope issue. |
 
 The production relay is `real-fabric-production` (`5266d64d9209fb9a8961f009745806ef`) with upstream fallback disabled. The endpoint remains `https://draft-16.cloudflare.mediaoverquic.com`; the relay token selects the isolated scope. `/api/health` confirms that endpoint and credential are configured while `transportVerified` remains `false`. The in-room browser probe and token-backed MOQT trace remain outstanding.
 
@@ -172,6 +180,7 @@ Automated checks cover the requirements marked above. They do not cover, and thi
 - MOQT interoperability, or that any audio has moved over the configured relay. The pinned client frames draft 16 and the production credential is present, but the handshake path still has only unit-test evidence;
 - a live UDP/HTTP-3 network-probe result;
 - relay acceptance and expiry behaviour for the provisioned credential, or relay-level enforcement beyond coarse publish/subscribe operations;
+- room, namespace, track or participant enforcement for the relay credential; the current shared-token disclosure is the known P1 described above;
 - audible quality of the packet loss concealment. Its behaviour is unit-tested; nobody has listened to it;
 - a live recognition, model or speech-synthesis pipeline;
 - publication of the barge-in cancellation marker over MOQT;

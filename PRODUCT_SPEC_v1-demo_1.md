@@ -2,7 +2,7 @@
 
 **Status:** Core implementation scaffold complete; live acceptance pending Gate 1
 **Date:** 25 August 2026
-**Implementation reconciliation:** 25 August 2026, current repository state
+**Implementation reconciliation:** 26 August 2026, current repository state
 **Supersedes:** v1 demo scope of 25 August 2026 (three-way)
 **Protocol target:** MOQT `draft-ietf-moq-transport-20`
 
@@ -13,6 +13,7 @@
 | Draft pin remains `-20`; no operational downgrade | §2.1. Draft-specific code stays behind the adapter and live transport remains blocked until the target is trace-verified |
 | Fixed three-participant room replaced by open membership | Any number of humans and AIs. §5 FR1, FR3, FR7. Capacity is measured and displayed, never configured as a cap |
 | AI audio routing controls added | §5 FR8. Each human independently controls, per AI, whether that AI hears them and whether they hear it |
+| Shared relay credential disclosure recorded as known P1 | §8.1 and Gate 1 now state the current Cloudflare V1 scope limitation, the absence of a compatible complete fix and the claims the demo must not make |
 
 ### Current implementation snapshot
 
@@ -23,6 +24,7 @@ This section records implementation state; it does not weaken the acceptance cri
 - `wrangler.jsonc` pins the operational Cloudflare draft-16 endpoint and keeps `MOQT_TRANSPORT_VERIFIED` at `false`, `MOQ_ROUTING_ENFORCEMENT` at `cooperative` and `MOQ_DISCOVERY` at `unknown`. Unknown discovery is probed after live setup and the observed result is recorded in the inspector; it is not inferred from configuration.
 - The adapter registry knows the supported draft metadata, while the pinned client frames draft 16 only and refuses any configured draft it cannot frame without downgrading.
 - The `real-fabric-production` isolated relay is provisioned with upstream fallback disabled. The production Worker holds a seven-day, relay-scoped publish/subscribe token that expires at `2026-09-01T20:38:32Z`; relay acceptance and expiry behaviour remain unverified until a live browser trace runs.
+- **Known P1 — shared relay credential disclosure:** unauthenticated room creation and open room joining return that configured token to the browser. It can be reused outside the room service for relay-wide publish and subscribe until expiry or revocation. Cloudflare's current V1 API can create unique, expiring and independently revocable tokens, but it constrains only relay-wide `publish` and `subscribe`; labels do not enforce room, namespace, track or participant scope, and each relay accepts at most ten registered tokens. No compatible complete fix is currently available from that API. The code remains unchanged pending an enforceable room-and-participant-scoped model that preserves H7 open membership.
 - Presenter responses are scripted and visibly labelled. There is no live recognition, model, synthesis or AI-worker transport pipeline.
 - `NetworkProbe` can compare the configured relay's WebTransport reachability with the room-service health gate. The live health endpoint confirms the relay and credential configuration, but no connected browser was available to run the UDP/HTTP-3 probe.
 - Dynamic device tracking, packet-loss concealment, bounded recovery and silence-gated drift correction are implemented and unit-tested; they have not passed acoustic or live-relay acceptance.
@@ -370,6 +372,14 @@ flowchart LR
 
 ## 8. Security, privacy and trust
 
+### 8.1 Known P1 — shared relay credential disclosure
+
+The current implementation does not meet the least-privilege credential requirements below. Both unauthenticated room creation and open joining return the configured `MOQ_RELAY_TOKEN` to the browser. Although the application keeps it out of share links, persistent storage, telemetry and logs, the credential itself authorises publish and subscribe across the entire configured relay. A caller can therefore reuse it outside the room service, cross room boundaries on the shared relay and ignore cooperative participant-routing conventions until expiry or revocation.
+
+Cloudflare's current [MoQ token API](https://developers.cloudflare.com/api/resources/moq/subresources/relays/subresources/tokens/methods/create/) presents no compatible complete remediation. V1 token scope is one relay plus the coarse `publish` and `subscribe` operations; a label is not an enforced room, namespace, track or participant claim. The ten-token-per-relay registry limit also makes unique per-participant tokens incompatible with H7 open membership. Provisioning one relay per room would provide room isolation but would still not enforce participant namespace ownership.
+
+This is a known unresolved P1, not an accepted production risk, transport acceptance evidence or permission to weaken the requirements below. Short expiry, rotation, unique coarse tokens, application-signed claims, labels and client-side checks are mitigations or conventions, not a complete fix. Until a relay validates room and participant scope without adding a participant cap, the demo must not claim tenant isolation, credential-enforced routing or production readiness, and the current path must not carry sensitive audio.
+
 - Isolated relay per demo tenancy, or equivalent namespace isolation.
 - Account API tokens stay server-side.
 - Unique, short-lived, least-privilege participant credentials. **AI subscriber credentials are scoped to permitted human tracks where the relay supports it (FR8).**
@@ -625,7 +635,7 @@ flowchart TD
 - **Addressed failure modes:** `draft_endpoint_missing`, `draft_mismatch`, `transport_unsupported`, `udp_blocked`, `relay_failed`.
 - **Key deliverables:**
   1. **Draft-20 endpoint and adapter compatibility:** obtain a real endpoint and update only `MoqTransportAdapter` for the compatible draft-20 client/library surface.
-  2. **Least-privilege credentials:** implement server-side minting and expiry; the current verified-path placeholder deliberately returns `501`.
+  2. **Least-privilege credentials:** replace the shared browser credential with server-issued grants whose room, participant, operations and expiry are enforced by the relay. This deliverable is blocked on a compatible credential model: Cloudflare V1 exposes only relay-wide `publish`/`subscribe` scope and a ten-token registry, so per-client coarse tokens or labels must not be accepted as completion.
   3. **Negotiation evidence:** expose the negotiated draft and redacted endpoint and capture a reproducible trace.
   4. **Pre-flight network probe:** implement an active UDP/HTTP-3 reachability test; the current page checks `/api/health` only.
   5. **Bounded recovery:** verify the implemented `ReconnectionPolicy` and idempotent restoration against the live relay.
@@ -728,8 +738,8 @@ The real acceptance test. Three and a half minutes, in order.
 | Draft-20 relay endpoint and compatibility path | Architecture | Gate 1 | Open; no operational downgrade permitted |
 | Browser MOQT client library | Client Lead | Gate 1 | `moqtail` `0.12.1` pinned behind the adapter; draft-20 interoperability unverified |
 | `SUBSCRIBE_NAMESPACE` support on the draft-20 endpoint | Transport Lead | Gate 1 | Unknown. The configured draft-16 endpoint is now probed live rather than treating unknown configuration as a refusal. |
-| Per-track credential scoping — FR8 enforced or cooperative | Security Lead | Gate 1 | Open; current UI label is cooperative |
-| Relay credential acceptance, enforcement and expiry | Security Lead | Gate 1 | Minting is implemented; live relay behaviour is unverified |
+| Per-track credential scoping — FR8 enforced or cooperative | Security Lead | Gate 1 | Blocked by Cloudflare V1 relay-wide operation scope; current UI label remains cooperative |
+| Relay credential acceptance, enforcement and expiry | Security Lead | Gate 1 | Known P1: create and join disclose the configured relay-wide token. No compatible room-and-participant-scoped fix is available from Cloudflare V1; code remains unchanged pending a capable credential model |
 | AI worker transport: raw QUIC or WebTransport | AI Lead | Gate 1 | Open; no live AI worker exists |
 | Recognition, model and synthesis providers; retention terms; per-room cost ceiling | Product Owner | Gate 2 start | Not implemented |
 | Addressing mechanism: hold-to-ask or wake name | UX Lead | Gate 2 exit | Hold-to-ask is wired; wake names are stored but not detected |
