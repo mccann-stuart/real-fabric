@@ -29,10 +29,6 @@ export function EntryPage({
 
   const enterRoom = async (mode: "create" | "join" | "presenter") => {
     let enteredName = displayName.trim();
-    if (!enteredName && mode === "presenter") {
-      setError("Enter your name before creating or joining a room.");
-      return;
-    }
     if (!enteredName) {
       enteredName = generateRandomDisplayName();
       setDisplayName(enteredName);
