@@ -28,6 +28,18 @@ export interface CapabilityReport {
   failure: FailureCode | null;
 }
 
+export interface EvaluatedCapabilities {
+  secureContext: CheckState;
+  webTransport: CheckState;
+  opus: CheckState;
+  capture: CheckState;
+  captureReason: string;
+  relay: CheckState;
+  relayReason: string;
+  failure: FailureCode | null;
+  relayEndpoint: string | null;
+}
+
 const INITIAL: CapabilityReport = {
   secureContext: "checking",
   webTransport: "checking",
@@ -41,6 +53,90 @@ const INITIAL: CapabilityReport = {
   failure: null,
 };
 
+export async function checkOpus(): Promise<CheckState> {
+  if (!("AudioEncoder" in globalThis)) return "unavailable";
+  try {
+    const result = await AudioEncoder.isConfigSupported({
+      codec: "opus",
+      sampleRate: 48_000,
+      numberOfChannels: 1,
+      bitrate: 32_000,
+    });
+    return result.supported ? "ready" : "unavailable";
+  } catch {
+    return "unavailable";
+  }
+}
+
+export async function evaluateCapabilities(
+  fetchHealthImpl = fetchHealth,
+): Promise<EvaluatedCapabilities> {
+  const opus = await checkOpus();
+  const secureContext: CheckState = globalThis.isSecureContext ? "ready" : "unavailable";
+  const webTransport: CheckState = "WebTransport" in globalThis ? "ready" : "unavailable";
+  const captureSupport = inspectCaptureSupport();
+  const capture: CheckState = captureSupport.available ? "ready" : "unavailable";
+  let relay: CheckState = "unavailable";
+  let relayReason = "The room service is unreachable.";
+  let failure: FailureCode | null = null;
+  let relayEndpoint: string | null = null;
+
+  try {
+    const health = await fetchHealthImpl();
+    relayEndpoint = health.relayEndpoint;
+    const framed = draftsFramedByClient();
+    const endpoint = health.relayEndpointName ?? "no configured endpoint";
+
+    if (!health.relayEndpoint) {
+      // H14: no endpoint is a different fact from an endpoint that fails.
+      relay = "unavailable";
+      relayReason = `No relay endpoint is configured for MOQT draft ${health.draft}.`;
+      failure = "draft_endpoint_missing";
+    } else if (!health.relayCredentialConfigured) {
+      relay = "unavailable";
+      relayReason = `No provisioned relay credential is configured for ${endpoint}.`;
+      failure = "relay_auth_unavailable";
+    } else if (!framed.includes(health.draft as (typeof framed)[number])) {
+      relay = "unavailable";
+      relayReason = `This build frames MOQT draft ${framed.join(", ") || "no draft"}, but the room service is pinned to draft ${health.draft}.`;
+      failure = "draft_mismatch";
+    } else {
+      // Configured and frameable: a live session will be attempted. Gate 1
+      // verification is reported separately, never implied by "ready".
+      relay = "ready";
+      relayReason = health.transportVerified
+        ? `MOQT draft ${health.draft} on ${endpoint} passed a browser-to-relay trace. Inbound routing is ${health.routingEnforcement}; discovery is ${health.discovery}.`
+        : `MOQT draft ${health.draft} on ${endpoint} is configured and will be attempted live. No Gate 1 trace has been recorded, so transport is not yet claimed as verified.`;
+    }
+  } catch {
+    relayReason = "The room service or relay probe could not be reached.";
+    failure = "udp_blocked";
+  }
+
+  // A missing local capability outranks the relay: it is the nearer cause,
+  // and its recovery advice is different.
+  if (
+    secureContext === "unavailable" ||
+    webTransport === "unavailable" ||
+    opus === "unavailable" ||
+    capture === "unavailable"
+  ) {
+    failure = "transport_unsupported";
+  }
+
+  return {
+    secureContext,
+    webTransport,
+    opus,
+    capture,
+    captureReason: captureSupport.reason,
+    relay,
+    relayReason,
+    failure,
+    relayEndpoint,
+  };
+}
+
 export function useCapabilities() {
   const [report, setReport] = useState<CapabilityReport>(INITIAL);
   const [level, setLevel] = useState(0);
@@ -51,70 +147,13 @@ export function useCapabilities() {
   useEffect(() => {
     let active = true;
     const run = async () => {
-      const opus = await checkOpus();
-      const secureContext: CheckState = globalThis.isSecureContext ? "ready" : "unavailable";
-      const webTransport: CheckState = "WebTransport" in globalThis ? "ready" : "unavailable";
-      const captureSupport = inspectCaptureSupport();
-      const capture: CheckState = captureSupport.available ? "ready" : "unavailable";
-      let relay: CheckState = "unavailable";
-      let relayReason = "The room service is unreachable.";
-      let failure: FailureCode | null = null;
-      let relayEndpoint: string | null = null;
-
-      try {
-        const health = await fetchHealth();
-        relayEndpoint = health.relayEndpoint;
-        const framed = draftsFramedByClient();
-        const endpoint = health.relayEndpointName ?? "no configured endpoint";
-
-        if (!health.relayEndpoint) {
-          // H14: no endpoint is a different fact from an endpoint that fails.
-          relay = "unavailable";
-          relayReason = `No relay endpoint is configured for MOQT draft ${health.draft}.`;
-          failure = "draft_endpoint_missing";
-        } else if (!health.relayCredentialConfigured) {
-          relay = "unavailable";
-          relayReason = `No provisioned relay credential is configured for ${endpoint}.`;
-          failure = "relay_auth_unavailable";
-        } else if (!framed.includes(health.draft as (typeof framed)[number])) {
-          relay = "unavailable";
-          relayReason = `This build frames MOQT draft ${framed.join(", ") || "no draft"}, but the room service is pinned to draft ${health.draft}.`;
-          failure = "draft_mismatch";
-        } else {
-          // Configured and frameable: a live session will be attempted. Gate 1
-          // verification is reported separately, never implied by "ready".
-          relay = "ready";
-          relayReason = health.transportVerified
-            ? `MOQT draft ${health.draft} on ${endpoint} passed a browser-to-relay trace. Inbound routing is ${health.routingEnforcement}; discovery is ${health.discovery}.`
-            : `MOQT draft ${health.draft} on ${endpoint} is configured and will be attempted live. No Gate 1 trace has been recorded, so transport is not yet claimed as verified.`;
-        }
-      } catch {
-        relayReason = "The room service or relay probe could not be reached.";
-        failure = "udp_blocked";
-      }
-
-      // A missing local capability outranks the relay: it is the nearer cause,
-      // and its recovery advice is different.
-      if (
-        secureContext === "unavailable" ||
-        webTransport === "unavailable" ||
-        opus === "unavailable" ||
-        capture === "unavailable"
-      ) {
-        failure = "transport_unsupported";
-      }
-
+      const evaluation = await evaluateCapabilities();
       if (!active) return;
+
+      const { relayEndpoint, ...evalReport } = evaluation;
       setReport((current) => ({
         ...current,
-        secureContext,
-        webTransport,
-        opus,
-        capture,
-        captureReason: captureSupport.reason,
-        relay,
-        relayReason,
-        failure,
+        ...evalReport,
       }));
 
       // §11.2 deliverable three: the probe runs in the background and never
@@ -200,19 +239,4 @@ export function useCapabilities() {
   }, [stopMicrophone]);
 
   return { report, level, testMicrophone, stopMicrophone };
-}
-
-async function checkOpus(): Promise<CheckState> {
-  if (!("AudioEncoder" in globalThis)) return "unavailable";
-  try {
-    const result = await AudioEncoder.isConfigSupported({
-      codec: "opus",
-      sampleRate: 48_000,
-      numberOfChannels: 1,
-      bitrate: 32_000,
-    });
-    return result.supported ? "ready" : "unavailable";
-  } catch {
-    return "unavailable";
-  }
 }
