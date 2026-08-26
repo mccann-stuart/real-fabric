@@ -1175,6 +1175,13 @@ export class RoomSession {
     const socket = new WebSocket(roomEventsUrl(this.options.session));
     socket.addEventListener("open", () => {
       if (socket !== this.socket || this.closed) return;
+      socket.send(
+        JSON.stringify({
+          type: "auth",
+          participantId: this.options.session.participantId,
+          token: this.options.session.rejoinToken,
+        }),
+      );
       const restored = this.controlReconnectAttempt > 0;
       this.controlReconnectAttempt = 0;
       if (this.controlRetryTimer) clearTimeout(this.controlRetryTimer);

@@ -95,7 +95,7 @@ describe("Real Fabric Worker", () => {
     });
     const created = (await createdResponse.json()) as CreateRoomResponse;
     const response = await SELF.fetch(
-      `https://real-fabric.test/api/rooms/${created.room.code}/events?participant=${created.participant.id}&token=${created.rejoinToken}`,
+      `https://real-fabric.test/api/rooms/${created.room.code}/events`,
       { headers: { upgrade: "websocket" } },
     );
 
@@ -103,6 +103,16 @@ describe("Real Fabric Worker", () => {
     const socket = response.webSocket;
     expect(socket).not.toBeNull();
     socket?.accept();
+
+    // Authenticate over initial WebSocket message
+    socket?.send(
+      JSON.stringify({
+        type: "auth",
+        participantId: created.participant.id,
+        token: created.rejoinToken,
+      }),
+    );
+
     const snapshot = await nextMessage(socket as WebSocket);
     expect(JSON.parse(String(snapshot.data))).toMatchObject({ type: "snapshot" });
 
@@ -110,6 +120,37 @@ describe("Real Fabric Worker", () => {
     const pong = await nextMessage(socket as WebSocket);
     expect(pong.data).toBe("pong");
     socket?.close(1000, "test complete");
+  });
+
+  it("closes unauthenticated or invalid token WebSocket connections", async () => {
+    const createdResponse = await SELF.fetch("https://real-fabric.test/api/rooms", {
+      method: "POST",
+      headers: { "content-type": "application/json", "cf-connecting-ip": "192.0.2.47" },
+      body: JSON.stringify({ displayName: "Dorothy" }),
+    });
+    const created = (await createdResponse.json()) as CreateRoomResponse;
+
+    // Test invalid auth payload
+    const response = await SELF.fetch(
+      `https://real-fabric.test/api/rooms/${created.room.code}/events`,
+      { headers: { upgrade: "websocket" } },
+    );
+    expect(response.status).toBe(101);
+    const socket = response.webSocket;
+    socket?.accept();
+
+    socket?.send(
+      JSON.stringify({
+        type: "auth",
+        participantId: created.participant.id,
+        token: "invalid-token",
+      }),
+    );
+
+    const closeEvent = await new Promise<CloseEvent>((resolve) => {
+      socket?.addEventListener("close", (event) => resolve(event));
+    });
+    expect(closeEvent.code).toBe(4001);
   });
 });
 

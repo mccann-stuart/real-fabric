@@ -84,7 +84,8 @@ interface MetaRow {
 }
 
 interface SocketAttachment {
-  participantId: string;
+  authenticated: boolean;
+  participantId?: string;
 }
 
 export interface RoomJoinResult {
@@ -467,32 +468,12 @@ export class Room extends DurableObject<Env> {
     if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
       return new Response("WebSocket upgrade required.", { status: 426 });
     }
-    const url = new URL(request.url);
-    const participantId = url.searchParams.get("participant") ?? "";
-    const rejoinToken = url.searchParams.get("token") ?? "";
-    if (!participantId || !rejoinToken) {
-      return new Response("Participant control credentials are required.", { status: 401 });
-    }
-    try {
-      await this.assertParticipant(participantId, rejoinToken);
-    } catch {
-      return new Response("Participant control credentials are invalid or expired.", {
-        status: 401,
-      });
-    }
 
     const pair = new WebSocketPair();
     const client = pair[0];
     const server = pair[1];
-    server.serializeAttachment({ participantId } satisfies SocketAttachment);
-    this.ctx.acceptWebSocket(server, [`participant:${participantId}`]);
-    server.send(
-      JSON.stringify({
-        type: "snapshot",
-        room: this.snapshot(),
-        at: Date.now(),
-      } satisfies RoomEvent),
-    );
+    server.serializeAttachment({ authenticated: false } satisfies SocketAttachment);
+    this.ctx.acceptWebSocket(server);
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -524,8 +505,65 @@ export class Room extends DurableObject<Env> {
     await this.rescheduleAlarm();
   }
 
-  webSocketMessage(socket: WebSocket, message: string | ArrayBuffer): void {
-    if (typeof message !== "string" || message !== "ping") {
+  async webSocketMessage(socket: WebSocket, message: string | ArrayBuffer): Promise<void> {
+    if (typeof message !== "string") {
+      socket.close(1003, "control messages only");
+      return;
+    }
+
+    const attachment = (socket.deserializeAttachment() as SocketAttachment | null) ?? {
+      authenticated: false,
+    };
+
+    if (!attachment.authenticated) {
+      let payload: unknown;
+      try {
+        payload = JSON.parse(message);
+      } catch {
+        socket.close(4001, "invalid auth message");
+        return;
+      }
+
+      if (
+        !payload ||
+        typeof payload !== "object" ||
+        (payload as Record<string, unknown>).type !== "auth"
+      ) {
+        socket.close(4001, "authentication required");
+        return;
+      }
+
+      const participantId = String((payload as Record<string, unknown>).participantId ?? "");
+      const token = String((payload as Record<string, unknown>).token ?? "");
+
+      if (!participantId || !token) {
+        socket.close(4001, "participant control credentials required");
+        return;
+      }
+
+      try {
+        await this.assertParticipant(participantId, token);
+      } catch {
+        socket.close(4001, "participant control credentials invalid or expired");
+        return;
+      }
+
+      socket.serializeAttachment({
+        authenticated: true,
+        participantId,
+      } satisfies SocketAttachment);
+
+      socket.send(
+        JSON.stringify({
+          type: "snapshot",
+          room: this.snapshot(),
+          at: Date.now(),
+        } satisfies RoomEvent),
+      );
+      return;
+    }
+
+    if (message !== "ping") {
       socket.close(1003, "control messages only");
       return;
     }
@@ -968,7 +1006,12 @@ export class Room extends DurableObject<Env> {
 
   private broadcast(event: RoomEvent): void {
     const encoded = JSON.stringify(event);
-    for (const socket of this.ctx.getWebSockets()) socket.send(encoded);
+    for (const socket of this.ctx.getWebSockets()) {
+      const attachment = socket.deserializeAttachment() as SocketAttachment | null;
+      if (attachment?.authenticated) {
+        socket.send(encoded);
+      }
+    }
   }
 }
 

@@ -185,15 +185,12 @@ export async function markActive(session: StoredSession, targetId: string): Prom
 }
 
 /**
- * §8 link separation: the control-plane socket carries the participant token in
- * a query string, so this URL is a secret and never appears in telemetry or a
- * share link.
+ * §8 link separation: the control-plane socket URL carries no sensitive credentials in
+ * query parameters. Authentication is performed via initial WebSocket payload.
  */
 export function roomEventsUrl(session: StoredSession): string {
   const url = new URL(`/api/rooms/${session.code}/events`, location.href);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  url.searchParams.set("participant", session.participantId);
-  url.searchParams.set("token", session.rejoinToken);
   return url.toString();
 }
 
