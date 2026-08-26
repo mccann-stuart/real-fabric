@@ -109,6 +109,8 @@ export interface MoqNegotiation {
   serverSetup: SetupParameterRecord[];
   /** Requests the relay will accept. Zero would mean it grants nothing. */
   maxRequestId: number | null;
+  transportReliability: MoqSessionStats["transportReliability"];
+  congestionControl: MoqSessionStats["congestionControl"];
   negotiatedAt: number;
 }
 
@@ -120,6 +122,8 @@ export interface MoqSessionStats {
   publishedObjects: number;
   subscribedObjects: number;
   transportRttMs: number | "Not exposed";
+  transportReliability: "supports-unreliable" | "reliable-only" | "pending" | "Not exposed";
+  congestionControl: "low-latency" | "throughput" | "default" | "Not exposed";
   /** Null until CLIENT_SETUP and SERVER_SETUP have both been validated. */
   negotiation: MoqNegotiation | null;
 }
@@ -130,6 +134,7 @@ export class MoqTransportError extends Error {
       | "draft_mismatch"
       | "draft_unavailable"
       | "relay_configuration"
+      | "reliable_transport"
       | "relay_unavailable"
       | "request_refused"
       | "protocol_error",
@@ -200,6 +205,8 @@ export class MoqTransportAdapter {
     publishedObjects: 0,
     subscribedObjects: 0,
     transportRttMs: "Not exposed",
+    transportReliability: "Not exposed",
+    congestionControl: "Not exposed",
     negotiation: null,
   };
 
@@ -269,6 +276,12 @@ export class MoqTransportAdapter {
         // same version here produced ["moqt-16", "moqt-16"], which Chrome
         // rejects before a WebTransport handshake.
         setupParameters: new SetupParameters().addMaxRequestId(CLIENT_MAX_REQUEST_ID),
+        transportOptions: {
+          // W3C WebTransport: require a UDP-capable first hop so Safari cannot
+          // carry this MOQT session over the HTTP/2/TCP reliable-only mode.
+          requireUnreliable: true,
+          congestionControl: "low-latency",
+        },
         enableDatagrams: false,
         callbacks: {
           onMessageSent: (message) => {
@@ -332,6 +345,22 @@ export class MoqTransportAdapter {
         "relay_unavailable",
         `MOQT draft ${draft} could not connect to '${endpointName}': ${safeError(error, credential)}`,
       );
+    }
+
+    const webTransport = transportDiagnostics(this.client);
+    this.stats = {
+      ...this.stats,
+      transportReliability: webTransport.reliability,
+      congestionControl: webTransport.congestionControl,
+    };
+    const reliabilityError = requiredTransportReliabilityError(
+      webTransport.reliability,
+      endpointName,
+    );
+    if (reliabilityError) {
+      await this.close("non-UDP WebTransport refused").catch(() => undefined);
+      this.stats = { ...this.stats, state: "failed" };
+      throw reliabilityError;
     }
 
     try {
@@ -407,6 +436,8 @@ export class MoqTransportAdapter {
       clientSetup: describeParameters(input.clientSetup ?? [], input.credential),
       serverSetup: describeParameters(serverSetup.setupParameters, input.credential),
       maxRequestId: budget,
+      transportReliability: this.stats.transportReliability,
+      congestionControl: this.stats.congestionControl,
       negotiatedAt: Date.now(),
     };
   }
@@ -638,6 +669,44 @@ export class MoqTransportAdapter {
     }
     return this.client;
   }
+}
+
+function transportDiagnostics(client: MOQtailClient | null): {
+  reliability: MoqSessionStats["transportReliability"];
+  congestionControl: MoqSessionStats["congestionControl"];
+} {
+  // MOQtail 0.12.1 owns the WebTransport instance but does not expose a public
+  // diagnostic accessor. Keep this narrow compatibility shim inside the one
+  // draft-sensitive adapter rather than leaking it into room or UI code.
+  const transport = (
+    client as unknown as {
+      webTransport?: {
+        reliability?: MoqSessionStats["transportReliability"];
+        congestionControl?: MoqSessionStats["congestionControl"];
+      };
+    } | null
+  )?.webTransport;
+  return {
+    reliability: transport?.reliability ?? "Not exposed",
+    congestionControl: transport?.congestionControl ?? "Not exposed",
+  };
+}
+
+export function requiredTransportReliabilityError(
+  reliability: MoqSessionStats["transportReliability"],
+  endpointName: string,
+): MoqTransportError | null {
+  if (reliability === "supports-unreliable") return null;
+  if (reliability === "reliable-only") {
+    return new MoqTransportError(
+      "reliable_transport",
+      `WebTransport to '${endpointName}' reported a reliable-only first hop. MOQT audio requires UDP-capable HTTP/3 and QUIC; no HTTP/2 or TCP fallback was attempted.`,
+    );
+  }
+  return new MoqTransportError(
+    "protocol_error",
+    `WebTransport to '${endpointName}' did not expose UDP-capable reliability after setup. The session was closed rather than assuming HTTP/3.`,
+  );
 }
 
 function requestErrorMessage(operation: string, error: RequestError): string {

@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { Participant } from "../../shared/contracts";
 import { notExposed } from "../../shared/measurement";
+import { currentUserAgentFacts, matchConfiguration } from "../../shared/pinnedConfiguration";
 import {
   clearSession,
   configurePresenter,
@@ -27,10 +28,12 @@ import {
 export function RoomPage({ code, navigate }: { code: string; navigate: (path: string) => void }) {
   const [stored] = useState<StoredSession | null>(() => loadSession(code));
   const presenterMode = sessionStorage.getItem(`real-fabric:presenter:${code}`) === "true";
-  const { state, session, reclaimed, error, startPublishing, retry, leave } = useRoomSession(
+  const { state, session, reclaimed, error, startAudio, setMuted, retry, leave } = useRoomSession(
     stored,
     presenterMode,
   );
+  const [configuration] = useState(() => matchConfiguration(currentUserAgentFacts()));
+  const iphoneAudioCandidate = configuration.device === "iPhone" && configuration.liveAudioEligible;
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const [leaving, setLeaving] = useState(false);
@@ -175,8 +178,8 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
       viewerId={viewerId}
       routing={room?.routing ?? []}
       connectedHumanIds={connectedHumanIds}
-      level={participant.id === viewerId ? (state?.micLevel ?? 0) : 0}
-      speaking={participant.id === viewerId ? (state?.speaking ?? false) : false}
+      level={participant.id === viewerId && !state?.muted ? (state?.micLevel ?? 0) : 0}
+      speaking={participant.id === viewerId && !state?.muted ? (state?.speaking ?? false) : false}
       subscription={state?.subscriptions.find(
         (subscription) => subscription.participantId === participant.id,
       )}
@@ -188,7 +191,7 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
   );
 
   return (
-    <main className="room-page">
+    <main className={`room-page${iphoneAudioCandidate ? " room-page--ios-live-audio" : ""}`}>
       <h1 className="sr-only">Real Fabric room {code}</h1>
       <header className="room-topbar">
         <Brand />
@@ -208,12 +211,12 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
               ? "Retry copy"
               : "Copy invite"}
         </button>
-        {micAction.visible ? (
+        {micAction.visible && configuration.liveAudioEligible ? (
           <button
             className="button button--compact button--primary"
             disabled={micAction.disabled}
             type="button"
-            onClick={() => void startPublishing()}
+            onClick={() => void startAudio()}
           >
             {micAction.label}
           </button>
@@ -276,7 +279,16 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
         {/* H3 */}
         <PinnedConfigBanner />
         <div className="mobile-warning" role="status">
-          <b>!</b> Desktop Chrome required for live audio
+          {iphoneAudioCandidate ? (
+            <>
+              <b>!</b> iPhone Safari 27+ audio candidate · foreground only · physical acceptance
+              pending
+            </>
+          ) : (
+            <>
+              <b>!</b> Desktop Chrome or iPhone Safari 27+ required for live audio
+            </>
+          )}
         </div>
 
         {reclaimed ? (
@@ -291,6 +303,20 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
             <button type="button" onClick={() => void retry()}>
               Retry now
             </button>
+          </p>
+        ) : null}
+
+        {state?.phase.name === "resume_required" ? (
+          <p className="audio-resume-banner" role="status">
+            <b>Audio paused.</b> {state.phase.reason} Return to the foreground and tap Resume audio.
+          </p>
+        ) : null}
+
+        {state?.phase.name === "live" &&
+        (state.audioLifecycle.wakeLock === "denied" ||
+          state.audioLifecycle.wakeLock === "released") ? (
+          <p className="audio-lifecycle-note" role="status">
+            {state.audioLifecycle.wakeLockReason} Audio remains foreground-only.
           </p>
         ) : null}
 
@@ -348,7 +374,7 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
           aria-label="Room participants"
         >
           <h2 className="sr-only">Room participants</h2>
-          <p className="mobile-readonly">▣ Read-only room view</p>
+          {!iphoneAudioCandidate ? <p className="mobile-readonly">▣ Read-only room view</p> : null}
           <div className="participant-grid participant-grid--prominent">
             {layout.prominent.map(renderCard)}
           </div>
@@ -433,13 +459,50 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
         </>
       ) : null}
 
-      <button
-        className="mobile-inspector-button"
-        type="button"
-        onClick={() => setInspectorOpen(true)}
-      >
-        Open inspector
-      </button>
+      {iphoneAudioCandidate ? (
+        <nav className="mobile-audio-rail" aria-label="Foreground audio controls">
+          {micAction.visible ? (
+            <button
+              className="mobile-audio-rail__primary"
+              disabled={micAction.disabled}
+              type="button"
+              onClick={() => void startAudio()}
+            >
+              {micAction.label}
+            </button>
+          ) : (
+            <span className="mobile-audio-rail__status">Audio live</span>
+          )}
+          <button
+            type="button"
+            disabled={!state?.publishing}
+            onClick={() => setMuted(!(state?.muted ?? false))}
+          >
+            {state?.muted ? "Unmute" : "Mute"}
+          </button>
+          <button type="button" onClick={() => setInspectorOpen(true)}>
+            Inspector
+          </button>
+          <button
+            className="mobile-audio-rail__danger"
+            type="button"
+            onClick={() => {
+              setLeaveError(null);
+              leaveDialog.current?.showModal();
+            }}
+          >
+            Leave
+          </button>
+        </nav>
+      ) : (
+        <button
+          className="mobile-inspector-button"
+          type="button"
+          onClick={() => setInspectorOpen(true)}
+        >
+          Open inspector
+        </button>
+      )}
     </main>
   );
 }
