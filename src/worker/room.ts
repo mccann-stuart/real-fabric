@@ -455,6 +455,14 @@ export class Room extends DurableObject<Env> {
   /** Audio object arrival is the source of truth for "connected" (§6.2). */
   async markActive(credential: ParticipantCredential, participantId: string): Promise<void> {
     await this.assertParticipant(credential.participantId, credential.rejoinToken);
+    // Security: Restrict activity updates to the caller's own participant ID to prevent activity spoofing (CWE-639).
+    if (credential.participantId !== participantId) {
+      throw roomError(
+        403,
+        "unauthorized_target",
+        "Participants can only update their own activity state.",
+      );
+    }
     if (!this.meta()) return;
     this.ctx.storage.sql.exec(
       "UPDATE participants SET last_active_at = ? WHERE id = ?",
