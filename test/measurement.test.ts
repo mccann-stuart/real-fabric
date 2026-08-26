@@ -54,8 +54,26 @@ describe("measurement formatting and utilities", () => {
       expect(formatMilliseconds(measured(0))).toBe("0 ms");
     });
 
-    it("returns 'Not exposed' for unexposed milliseconds measurements", () => {
+    it("handles rounding edge cases at .5 boundaries", () => {
+      expect(formatMilliseconds(measured(12.5))).toBe("13 ms");
+      expect(formatMilliseconds(measured(0.5))).toBe("1 ms");
+      expect(formatMilliseconds(measured(0.4))).toBe("0 ms");
+    });
+
+    it("formats negative millisecond values and negative rounding correctly", () => {
+      expect(formatMilliseconds(measured(-12.4))).toBe("-12 ms");
+      expect(formatMilliseconds(measured(-12.5))).toBe("-12 ms");
+      expect(formatMilliseconds(measured(-12.6))).toBe("-13 ms");
+    });
+
+    it("formats large millisecond values", () => {
+      expect(formatMilliseconds(measured(10000))).toBe("10000 ms");
+      expect(formatMilliseconds(measured(86400000))).toBe("86400000 ms");
+    });
+
+    it("returns 'Not exposed' for unexposed milliseconds measurements regardless of reason", () => {
       expect(formatMilliseconds(notExposed("not measured"))).toBe(NOT_EXPOSED);
+      expect(formatMilliseconds(notExposed("clock drift too high"))).toBe(NOT_EXPOSED);
     });
   });
 
