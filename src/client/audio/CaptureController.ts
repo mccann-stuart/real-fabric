@@ -41,7 +41,6 @@ export class CaptureController {
   private encodedFrames = 0;
   private encodedBytes = 0;
   private draining = false;
-  private muted = false;
 
   /**
    * Starts capture and encode. Throws a specific error for each §10 capture
@@ -74,10 +73,8 @@ export class CaptureController {
 
     try {
       const bitrate = options.bitrate ?? DEFAULT_BITRATE;
-      const support = await probeOpusEncoderSupport(bitrate);
-      if (!support.supported || !support.configuration) throw new Error(support.reason);
-      this.dtx = support.dtx;
-      const configuration = support.configuration;
+      this.dtx = await probeDtx(bitrate);
+      const configuration = buildConfiguration(bitrate, this.dtx);
 
       this.encoder = new AudioEncoder({
         output: (chunk) => {
@@ -94,7 +91,6 @@ export class CaptureController {
 
       const scratch = new Float32Array(CAPTURE_FRAME_SAMPLES);
       this.adapter = createAudioCaptureAdapter();
-      this.setMuted(this.muted);
       await this.adapter.start(this.stream, {
         onFrame: (data) => {
           try {
@@ -136,15 +132,6 @@ export class CaptureController {
     return this.detector.level;
   }
 
-  setMuted(muted: boolean): void {
-    this.muted = muted;
-    for (const track of this.stream?.getAudioTracks() ?? []) track.enabled = !muted;
-  }
-
-  get isMuted(): boolean {
-    return this.muted;
-  }
-
   /** Object rate is roughly (active speakers x 50) per second, per §6.3. */
   encodedObjectStats(): { frames: Measurement<number>; meanBytes: Measurement<number> } {
     if (this.encodedFrames === 0) {
@@ -184,122 +171,43 @@ export class CaptureController {
   }
 }
 
-export interface OpusEncoderConfig extends AudioEncoderConfig {
-  opus?: {
-    frameDuration?: number;
-    usedtx?: boolean;
-    application?: "voip" | "audio" | "lowdelay";
-    signal?: "auto" | "music" | "voice";
-  };
+interface OpusEncoderConfig extends AudioEncoderConfig {
+  opus?: { frameDuration?: number; usedtx?: boolean };
 }
 
-export interface OpusEncoderProbe {
-  supported: boolean;
-  configuration: OpusEncoderConfig | null;
-  dtx: Measurement<boolean>;
-  application: Measurement<"voip">;
-  signal: Measurement<"voice">;
-  reason: string;
-}
-
-export async function probeOpusEncoderSupport(
-  bitrate = DEFAULT_BITRATE,
-): Promise<OpusEncoderProbe> {
-  if (!("AudioEncoder" in globalThis)) {
-    const reason = "WebCodecs AudioEncoder is not exposed by this browser.";
-    return unsupportedOpusProbe(reason);
-  }
-  const required: OpusEncoderConfig = {
+function buildConfiguration(bitrate: number, dtx: Measurement<boolean>): OpusEncoderConfig {
+  return {
     codec: "opus",
     sampleRate: CAPTURE_SAMPLE_RATE,
     numberOfChannels: 1,
     bitrate,
+    opus: {
+      // Microseconds, per the WebCodecs Opus registration.
+      frameDuration: AUDIO_FRAME_DURATION_MS * 1_000,
+      ...(dtx.exposed && dtx.value ? { usedtx: true } : {}),
+    },
+  };
+}
+
+async function probeDtx(bitrate: number): Promise<Measurement<boolean>> {
+  const candidate: OpusEncoderConfig = {
+    codec: "opus",
+    sampleRate: CAPTURE_SAMPLE_RATE,
+    numberOfChannels: 1,
+    bitrate,
+    opus: { frameDuration: AUDIO_FRAME_DURATION_MS * 1_000, usedtx: true },
   };
   try {
-    const result = await AudioEncoder.isConfigSupported(required);
+    const result = await AudioEncoder.isConfigSupported(candidate);
     if (!result.supported) {
-      return unsupportedOpusProbe(
-        "This browser rejected 48 kHz mono Opus at 32 kbit/s with 20 ms input frames.",
-      );
+      return measured(false);
     }
-
-    // Optional Opus controls are negotiated independently. A browser that
-    // rejects DTX or a voice hint can still carry the required Opus stream;
-    // unsupported values are omitted rather than making encode unavailable.
-    const opus: NonNullable<OpusEncoderConfig["opus"]> = {};
-    const frameDuration = AUDIO_FRAME_DURATION_MS * 1_000;
-    if (await acceptsOpusOption(required, opus, "frameDuration", frameDuration)) {
-      opus.frameDuration = frameDuration;
-    }
-    if (await acceptsOpusOption(required, opus, "application", "voip")) {
-      opus.application = "voip";
-    }
-    if (await acceptsOpusOption(required, opus, "signal", "voice")) {
-      opus.signal = "voice";
-    }
-    if (await acceptsOpusOption(required, opus, "usedtx", true)) {
-      opus.usedtx = true;
-    }
-
-    return {
-      supported: true,
-      configuration: {
-        codec: "opus",
-        sampleRate: CAPTURE_SAMPLE_RATE,
-        numberOfChannels: 1,
-        bitrate,
-        ...(Object.keys(opus).length > 0 ? { opus } : {}),
-      },
-      dtx:
-        opus.usedtx === true
-          ? measured(true)
-          : notExposed("The accepted Opus configuration did not report DTX."),
-      application:
-        opus.application === "voip"
-          ? measured("voip")
-          : notExposed("The accepted Opus configuration did not report the VoIP application hint."),
-      signal:
-        opus.signal === "voice"
-          ? measured("voice")
-          : notExposed("The accepted Opus configuration did not report the voice signal hint."),
-      reason: "Opus encode is available; optional DTX and voice hints are reported separately.",
-    };
+    // Chromium echoes back the accepted config. If it dropped `usedtx`, the
+    // encoder does not support it and claiming otherwise would be a fiction.
+    const echoed = result.config as OpusEncoderConfig | undefined;
+    if (echoed?.opus && echoed.opus.usedtx !== true) return measured(false);
+    return measured(true);
   } catch {
-    return unsupportedOpusProbe(
-      "This browser could not evaluate the required Opus encoder configuration.",
-    );
+    return notExposed("This browser does not report whether Opus DTX is supported.");
   }
-}
-
-async function acceptsOpusOption<K extends keyof NonNullable<OpusEncoderConfig["opus"]>>(
-  required: OpusEncoderConfig,
-  accepted: NonNullable<OpusEncoderConfig["opus"]>,
-  key: K,
-  value: NonNullable<OpusEncoderConfig["opus"]>[K],
-): Promise<boolean> {
-  try {
-    const result = await AudioEncoder.isConfigSupported({
-      ...required,
-      opus: { ...accepted, [key]: value },
-    });
-    const echoed = (result.config as OpusEncoderConfig | undefined)?.opus;
-    const echoedOptions = echoed as Record<string, unknown> | undefined;
-    const preservesAccepted = Object.entries(accepted).every(
-      ([acceptedKey, acceptedValue]) => echoedOptions?.[acceptedKey] === acceptedValue,
-    );
-    return result.supported === true && preservesAccepted && echoedOptions?.[String(key)] === value;
-  } catch {
-    return false;
-  }
-}
-
-function unsupportedOpusProbe(reason: string): OpusEncoderProbe {
-  return {
-    supported: false,
-    configuration: null,
-    dtx: notExposed(reason),
-    application: notExposed(reason),
-    signal: notExposed(reason),
-    reason,
-  };
 }

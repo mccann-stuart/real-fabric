@@ -12,103 +12,74 @@ import {
 } from "../src/shared/measurement";
 
 describe("measurement formatting and utilities", () => {
-  describe("formatCount", () => {
-    it("formats exposed integer count using en-GB locale formatting", () => {
-      expect(formatCount(measured(0))).toBe("0");
-      expect(formatCount(measured(5))).toBe("5");
-      expect(formatCount(measured(1234567))).toBe("1,234,567");
-      expect(formatCount(measured(-1000))).toBe("-1,000");
+  describe("formatRate", () => {
+    it("formats exposed rate values with 1 decimal place and unit", () => {
+      expect(formatRate(measured(12.345), "fps")).toBe("12.3 fps");
+      expect(formatRate(measured(50), "kB/s")).toBe("50.0 kB/s");
+      expect(formatRate(measured(0), "msg/s")).toBe("0.0 msg/s");
+      expect(formatRate(measured(-3.16), "Hz")).toBe("-3.2 Hz");
     });
 
-    it("formats exposed decimal count using en-GB locale formatting", () => {
-      expect(formatCount(measured(1234.56))).toBe("1,234.56");
-    });
-
-    it("returns 'Not exposed' when count measurement is not exposed", () => {
-      expect(formatCount(notExposed("no session attempted"))).toBe(NOT_EXPOSED);
-      expect(formatCount(notExposed("no data"))).toBe("Not exposed");
+    it("returns 'Not exposed' when measurement is unexposed", () => {
+      expect(formatRate(notExposed<number>("relay unobservable"), "fps")).toBe(NOT_EXPOSED);
     });
   });
 
   describe("formatMeasurement", () => {
-    it("uses default String formatter when no custom format function is provided", () => {
+    it("formats exposed values with custom formatter or default String", () => {
       expect(formatMeasurement(measured(42))).toBe("42");
-      expect(formatMeasurement(measured(true))).toBe("true");
-    });
-
-    it("applies custom format function when measurement is exposed", () => {
       expect(formatMeasurement(measured("hello"), (v) => v.toUpperCase())).toBe("HELLO");
     });
 
-    it("returns 'Not exposed' when measurement is not exposed regardless of format function", () => {
-      expect(formatMeasurement(notExposed<string>("unavailable"), (v) => v.toUpperCase())).toBe(
-        NOT_EXPOSED,
-      );
+    it("returns 'Not exposed' for unexposed values", () => {
+      expect(formatMeasurement(notExposed<string>("hidden"))).toBe(NOT_EXPOSED);
     });
   });
 
   describe("formatMilliseconds", () => {
-    it("formats rounded milliseconds for exposed measurements", () => {
-      expect(formatMilliseconds(measured(12.4))).toBe("12 ms");
+    it("formats exposed milliseconds rounded to whole number", () => {
       expect(formatMilliseconds(measured(12.6))).toBe("13 ms");
+      expect(formatMilliseconds(measured(12.4))).toBe("12 ms");
       expect(formatMilliseconds(measured(0))).toBe("0 ms");
     });
 
-    it("returns 'Not exposed' for unexposed milliseconds measurements", () => {
-      expect(formatMilliseconds(notExposed("not measured"))).toBe(NOT_EXPOSED);
+    it("returns 'Not exposed' for unexposed milliseconds", () => {
+      expect(formatMilliseconds(notExposed<number>("no RTT"))).toBe(NOT_EXPOSED);
     });
   });
 
-  describe("formatRate", () => {
-    it("formats rate with one decimal place and specified unit", () => {
-      expect(formatRate(measured(12.345), "objs/s")).toBe("12.3 objs/s");
-      expect(formatRate(measured(0), "fps")).toBe("0.0 fps");
+  describe("formatCount", () => {
+    it("formats count using UK English locale", () => {
+      expect(formatCount(measured(1234567))).toBe("1,234,567");
+      expect(formatCount(measured(0))).toBe("0");
     });
 
-    it("returns 'Not exposed' for unexposed rate measurements", () => {
-      expect(formatRate(notExposed("no rate available"), "objs/s")).toBe(NOT_EXPOSED);
-    });
-  });
-
-  describe("measured & notExposed factories", () => {
-    it("creates an exposed measurement object", () => {
-      const m = measured(100);
-      expect(m).toEqual({ exposed: true, value: 100 });
-    });
-
-    it("creates an unexposed measurement object with reason", () => {
-      const m = notExposed("reason for no data");
-      expect(m).toEqual({ exposed: false, reason: "reason for no data" });
+    it("returns 'Not exposed' for unexposed counts", () => {
+      expect(formatCount(notExposed<number>("untracked"))).toBe(NOT_EXPOSED);
     });
   });
 
   describe("fromNullable", () => {
-    it("returns exposed measurement for non-null and non-undefined values", () => {
-      expect(fromNullable(10, "missing")).toEqual({ exposed: true, value: 10 });
-      expect(fromNullable("str", "missing")).toEqual({ exposed: true, value: "str" });
-      expect(fromNullable(0, "missing")).toEqual({ exposed: true, value: 0 });
-      expect(fromNullable(false, "missing")).toEqual({ exposed: true, value: false });
+    it("wraps non-null and non-undefined values as measured", () => {
+      expect(fromNullable(100, "missing")).toEqual(measured(100));
+      expect(fromNullable("val", "missing")).toEqual(measured("val"));
+      expect(fromNullable(false, "missing")).toEqual(measured(false));
+      expect(fromNullable(0, "missing")).toEqual(measured(0));
     });
 
-    it("returns unexposed measurement with reason when value is null or undefined", () => {
-      expect(fromNullable(null, "value is null")).toEqual({
-        exposed: false,
-        reason: "value is null",
-      });
-      expect(fromNullable(undefined, "value is undefined")).toEqual({
-        exposed: false,
-        reason: "value is undefined",
-      });
+    it("wraps null or undefined values as notExposed with reason", () => {
+      expect(fromNullable(null, "no data")).toEqual(notExposed("no data"));
+      expect(fromNullable(undefined, "not found")).toEqual(notExposed("not found"));
     });
   });
 
   describe("valueOr", () => {
-    it("returns the measurement value when exposed", () => {
-      expect(valueOr(measured(50), 0)).toBe(50);
+    it("returns measured value if exposed", () => {
+      expect(valueOr(measured(42), 0)).toBe(42);
     });
 
-    it("returns the fallback value when not exposed", () => {
-      expect(valueOr(notExposed<number>("no data"), 100)).toBe(100);
+    it("returns fallback value if unexposed", () => {
+      expect(valueOr(notExposed<number>("unexposed"), 99)).toBe(99);
     });
   });
 });

@@ -8,7 +8,10 @@
           "Room codes and participant identifiers are high entropy.",
           "Routing is truthfully labelled cooperative and transport is unverified."
         ],
-        "evidenceRefs": ["relay-issue", "relay-create-response"],
+        "evidenceRefs": [
+          "relay-issue",
+          "relay-create-response"
+        ],
         "impact": {
           "level": "high",
           "rationale": "Successful abuse can expose or spoof room audio and disrupt every connected participant; cross-room reach depends on external namespace and relay behaviour."
@@ -170,7 +173,10 @@
         "Toggle routing consent and assert a revoked subscription is rejected at the relay."
       ],
       "rootCause": {
-        "evidenceRefs": ["relay-issue", "relay-create-response"],
+        "evidenceRefs": [
+          "relay-issue",
+          "relay-create-response"
+        ],
         "summary": "A single Worker secret is treated as a browser credential; no server component mints or enforces room-, participant-, publication- or subscription-specific claims."
       },
       "ruleId": "access-control.relay-wide-browser-bearer",
@@ -181,7 +187,9 @@
       "summary": "The public create route and open join route return the same configured MOQ_RELAY_TOKEN to browsers. The adapter then authenticates relay operations with that bearer without room, participant, track, action or expiry claims.",
       "taxonomy": {
         "category": "broken-access-control",
-        "cwe": ["CWE-522"]
+        "cwe": [
+          "CWE-522"
+        ]
       },
       "title": "Room creation and joining disclose a relay-wide publish/subscribe bearer",
       "validation": {
@@ -196,7 +204,10 @@
           "Routing is truthfully labelled cooperative and transport is unverified."
         ],
         "disposition": "reported",
-        "evidenceRefs": ["relay-issue", "relay-create-response"],
+        "evidenceRefs": [
+          "relay-issue",
+          "relay-create-response"
+        ],
         "limitations": [
           "Successful relay abuse was not run because live relay acceptance is outside the authorised source snapshot."
         ],
@@ -212,7 +223,10 @@
           "Simulation counts and AI-to-AI turns are bounded.",
           "Rooms hard-stop after twenty minutes and no live AI workers exist yet."
         ],
-        "evidenceRefs": ["global-ai-add", "global-human-guard"],
+        "evidenceRefs": [
+          "global-ai-add",
+          "global-human-guard"
+        ],
         "impact": {
           "level": "high",
           "rationale": "The attacker can remove legitimate AIs, fabricate shared AI state, reshape the simulated cast and manipulate AI-to-AI safety counters, breaking the demo's integrity and availability."
@@ -373,7 +387,10 @@
         "Assert per-AI credentials can update only their bound AI pipeline."
       ],
       "rootCause": {
-        "evidenceRefs": ["global-ai-add", "global-human-guard"],
+        "evidenceRefs": [
+          "global-ai-add",
+          "global-human-guard"
+        ],
         "summary": "Global room mutations rely on a role predicate that verifies only human membership, while presenterMode is client-side UI state and no stronger server principal exists."
       },
       "ruleId": "authorization.any-human-global-room-control",
@@ -384,7 +401,9 @@
       "summary": "All AI creation, removal, pipeline, presenter-simulation and AI-to-AI administration methods authorise through assertHuman, which distinguishes only human from AI. The server stores no creator, presenter, owner or per-AI worker authority.",
       "taxonomy": {
         "category": "missing-authorization",
-        "cwe": ["CWE-862"]
+        "cwe": [
+          "CWE-862"
+        ]
       },
       "title": "Any joined human can execute presenter and AI lifecycle controls",
       "validation": {
@@ -399,7 +418,10 @@
           "Rooms hard-stop after twenty minutes and no live AI workers exist yet."
         ],
         "disposition": "reported",
-        "evidenceRefs": ["global-ai-add", "global-human-guard"],
+        "evidenceRefs": [
+          "global-ai-add",
+          "global-human-guard"
+        ],
         "limitations": [
           "External AI cost impact is prospective because the revision uses labelled presenter simulation only."
         ],
@@ -415,7 +437,9 @@
           "Duplicate queue identifiers are deduplicated.",
           "Removing a known AI cleans its own floor state."
         ],
-        "evidenceRefs": ["floor-write"],
+        "evidenceRefs": [
+          "floor-write"
+        ],
         "impact": {
           "level": "medium",
           "rationale": "Shared AI turn-taking is wedged or pre-empted until another caller supplies the exact bogus holder or the room expires."
@@ -424,7 +448,9 @@
           "level": "high",
           "rationale": "high"
         },
-        "preconditions": ["The attacker is an active human participant."],
+        "preconditions": [
+          "The attacker is an active human participant."
+        ],
         "steps": [
           "Join as a human.",
           "Request the floor for a nonexistent identifier while the floor is empty.",
@@ -538,7 +564,9 @@
         "Verify queue rows reference active AI participants after lifecycle changes."
       ],
       "rootCause": {
-        "evidenceRefs": ["floor-write"],
+        "evidenceRefs": [
+          "floor-write"
+        ],
         "summary": "The floor API trusts an identifier asserted by a human caller and the database schema does not bind floor holders or queue entries to active AI participant rows."
       },
       "ruleId": "input-validation.ai-floor-target",
@@ -549,7 +577,9 @@
       "summary": "requestFloor stores an arbitrary caller-supplied aiId as the floor holder or queue entry without proving that it names an active AI. releaseFloor likewise needs only the supplied holder ID.",
       "taxonomy": {
         "category": "improper-input-validation",
-        "cwe": ["CWE-20"]
+        "cwe": [
+          "CWE-20"
+        ]
       },
       "title": "Unvalidated AI identifiers can wedge or pre-empt the global floor",
       "validation": {
@@ -564,7 +594,9 @@
           "Removing a known AI cleans its own floor state."
         ],
         "disposition": "reported",
-        "evidenceRefs": ["floor-write"],
+        "evidenceRefs": [
+          "floor-write"
+        ],
         "method": "Offline source review of the exact authorised Git revision.",
         "status": "validated",
         "summary": "The source-to-sink path and missing control were traced directly; documented mitigations and external uncertainties were considered."
@@ -577,7 +609,9 @@
           "Tokens and relay credentials are absent.",
           "Room state expires after twenty minutes."
         ],
-        "evidenceRefs": ["routing-snapshot"],
+        "evidenceRefs": [
+          "routing-snapshot"
+        ],
         "impact": {
           "level": "medium",
           "rationale": "Individual AI consent and listening choices are exposed to every invited room-code holder."
@@ -586,7 +620,9 @@
           "level": "high",
           "rationale": "high"
         },
-        "preconditions": ["The attacker knows a valid room code."],
+        "preconditions": [
+          "The attacker knows a valid room code."
+        ],
         "steps": [
           "Obtain an invited room link.",
           "Request GET /api/rooms/:code.",
@@ -717,7 +753,9 @@
         "Assert WebSocket snapshots apply the same viewer-specific filtering."
       ],
       "rootCause": {
-        "evidenceRefs": ["routing-snapshot"],
+        "evidenceRefs": [
+          "routing-snapshot"
+        ],
         "summary": "One viewer-independent RoomSnapshot is used for public HTTP, join and WebSocket responses even though routing preferences contain per-human private consent state."
       },
       "ruleId": "privacy.routing-preference-disclosure",
@@ -728,7 +766,9 @@
       "summary": "The unauthenticated room snapshot selects and serialises all routing rows, including who permits each AI to hear them and who listens to each AI. Join responses and control WebSockets reuse the same complete snapshot.",
       "taxonomy": {
         "category": "sensitive-data-exposure",
-        "cwe": ["CWE-200"]
+        "cwe": [
+          "CWE-200"
+        ]
       },
       "title": "Public room snapshots disclose every human's per-AI routing preferences",
       "validation": {
@@ -743,7 +783,9 @@
           "Room state expires after twenty minutes."
         ],
         "disposition": "reported",
-        "evidenceRefs": ["routing-snapshot"],
+        "evidenceRefs": [
+          "routing-snapshot"
+        ],
         "method": "Offline source review of the exact authorised Git revision.",
         "status": "validated",
         "summary": "The source-to-sink path and missing control were traced directly; documented mitigations and external uncertainties were considered."
@@ -756,7 +798,9 @@
           "TLS protects transit.",
           "The token is random, hashed at rest and bounded by leave or room expiry."
         ],
-        "evidenceRefs": ["ws-query-token"],
+        "evidenceRefs": [
+          "ws-query-token"
+        ],
         "impact": {
           "level": "medium",
           "rationale": "Replay permits participant impersonation and inherits the impact of every operation authorised by the bearer."
@@ -765,7 +809,9 @@
           "level": "medium",
           "rationale": "medium"
         },
-        "limitations": ["Cloudflare or proxy full-URL logging was not verified."],
+        "limitations": [
+          "Cloudflare or proxy full-URL logging was not verified."
+        ],
         "preconditions": [
           "At least one external system records full request URLs.",
           "The participant remains active or inside the reconnect window."
@@ -899,7 +945,9 @@
         "Reclaim twice and verify the old rejoin credential is invalid."
       ],
       "rootCause": {
-        "evidenceRefs": ["ws-query-token"],
+        "evidenceRefs": [
+          "ws-query-token"
+        ],
         "summary": "The socket handshake reuses a general-purpose participant credential instead of exchanging it through an authenticated request for a purpose-bound, single-use socket ticket."
       },
       "ruleId": "credential-exposure.websocket-query-bearer",
@@ -910,7 +958,9 @@
       "summary": "roomEventsUrl appends the participant's general rejoin token to the WebSocket URL. The Worker and Durable Object read that query value for authentication, and reclaim returns the same reusable token without consumption or rotation.",
       "taxonomy": {
         "category": "credential-exposure",
-        "cwe": ["CWE-598"]
+        "cwe": [
+          "CWE-598"
+        ]
       },
       "title": "A reusable participant bearer is placed in the WebSocket query string",
       "validation": {
@@ -925,8 +975,12 @@
           "The token is random, hashed at rest and bounded by leave or room expiry."
         ],
         "disposition": "reported",
-        "evidenceRefs": ["ws-query-token"],
-        "limitations": ["Cloudflare or proxy full-URL logging was not verified."],
+        "evidenceRefs": [
+          "ws-query-token"
+        ],
+        "limitations": [
+          "Cloudflare or proxy full-URL logging was not verified."
+        ],
         "method": "Offline source review of the exact authorised Git revision.",
         "status": "validated",
         "summary": "The source-to-sink path and missing control were traced directly; documented mitigations and external uncertainties were considered."
@@ -939,7 +993,9 @@
           "Only ping messages are accepted from clients.",
           "Room expiry closes sockets and platform quotas may cap absolute scale."
         ],
-        "evidenceRefs": ["socket-accept"],
+        "evidenceRefs": [
+          "socket-accept"
+        ],
         "impact": {
           "level": "medium",
           "rationale": "Control-plane resources and broadcast capacity are exhausted for the room."
@@ -948,8 +1004,12 @@
           "level": "high",
           "rationale": "high"
         },
-        "limitations": ["Cloudflare connection ceilings were not inspected."],
-        "preconditions": ["The attacker has one valid participant credential."],
+        "limitations": [
+          "Cloudflare connection ceilings were not inspected."
+        ],
+        "preconditions": [
+          "The attacker has one valid participant credential."
+        ],
         "steps": [
           "Join once.",
           "Open many concurrent /events upgrades with the same credential.",
@@ -1071,7 +1131,9 @@
         "Verify broadcasts target only the authorised active socket."
       ],
       "rootCause": {
-        "evidenceRefs": ["socket-accept"],
+        "evidenceRefs": [
+          "socket-accept"
+        ],
         "summary": "The reusable participant credential is accepted independently for every upgrade and no per-participant connection ownership or bounded reconnect policy is enforced."
       },
       "ruleId": "resource-exhaustion.concurrent-control-sockets",
@@ -1082,7 +1144,9 @@
       "summary": "Every authenticated events upgrade creates and retains another WebSocket, sends a full snapshot and includes it in every later broadcast. The participant tag is never used to enforce a per-participant concurrency bound.",
       "taxonomy": {
         "category": "resource-exhaustion",
-        "cwe": ["CWE-770"]
+        "cwe": [
+          "CWE-770"
+        ]
       },
       "title": "One participant token can open unbounded concurrent control sockets",
       "validation": {
@@ -1097,8 +1161,12 @@
           "Room expiry closes sockets and platform quotas may cap absolute scale."
         ],
         "disposition": "reported",
-        "evidenceRefs": ["socket-accept"],
-        "limitations": ["Cloudflare connection ceilings were not inspected."],
+        "evidenceRefs": [
+          "socket-accept"
+        ],
+        "limitations": [
+          "Cloudflare connection ceilings were not inspected."
+        ],
         "method": "Offline source review of the exact authorised Git revision.",
         "status": "validated",
         "summary": "The source-to-sink path and missing control were traced directly; documented mitigations and external uncertainties were considered."
@@ -1111,7 +1179,9 @@
           "Input lengths and room lifetime are bounded.",
           "Membership intentionally has no count cap."
         ],
-        "evidenceRefs": ["join-allocation"],
+        "evidenceRefs": [
+          "join-allocation"
+        ],
         "impact": {
           "level": "medium",
           "rationale": "The room control plane slows or becomes unavailable without rejecting any individual join for participant count."
@@ -1120,8 +1190,12 @@
           "level": "high",
           "rationale": "high"
         },
-        "limitations": ["Cloudflare object and request ceilings were not measured."],
-        "preconditions": ["The attacker knows the room code."],
+        "limitations": [
+          "Cloudflare object and request ceilings were not measured."
+        ],
+        "preconditions": [
+          "The attacker knows the room code."
+        ],
         "steps": [
           "Obtain a valid room code.",
           "Send many join requests without reclaim tokens.",
@@ -1248,7 +1322,9 @@
         "Verify the implementation never rejects solely because of total participant count."
       ],
       "rootCause": {
-        "evidenceRefs": ["join-allocation"],
+        "evidenceRefs": [
+          "join-allocation"
+        ],
         "summary": "Only room creation is throttled; open membership was implemented without a separate abuse-velocity and credential-issuance budget."
       },
       "ruleId": "resource-exhaustion.unthrottled-open-joins",
@@ -1259,7 +1335,9 @@
       "summary": "The open join path has no source- or room-level rate limit. Every non-reclaim join inserts a participant, seeds routing for every AI, broadcasts and serialises a complete snapshot; the Worker also fetched a snapshot immediately before joining.",
       "taxonomy": {
         "category": "resource-exhaustion",
-        "cwe": ["CWE-770"]
+        "cwe": [
+          "CWE-770"
+        ]
       },
       "title": "Unthrottled open-room joins permit unbounded participant and routing allocation",
       "validation": {
@@ -1274,8 +1352,12 @@
           "Membership intentionally has no count cap."
         ],
         "disposition": "reported",
-        "evidenceRefs": ["join-allocation"],
-        "limitations": ["Cloudflare object and request ceilings were not measured."],
+        "evidenceRefs": [
+          "join-allocation"
+        ],
+        "limitations": [
+          "Cloudflare object and request ceilings were not measured."
+        ],
         "method": "Offline source review of the exact authorised Git revision.",
         "status": "validated",
         "summary": "The source-to-sink path and missing control were traced directly; documented mitigations and external uncertainties were considered."
@@ -1288,7 +1370,9 @@
           "Join checks room existence first.",
           "Cloudflare limits make each request finite; fields are bounded after parsing."
         ],
-        "evidenceRefs": ["json-parser"],
+        "evidenceRefs": [
+          "json-parser"
+        ],
         "impact": {
           "level": "medium",
           "rationale": "Repeated requests can consume isolate CPU/memory, increase cost and disrupt room control endpoints."
@@ -1297,8 +1381,12 @@
           "level": "high",
           "rationale": "high"
         },
-        "limitations": ["No runtime memory or CPU threshold was measured."],
-        "preconditions": ["The request is within any external Cloudflare maximum."],
+        "limitations": [
+          "No runtime memory or CPU threshold was measured."
+        ],
+        "preconditions": [
+          "The request is within any external Cloudflare maximum."
+        ],
         "steps": [
           "Send application/json with a body much larger than the legitimate schema.",
           "request.json allocates and parses the body.",
@@ -1412,7 +1500,9 @@
         "Verify creation limiting runs before body consumption."
       ],
       "rootCause": {
-        "evidenceRefs": ["json-parser"],
+        "evidenceRefs": [
+          "json-parser"
+        ],
         "summary": "The shared JSON helper treats platform request limits as the only byte bound and the route ordering performs cheap admission controls only after parsing."
       },
       "ruleId": "resource-exhaustion.unbounded-json-body",
@@ -1423,7 +1513,9 @@
       "summary": "readJsonObject calls request.json() after checking only Content-Type. Field validation, the room-creation limiter and participant authentication all occur after the entire attacker-controlled body has been buffered and parsed.",
       "taxonomy": {
         "category": "resource-exhaustion",
-        "cwe": ["CWE-400"]
+        "cwe": [
+          "CWE-400"
+        ]
       },
       "title": "Worker parses unbounded JSON bodies before rate limiting or authentication",
       "validation": {
@@ -1438,8 +1530,12 @@
           "Cloudflare limits make each request finite; fields are bounded after parsing."
         ],
         "disposition": "reported",
-        "evidenceRefs": ["json-parser"],
-        "limitations": ["No runtime memory or CPU threshold was measured."],
+        "evidenceRefs": [
+          "json-parser"
+        ],
+        "limitations": [
+          "No runtime memory or CPU threshold was measured."
+        ],
         "method": "Offline source review of the exact authorised Git revision.",
         "status": "validated",
         "summary": "The source-to-sink path and missing control were traced directly; documented mitigations and external uncertainties were considered."
@@ -1452,7 +1548,10 @@
           "Creating more than four groups prunes old groups.",
           "External stream backpressure may reduce rate but does not cap retained entries."
         ],
-        "evidenceRefs": ["dedupe-set", "dedupe-before-parse"],
+        "evidenceRefs": [
+          "dedupe-set",
+          "dedupe-before-parse"
+        ],
         "impact": {
           "level": "medium",
           "rationale": "Victim tabs consume unbounded memory until audio/UI failure or termination."
@@ -1461,8 +1560,12 @@
           "level": "high",
           "rationale": "high"
         },
-        "limitations": ["A live browser exhaustion threshold was not measured."],
-        "preconditions": ["The relay delivers the publisher's track to human subscribers."],
+        "limitations": [
+          "A live browser exhaustion threshold was not measured."
+        ],
+        "preconditions": [
+          "The relay delivers the publisher's track to human subscribers."
+        ],
         "steps": [
           "Join as a human publisher.",
           "Hold groupId constant and vary objectId.",
@@ -1605,7 +1708,10 @@
         "Exceed the budget and assert track quarantine/unsubscription."
       ],
       "rootCause": {
-        "evidenceRefs": ["dedupe-set", "dedupe-before-parse"],
+        "evidenceRefs": [
+          "dedupe-set",
+          "dedupe-before-parse"
+        ],
         "summary": "A group-count limit was mistaken for a total memory bound; per-group cardinality, bytes, cadence and malformed-object budgets are absent."
       },
       "ruleId": "resource-exhaustion.unbounded-playback-dedupe",
@@ -1616,7 +1722,9 @@
       "summary": "TrackPlayer records each group/object identifier before validating the audio envelope. PlaybackDeduplicator limits the number of groups to four but places every unique objectId in an uncapped Set, so one constant group grows for the player's lifetime.",
       "taxonomy": {
         "category": "resource-exhaustion",
-        "cwe": ["CWE-770"]
+        "cwe": [
+          "CWE-770"
+        ]
       },
       "title": "Playback deduplication retains unbounded object identifiers per group",
       "validation": {
@@ -1631,8 +1739,13 @@
           "External stream backpressure may reduce rate but does not cap retained entries."
         ],
         "disposition": "reported",
-        "evidenceRefs": ["dedupe-set", "dedupe-before-parse"],
-        "limitations": ["A live browser exhaustion threshold was not measured."],
+        "evidenceRefs": [
+          "dedupe-set",
+          "dedupe-before-parse"
+        ],
+        "limitations": [
+          "A live browser exhaustion threshold was not measured."
+        ],
         "method": "Offline source review of the exact authorised Git revision.",
         "status": "validated",
         "summary": "The source-to-sink path and missing control were traced directly; documented mitigations and external uncertainties were considered."
@@ -1645,7 +1758,10 @@
           "Individual payload length, cancellation groups, concealment and mixer ring are bounded.",
           "External Web Streams or relay flow control may reduce bursts."
         ],
-        "evidenceRefs": ["jitter-sort", "decoder-drain"],
+        "evidenceRefs": [
+          "jitter-sort",
+          "decoder-drain"
+        ],
         "impact": {
           "level": "medium",
           "rationale": "Main-thread stalls, decoder overload, audible failure or tab termination disrupt the demonstration."
@@ -1654,8 +1770,12 @@
           "level": "high",
           "rationale": "high"
         },
-        "limitations": ["The browser threshold and external relay backpressure were not measured."],
-        "preconditions": ["The relay delivers the attacker's own track to automatic subscribers."],
+        "limitations": [
+          "The browser threshold and external relay backpressure were not measured."
+        ],
+        "preconditions": [
+          "The relay delivers the attacker's own track to automatic subscribers."
+        ],
         "steps": [
           "Publish unique valid audio envelopes far above 20 ms cadence.",
           "Automatic human subscriptions deliver the burst.",
@@ -1799,7 +1919,10 @@
         "Measure CPU and heap under an adversarial burst."
       ],
       "rootCause": {
-        "evidenceRefs": ["jitter-sort", "decoder-drain"],
+        "evidenceRefs": [
+          "jitter-sort",
+          "decoder-drain"
+        ],
         "summary": "Latency-only pruning was implemented without maximum frame count, byte count, cadence validation or decoder-work budgets, and an array-sort structure amplifies attacker-controlled bursts."
       },
       "ruleId": "resource-exhaustion.media-burst-sorting",
@@ -1810,7 +1933,9 @@
       "summary": "Each valid frame entering AdaptiveJitterBuffer performs a linear duplicate scan, append, full sort and time-only prune. Arbitrarily many frames received within 200 ms survive, and TrackPlayer drains all eligible frames into AudioDecoder without a work or queue-depth budget.",
       "taxonomy": {
         "category": "algorithmic-complexity",
-        "cwe": ["CWE-407"]
+        "cwe": [
+          "CWE-407"
+        ]
       },
       "title": "Media bursts trigger count-unbounded sorting and decoder submission",
       "validation": {
@@ -1825,8 +1950,13 @@
           "External Web Streams or relay flow control may reduce bursts."
         ],
         "disposition": "reported",
-        "evidenceRefs": ["jitter-sort", "decoder-drain"],
-        "limitations": ["The browser threshold and external relay backpressure were not measured."],
+        "evidenceRefs": [
+          "jitter-sort",
+          "decoder-drain"
+        ],
+        "limitations": [
+          "The browser threshold and external relay backpressure were not measured."
+        ],
         "method": "Offline source review of the exact authorised Git revision.",
         "status": "validated",
         "summary": "The source-to-sink path and missing control were traced directly; documented mitigations and external uncertainties were considered."
@@ -1839,7 +1969,10 @@
           "Each schema is small.",
           "Cloudflare storage lifecycle and billing are external."
         ],
-        "evidenceRefs": ["do-constructor", "do-schema-write"],
+        "evidenceRefs": [
+          "do-constructor",
+          "do-schema-write"
+        ],
         "impact": {
           "level": "medium",
           "rationale": "Large numbers of persistent empty objects can consume account resources outside the intended creation budget."
@@ -1848,7 +1981,9 @@
           "level": "high",
           "rationale": "high"
         },
-        "limitations": ["The precise platform billing and quota impact was not verified."],
+        "limitations": [
+          "The precise platform billing and quota impact was not verified."
+        ],
         "preconditions": [
           "The platform materialises Durable Objects on the observed getByName/fetch/RPC path as represented by this source."
         ],
@@ -1995,7 +2130,10 @@
         "Verify abandoned allocations receive cleanup."
       ],
       "rootCause": {
-        "evidenceRefs": ["do-constructor", "do-schema-write"],
+        "evidenceRefs": [
+          "do-constructor",
+          "do-schema-write"
+        ],
         "summary": "Room-code existence is checked only after resolving the attacker-selected code into a stateful Durable Object whose constructor performs persistent migration."
       },
       "ruleId": "resource-exhaustion.unknown-room-durable-object",
@@ -2006,7 +2144,9 @@
       "summary": "Any syntactically valid room code is mapped with getByName before existence is known. Constructing that Room always runs migrate, creating tables and schema_meta even though no room_meta row or cleanup alarm exists.",
       "taxonomy": {
         "category": "resource-exhaustion",
-        "cwe": ["CWE-770"]
+        "cwe": [
+          "CWE-770"
+        ]
       },
       "title": "Unknown room-code probes initialise persistent SQLite Durable Objects",
       "validation": {
@@ -2022,8 +2162,13 @@
           "Cloudflare storage lifecycle and billing are external."
         ],
         "disposition": "reported",
-        "evidenceRefs": ["do-constructor", "do-schema-write"],
-        "limitations": ["The precise platform billing and quota impact was not verified."],
+        "evidenceRefs": [
+          "do-constructor",
+          "do-schema-write"
+        ],
+        "limitations": [
+          "The precise platform billing and quota impact was not verified."
+        ],
         "method": "Offline source review of the exact authorised Git revision.",
         "status": "validated",
         "summary": "The source-to-sink path and missing control were traced directly; documented mitigations and external uncertainties were considered."
@@ -2036,7 +2181,10 @@
           "Browser permission denial produces listen-only.",
           "Relay transport is trace-unverified and unsupported devices may fail capture."
         ],
-        "evidenceRefs": ["session-capture", "microphone-request"],
+        "evidenceRefs": [
+          "session-capture",
+          "microphone-request"
+        ],
         "impact": {
           "level": "medium",
           "rationale": "Unexpected microphone capture and potential transmission violate the stated read-only privacy expectation."
@@ -2045,7 +2193,9 @@
           "level": "medium",
           "rationale": "medium"
         },
-        "limitations": ["A real narrow browser with pre-granted permission was not exercised."],
+        "limitations": [
+          "A real narrow browser with pre-granted permission was not exercised."
+        ],
         "preconditions": [
           "The browser supports capture; publication additionally requires permission and live relay acceptance."
         ],
@@ -2209,7 +2359,10 @@
         "Require explicit user opt-in before transitioning to publishing mode."
       ],
       "rootCause": {
-        "evidenceRefs": ["session-capture", "microphone-request"],
+        "evidenceRefs": [
+          "session-capture",
+          "microphone-request"
+        ],
         "summary": "Read-only capability is represented only in responsive presentation; it is not a session policy consumed by capture and publication code."
       },
       "ruleId": "privacy.narrow-read-only-microphone",
@@ -2220,7 +2373,9 @@
       "summary": "The narrow layout is implemented as labels and CSS-hidden controls, but useRoomSession starts the same full RoomSession. RoomSession.start unconditionally invokes startPublishing, which requests getUserMedia and publishes frames when transport is live.",
       "taxonomy": {
         "category": "privacy-violation",
-        "cwe": ["CWE-359"]
+        "cwe": [
+          "CWE-359"
+        ]
       },
       "title": "Narrow read-only clients still start microphone capture and publication",
       "validation": {
@@ -2235,8 +2390,13 @@
           "Relay transport is trace-unverified and unsupported devices may fail capture."
         ],
         "disposition": "reported",
-        "evidenceRefs": ["session-capture", "microphone-request"],
-        "limitations": ["A real narrow browser with pre-granted permission was not exercised."],
+        "evidenceRefs": [
+          "session-capture",
+          "microphone-request"
+        ],
+        "limitations": [
+          "A real narrow browser with pre-granted permission was not exercised."
+        ],
         "method": "Offline source review of the exact authorised Git revision.",
         "status": "validated",
         "summary": "The source-to-sink path and missing control were traced directly; documented mitigations and external uncertainties were considered."
@@ -2249,7 +2409,9 @@
           "No immediate broadcast occurs.",
           "Local degradation uses locally observed object time."
         ],
-        "evidenceRefs": ["activity-update"],
+        "evidenceRefs": [
+          "activity-update"
+        ],
         "impact": {
           "level": "low",
           "rationale": "Audience-facing activity indicators can be manipulated, undermining demonstration integrity."
@@ -2258,7 +2420,9 @@
           "level": "high",
           "rationale": "high"
         },
-        "preconditions": ["The attacker has an active participant credential."],
+        "preconditions": [
+          "The attacker has an active participant credential."
+        ],
         "steps": [
           "Join the room.",
           "Read participant IDs from the snapshot.",
@@ -2378,7 +2542,9 @@
         "Rate-limit repeated activity reports."
       ],
       "rootCause": {
-        "evidenceRefs": ["activity-update"],
+        "evidenceRefs": [
+          "activity-update"
+        ],
         "summary": "The activity endpoint trusts a client assertion about who produced audio instead of deriving recency from an authenticated publication or track-observation capability."
       },
       "ruleId": "authorization.activity-target-spoofing",
@@ -2389,7 +2555,9 @@
       "summary": "POST /active accepts a caller-selected targetId. markActive authenticates the caller but updates last_active_at for any matching participant without binding the target to the caller or a verified received track.",
       "taxonomy": {
         "category": "object-authorization",
-        "cwe": ["CWE-639"]
+        "cwe": [
+          "CWE-639"
+        ]
       },
       "title": "Any participant can spoof another participant's activity",
       "validation": {
@@ -2404,7 +2572,9 @@
           "Local degradation uses locally observed object time."
         ],
         "disposition": "reported",
-        "evidenceRefs": ["activity-update"],
+        "evidenceRefs": [
+          "activity-update"
+        ],
         "method": "Offline source review of the exact authorised Git revision.",
         "status": "validated",
         "summary": "The source-to-sink path and missing control were traced directly; documented mitigations and external uncertainties were considered."
