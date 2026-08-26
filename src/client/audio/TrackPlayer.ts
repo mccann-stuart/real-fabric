@@ -44,6 +44,7 @@ export interface TrackPlayerCallbacks {
 export class TrackPlayer {
   readonly buffer = new AdaptiveJitterBuffer<{ metadata: AudioFrameMetadata; frame: Uint8Array }>();
   private readonly drift: DriftEstimator;
+  private readonly dedupe = new PlaybackDeduplicator();
   private readonly concealer = new PacketLossConcealer();
   private decoder: AudioDecoder | null = null;
   private firstObjectAt: number | null = null;
@@ -64,7 +65,6 @@ export class TrackPlayer {
     readonly trackId: string,
     private readonly mixer: MixerGraph,
     private readonly callbacks: TrackPlayerCallbacks = {},
-    private readonly dedupe: PlaybackDeduplicator = new PlaybackDeduplicator(),
   ) {
     this.drift = new DriftEstimator(trackId);
   }
@@ -264,6 +264,7 @@ export class TrackPlayer {
   close(): void {
     this.closeDecoder();
     this.buffer.clear();
+    this.dedupe.clear();
     this.concealer.reset();
     this.mixer.removeTrack(this.trackId);
   }
