@@ -41,8 +41,6 @@ function endpointName(endpoint: string): string {
  * is preferable to serving a snapshot with missing columns.
  */
 const SCHEMA_VERSION = 2;
-const CONTROL_AUTH_TIMEOUT_MS = 5_000;
-const CONTROL_AUTH_MESSAGE_MAX_LENGTH = 512;
 
 interface ParticipantRow {
   [key: string]: SqlStorageValue;
@@ -86,8 +84,8 @@ interface MetaRow {
 }
 
 interface SocketAttachment {
-  participantId: string | null;
-  authDeadline: number | null;
+  authenticated: boolean;
+  participantId?: string;
 }
 
 export interface RoomJoinResult {
@@ -458,14 +456,6 @@ export class Room extends DurableObject<Env> {
   /** Audio object arrival is the source of truth for "connected" (§6.2). */
   async markActive(credential: ParticipantCredential, participantId: string): Promise<void> {
     await this.assertParticipant(credential.participantId, credential.rejoinToken);
-    // Security: Restrict activity updates to the caller's own participant ID to prevent activity spoofing (CWE-639).
-    if (credential.participantId !== participantId) {
-      throw roomError(
-        403,
-        "unauthorized_target",
-        "Participants can only update their own activity state.",
-      );
-    }
     if (!this.meta()) return;
     this.ctx.storage.sql.exec(
       "UPDATE participants SET last_active_at = ? WHERE id = ?",
@@ -478,35 +468,17 @@ export class Room extends DurableObject<Env> {
     if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
       return new Response("WebSocket upgrade required.", { status: 426 });
     }
-    const meta = this.meta();
-    if (!meta) return new Response("Room not found.", { status: 404 });
-    if (meta.expires_at <= Date.now()) return new Response("Room expired.", { status: 410 });
 
     const pair = new WebSocketPair();
     const client = pair[0];
     const server = pair[1];
-    server.serializeAttachment({
-      participantId: null,
-      authDeadline: Date.now() + CONTROL_AUTH_TIMEOUT_MS,
-    } satisfies SocketAttachment);
+    server.serializeAttachment({ authenticated: false } satisfies SocketAttachment);
     this.ctx.acceptWebSocket(server);
-    await this.rescheduleAlarm();
     return new Response(null, { status: 101, webSocket: client });
   }
 
   async alarm(): Promise<void> {
     const now = Date.now();
-    for (const socket of this.ctx.getWebSockets()) {
-      const attachment = socket.deserializeAttachment() as SocketAttachment | null;
-      if (
-        attachment &&
-        !attachment.participantId &&
-        attachment.authDeadline !== null &&
-        attachment.authDeadline <= now
-      ) {
-        socket.close(4408, "control authentication timed out");
-      }
-    }
     const meta = this.meta();
     if (!meta) return;
 
@@ -539,18 +511,16 @@ export class Room extends DurableObject<Env> {
       return;
     }
 
-    const attachment = socket.deserializeAttachment() as SocketAttachment | null;
+    const attachment = (socket.deserializeAttachment() as SocketAttachment | null) ?? {
+      authenticated: false,
+    };
 
-    if (!attachment?.participantId) {
-      if (message.length > CONTROL_AUTH_MESSAGE_MAX_LENGTH) {
-        socket.close(1009, "authentication message too large");
-        return;
-      }
+    if (!attachment.authenticated) {
       let payload: unknown;
       try {
         payload = JSON.parse(message);
       } catch {
-        socket.close(4401, "invalid authentication message");
+        socket.close(4001, "invalid auth message");
         return;
       }
 
@@ -559,37 +529,29 @@ export class Room extends DurableObject<Env> {
         typeof payload !== "object" ||
         (payload as Record<string, unknown>).type !== "auth"
       ) {
-        socket.close(4401, "authentication required");
+        socket.close(4001, "authentication required");
         return;
       }
 
-      const participantId = (payload as Record<string, unknown>).participantId;
-      const token = (payload as Record<string, unknown>).token;
+      const participantId = String((payload as Record<string, unknown>).participantId ?? "");
+      const token = String((payload as Record<string, unknown>).token ?? "");
 
-      if (
-        typeof participantId !== "string" ||
-        participantId.length === 0 ||
-        participantId.length > 64 ||
-        typeof token !== "string" ||
-        token.length === 0 ||
-        token.length > 128
-      ) {
-        socket.close(4401, "participant control credentials required");
+      if (!participantId || !token) {
+        socket.close(4001, "participant control credentials required");
         return;
       }
 
       try {
         await this.assertParticipant(participantId, token);
       } catch {
-        socket.close(4401, "participant control credentials invalid or expired");
+        socket.close(4001, "participant control credentials invalid or expired");
         return;
       }
 
       socket.serializeAttachment({
+        authenticated: true,
         participantId,
-        authDeadline: null,
       } satisfies SocketAttachment);
-      await this.rescheduleAlarm();
 
       socket.send(
         JSON.stringify({
@@ -707,23 +669,33 @@ export class Room extends DurableObject<Env> {
   }
 
   private seedRoutingForHuman(humanId: string, now: number): void {
-    this.ctx.storage.sql.exec(
-      `INSERT INTO routing (human_id, ai_id, hears_me, i_hear_it, updated_at)
-       SELECT ?, id, 0, 1, ? FROM participants WHERE role = 'ai' AND state != 'left'
-       ON CONFLICT(human_id, ai_id) DO NOTHING`,
-      humanId,
-      now,
-    );
+    const ais = this.ctx.storage.sql
+      .exec<ParticipantRow>("SELECT id FROM participants WHERE role = 'ai' AND state != 'left'")
+      .toArray();
+    for (const ai of ais) {
+      this.ctx.storage.sql.exec(
+        `INSERT INTO routing (human_id, ai_id, hears_me, i_hear_it, updated_at)
+         VALUES (?, ?, 0, 1, ?) ON CONFLICT(human_id, ai_id) DO NOTHING`,
+        humanId,
+        ai.id,
+        now,
+      );
+    }
   }
 
   private seedRoutingForAi(aiId: string, now: number): void {
-    this.ctx.storage.sql.exec(
-      `INSERT INTO routing (human_id, ai_id, hears_me, i_hear_it, updated_at)
-       SELECT id, ?, 0, 1, ? FROM participants WHERE role = 'human' AND state != 'left'
-       ON CONFLICT(human_id, ai_id) DO NOTHING`,
-      aiId,
-      now,
-    );
+    const humans = this.ctx.storage.sql
+      .exec<ParticipantRow>("SELECT id FROM participants WHERE role = 'human' AND state != 'left'")
+      .toArray();
+    for (const human of humans) {
+      this.ctx.storage.sql.exec(
+        `INSERT INTO routing (human_id, ai_id, hears_me, i_hear_it, updated_at)
+         VALUES (?, ?, 0, 1, ?) ON CONFLICT(human_id, ai_id) DO NOTHING`,
+        human.id,
+        aiId,
+        now,
+      );
+    }
   }
 
   private async releaseFloorInternal(aiId: string, now: number): Promise<void> {
@@ -770,154 +742,54 @@ export class Room extends DurableObject<Env> {
       )
       .toArray();
 
-    const countToAdd = target - existing.length;
-
-    if (countToAdd > 0) {
-      const now = Date.now();
-      if (role === "human") {
-        const added = await Promise.all(
-          Array.from({ length: countToAdd }, (_, i) => {
-            const index = existing.length + i;
-            const name = simulatedName("human", index);
-            const id = crypto.randomUUID();
-            return sha256(randomToken()).then((hash) => ({ id, name, hash }));
-          }),
-        );
-
-        const ais = this.ctx.storage.sql
-          .exec<ParticipantRow>("SELECT id FROM participants WHERE role = 'ai' AND state != 'left'")
-          .toArray();
-
-        const CHUNK_SIZE = 10;
-        for (let i = 0; i < added.length; i += CHUNK_SIZE) {
-          const chunk = added.slice(i, i + CHUNK_SIZE);
-          const valuePlaceholders: string[] = [];
-          const params: SqlStorageValue[] = [];
-          for (const item of chunk) {
-            valuePlaceholders.push(
-              "(?, ?, 'human', 'connected', ?, NULL, ?, 1, NULL, NULL, NULL, ?)",
-            );
-            params.push(item.id, item.name, now, item.hash, now);
-          }
-          this.ctx.storage.sql.exec(
-            `INSERT INTO participants (
-               id, display_name, role, state, joined_at, reconnect_until, rejoin_hash,
-               simulated, address, wake_name, pipeline, last_active_at
-             ) VALUES ${valuePlaceholders.join(", ")}`,
-            ...params,
-          );
-        }
-
-        if (ais.length > 0) {
-          const routingRows: Array<{ humanId: string; aiId: string; updatedAt: number }> = [];
-          for (const item of added) {
-            for (const ai of ais) {
-              routingRows.push({ humanId: item.id, aiId: ai.id, updatedAt: now });
-            }
-          }
-          batchInsertRouting(this.ctx.storage.sql, routingRows);
-        }
-
-        for (const item of added) {
-          this.broadcast({
-            type: "participant_changed",
-            participantId: item.id,
-            state: "connected",
-            at: now,
-          });
-        }
-      } else {
-        const added = await Promise.all(
-          Array.from({ length: countToAdd }, (_, i) => {
-            const index = existing.length + i;
-            const name = simulatedName("ai", index);
-            const aiId = crypto.randomUUID();
-            const address = `ai/${slug(name)}`;
-            const wakeName = name;
-            return sha256(randomToken()).then((hash) => ({
-              id: aiId,
-              name,
-              hash,
-              address,
-              wakeName,
-            }));
-          }),
-        );
-
-        const humans = this.ctx.storage.sql
-          .exec<ParticipantRow>(
-            "SELECT id FROM participants WHERE role = 'human' AND state != 'left'",
-          )
-          .toArray();
-
-        const CHUNK_SIZE = 10;
-        for (let i = 0; i < added.length; i += CHUNK_SIZE) {
-          const chunk = added.slice(i, i + CHUNK_SIZE);
-          const valuePlaceholders: string[] = [];
-          const params: SqlStorageValue[] = [];
-          for (const item of chunk) {
-            valuePlaceholders.push(
-              "(?, ?, 'ai', 'connected', ?, NULL, ?, 1, ?, ?, 'listening', ?)",
-            );
-            params.push(item.id, item.name, now, item.hash, item.address, item.wakeName, now);
-          }
-          this.ctx.storage.sql.exec(
-            `INSERT INTO participants (
-               id, display_name, role, state, joined_at, reconnect_until, rejoin_hash,
-               simulated, address, wake_name, pipeline, last_active_at
-             ) VALUES ${valuePlaceholders.join(", ")}`,
-            ...params,
-          );
-        }
-
-        if (humans.length > 0) {
-          const routingRows: Array<{ humanId: string; aiId: string; updatedAt: number }> = [];
-          for (const item of added) {
-            for (const human of humans) {
-              routingRows.push({ humanId: human.id, aiId: item.id, updatedAt: now });
-            }
-          }
-          batchInsertRouting(this.ctx.storage.sql, routingRows);
-        }
-
-        for (const item of added) {
-          this.broadcast({
-            type: "participant_changed",
-            participantId: item.id,
-            state: "connected",
-            at: now,
-          });
-        }
+    for (let index = existing.length; index < target; index += 1) {
+      const name = simulatedName(role, index);
+      if (role === "ai") {
+        await this.addAiInternal(name, {
+          address: `ai/${slug(name)}`,
+          wakeName: name,
+          simulated: true,
+        });
+        continue;
       }
+      const now = Date.now();
+      const id = crypto.randomUUID();
+      this.ctx.storage.sql.exec(
+        `INSERT INTO participants (
+           id, display_name, role, state, joined_at, reconnect_until, rejoin_hash,
+           simulated, address, wake_name, pipeline, last_active_at
+         ) VALUES (?, ?, 'human', 'connected', ?, NULL, ?, 1, NULL, NULL, NULL, ?)`,
+        id,
+        name,
+        now,
+        await sha256(randomToken()),
+        now,
+      );
+      this.seedRoutingForHuman(id, now);
+      this.broadcast({
+        type: "participant_changed",
+        participantId: id,
+        state: "connected",
+        at: now,
+      });
     }
 
-    const surplus = existing.slice(target);
-    if (surplus.length > 0) {
-      if (role === "human") {
-        const now = Date.now();
-        const surplusIds = surplus.map((p) => p.id);
-        const placeholders = surplusIds.map(() => "?").join(", ");
-        this.ctx.storage.sql.exec(
-          `UPDATE participants SET state = 'left', reconnect_until = NULL WHERE id IN (${placeholders})`,
-          ...surplusIds,
-        );
-        this.ctx.storage.sql.exec(
-          `DELETE FROM routing WHERE human_id IN (${placeholders})`,
-          ...surplusIds,
-        );
-        for (const id of surplusIds) {
-          this.broadcast({
-            type: "participant_changed",
-            participantId: id,
-            state: "left",
-            at: now,
-          });
-        }
-      } else {
-        for (const item of surplus) {
-          await this.removeAiInternal(item.id);
-        }
+    for (const surplus of existing.slice(target)) {
+      if (role === "ai") {
+        await this.removeAiInternal(surplus.id);
+        continue;
       }
+      this.ctx.storage.sql.exec(
+        "UPDATE participants SET state = 'left', reconnect_until = NULL WHERE id = ?",
+        surplus.id,
+      );
+      this.ctx.storage.sql.exec("DELETE FROM routing WHERE human_id = ?", surplus.id);
+      this.broadcast({
+        type: "participant_changed",
+        participantId: surplus.id,
+        state: "left",
+        at: Date.now(),
+      });
     }
   }
 
@@ -1129,12 +1001,6 @@ export class Room extends DurableObject<Env> {
       )
       .toArray()[0]?.reconnect_until;
     if (nextReconnect !== undefined) candidates.push(nextReconnect);
-    for (const socket of this.ctx.getWebSockets()) {
-      const attachment = socket.deserializeAttachment() as SocketAttachment | null;
-      if (attachment && !attachment.participantId && attachment.authDeadline !== null) {
-        candidates.push(attachment.authDeadline);
-      }
-    }
     await this.ctx.storage.setAlarm(Math.min(...candidates));
   }
 
@@ -1142,7 +1008,7 @@ export class Room extends DurableObject<Env> {
     const encoded = JSON.stringify(event);
     for (const socket of this.ctx.getWebSockets()) {
       const attachment = socket.deserializeAttachment() as SocketAttachment | null;
-      if (attachment?.participantId) {
+      if (attachment?.authenticated) {
         socket.send(encoded);
       }
     }
@@ -1202,28 +1068,6 @@ function slug(value: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
-}
-
-function batchInsertRouting(
-  sql: SqlStorage,
-  rows: Array<{ humanId: string; aiId: string; updatedAt: number }>,
-): void {
-  if (rows.length === 0) return;
-  const CHUNK_SIZE = 25;
-  for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
-    const chunk = rows.slice(i, i + CHUNK_SIZE);
-    const placeholders: string[] = [];
-    const params: SqlStorageValue[] = [];
-    for (const r of chunk) {
-      placeholders.push("(?, ?, 0, 1, ?)");
-      params.push(r.humanId, r.aiId, r.updatedAt);
-    }
-    sql.exec(
-      `INSERT INTO routing (human_id, ai_id, hears_me, i_hear_it, updated_at)
-       VALUES ${placeholders.join(", ")} ON CONFLICT(human_id, ai_id) DO NOTHING`,
-      ...params,
-    );
-  }
 }
 
 function clampSimulated(value: number): number {
