@@ -1,90 +1,48 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HealthReport } from "../src/client/api";
-import { checkOpus, evaluateCapabilities } from "../src/client/hooks/useCapabilities";
+import { evaluateCapabilities } from "../src/client/hooks/useCapabilities";
+
+const healthyRelay: HealthReport = {
+  ok: true,
+  service: "real-fabric",
+  draft: "16",
+  relayEndpoint: "https://relay.example.com",
+  relayEndpointName: "example-relay",
+  relayCredentialConfigured: true,
+  transportVerified: false,
+  routingEnforcement: "cooperative",
+  discovery: "unknown",
+};
 
 describe("Capabilities Evaluation", () => {
-  const originalAudioEncoder = globalThis.AudioEncoder;
-  const originalIsSecureContext = globalThis.isSecureContext;
-  const originalWebTransport = globalThis.WebTransport;
-  const originalAudioData = globalThis.AudioData;
-  const originalMediaStreamTrackProcessor = (
-    globalThis as unknown as { MediaStreamTrackProcessor?: unknown }
-  ).MediaStreamTrackProcessor;
-
   beforeEach(() => {
-    // Setup browser globals for test environment
-    globalThis.isSecureContext = true;
-    // @ts-expect-error stub WebTransport
-    globalThis.WebTransport = class {};
-    // @ts-expect-error stub AudioEncoder
-    globalThis.AudioEncoder = {
+    vi.stubGlobal("isSecureContext", true);
+    vi.stubGlobal("navigator", {});
+    vi.stubGlobal("WebTransport", class {});
+    vi.stubGlobal("AudioEncoder", {
       isConfigSupported: vi.fn().mockResolvedValue({ supported: true }),
-    };
-    // @ts-expect-error stub AudioData
-    globalThis.AudioData = class {};
-    (globalThis as unknown as { MediaStreamTrackProcessor: unknown }).MediaStreamTrackProcessor =
-      class {};
+    });
+    vi.stubGlobal("AudioDecoder", {
+      isConfigSupported: vi.fn().mockResolvedValue({ supported: true }),
+    });
+    vi.stubGlobal("AudioData", class {});
+    vi.stubGlobal("AudioContext", class {});
+    vi.stubGlobal("AudioWorkletNode", class {});
   });
 
   afterEach(() => {
-    if (originalAudioEncoder !== undefined) {
-      globalThis.AudioEncoder = originalAudioEncoder;
-    } else {
-      // @ts-expect-error cleanup mock
-      delete globalThis.AudioEncoder;
-    }
-
-    if (originalIsSecureContext !== undefined) {
-      globalThis.isSecureContext = originalIsSecureContext;
-    } else {
-      // @ts-expect-error cleanup mock
-      delete globalThis.isSecureContext;
-    }
-
-    if (originalWebTransport !== undefined) {
-      globalThis.WebTransport = originalWebTransport;
-    } else {
-      // @ts-expect-error cleanup mock
-      delete globalThis.WebTransport;
-    }
-
-    if (originalAudioData !== undefined) {
-      globalThis.AudioData = originalAudioData;
-    } else {
-      // @ts-expect-error cleanup mock
-      delete globalThis.AudioData;
-    }
-
-    if (originalMediaStreamTrackProcessor !== undefined) {
-      (globalThis as unknown as { MediaStreamTrackProcessor: unknown }).MediaStreamTrackProcessor =
-        originalMediaStreamTrackProcessor;
-    } else {
-      delete (globalThis as unknown as { MediaStreamTrackProcessor?: unknown })
-        .MediaStreamTrackProcessor;
-    }
+    vi.unstubAllGlobals();
   });
 
-  it("returns unavailable for checkOpus when AudioEncoder is missing", async () => {
-    // @ts-expect-error deleting for test
-    delete globalThis.AudioEncoder;
-    const result = await checkOpus();
-    expect(result).toBe("unavailable");
+  it("reports an unavailable Opus encoder when AudioEncoder is missing", async () => {
+    vi.stubGlobal("AudioEncoder", undefined);
+    const result = await evaluateCapabilities(vi.fn().mockResolvedValue(healthyRelay));
+    expect(result.opusEncoder).toBe("unavailable");
+    expect(result.failure).toBe("transport_unsupported");
   });
 
   it("evaluates capabilities correctly when health report indicates configured and frameable relay", async () => {
-    const mockHealth: HealthReport = {
-      ok: true,
-      service: "real-fabric",
-      draft: "16",
-      relayEndpoint: "https://relay.example.com",
-      relayEndpointName: "example-relay",
-      relayCredentialConfigured: true,
-      transportVerified: false,
-      routingEnforcement: "cooperative",
-      discovery: "unknown",
-    };
-
-    const fetchHealthMock = vi.fn().mockResolvedValue(mockHealth);
+    const fetchHealthMock = vi.fn().mockResolvedValue(healthyRelay);
     const result = await evaluateCapabilities(fetchHealthMock);
 
     expect(fetchHealthMock).toHaveBeenCalledTimes(1);
