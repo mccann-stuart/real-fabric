@@ -1,4 +1,4 @@
-import { type ReactNode, useState } from "react";
+import { type KeyboardEvent, type ReactNode, useState } from "react";
 import {
   BARGE_IN_BUDGET_MS,
   ROUTING_CHANGE_BUDGET_MS,
@@ -42,6 +42,14 @@ export interface InspectorProps {
 
 type Tab = "signal" | "graph" | "objects" | "latency" | "events";
 
+const INSPECTOR_TABS = [
+  ["signal", "Signal", "Signal path"],
+  ["graph", "Graph", "Subscription graph"],
+  ["objects", "Objects", "Objects"],
+  ["latency", "Latency", "Latency"],
+  ["events", "Events", "Events"],
+] as const satisfies ReadonlyArray<readonly [Tab, string, string]>;
+
 const OBJECTS_PER_SECOND_PER_ACTIVE_SPEAKER = 1_000 / AUDIO_FRAME_DURATION_MS;
 const DEFAULT_OBJECT_BYTES =
   DEFAULT_BITRATE / 8 / OBJECTS_PER_SECOND_PER_ACTIVE_SPEAKER + AUDIO_OBJECT_HEADER_BYTES;
@@ -64,6 +72,26 @@ export function Inspector({
 }: InspectorProps) {
   const [tab, setTab] = useState<Tab>("signal");
 
+  const moveTabFocus = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    let nextIndex: number | null = null;
+    if (event.key === "ArrowRight") nextIndex = (index + 1) % INSPECTOR_TABS.length;
+    if (event.key === "ArrowLeft") {
+      nextIndex = (index - 1 + INSPECTOR_TABS.length) % INSPECTOR_TABS.length;
+    }
+    if (event.key === "Home") nextIndex = 0;
+    if (event.key === "End") nextIndex = INSPECTOR_TABS.length - 1;
+    if (nextIndex === null) return;
+
+    event.preventDefault();
+    const nextTab = INSPECTOR_TABS[nextIndex];
+    if (!nextTab) return;
+    setTab(nextTab[0]);
+    event.currentTarget.parentElement
+      ?.querySelectorAll<HTMLButtonElement>("[role='tab']")
+      .item(nextIndex)
+      .focus();
+  };
+
   return (
     <aside className={`inspector${open ? " inspector--open" : ""}`} aria-label="Protocol inspector">
       <div className="inspector__mobile-heading">
@@ -74,22 +102,19 @@ export function Inspector({
       </div>
 
       <div className="inspector__tabs" role="tablist">
-        {(
-          [
-            ["signal", "Signal path"],
-            ["graph", "Subscription graph"],
-            ["objects", "Objects"],
-            ["latency", "Latency"],
-            ["events", "Events"],
-          ] as Array<[Tab, string]>
-        ).map(([id, label]) => (
+        {INSPECTOR_TABS.map(([id, label, accessibleLabel], index) => (
           <button
             key={id}
+            id={`inspector-tab-${id}`}
             type="button"
             role="tab"
+            aria-label={accessibleLabel}
+            aria-controls="inspector-panel"
             aria-selected={tab === id}
+            tabIndex={tab === id ? 0 : -1}
             className={tab === id ? "active" : ""}
             onClick={() => setTab(id)}
+            onKeyDown={(event) => moveTabFocus(event, index)}
           >
             {label}
           </button>
@@ -106,7 +131,12 @@ export function Inspector({
         </b>
       </div>
 
-      <div className="inspector__body">
+      <div
+        id="inspector-panel"
+        className="inspector__body"
+        role="tabpanel"
+        aria-labelledby={`inspector-tab-${tab}`}
+      >
         {tab === "signal" ? (
           <Signal
             room={room}
@@ -342,16 +372,14 @@ function Objects({ metrics, degradation }: { metrics: SessionMetrics; degradatio
         />
         <ComparisonRow
           label="Active decoders"
-          budget="Measured capacity"
+          budget="Reported · no gate"
           measurement={metrics.activeDecoders}
         />
         <ComparisonRow
           label="Capacity state"
-          budget="Step 0"
+          budget="Protection inactive"
           measurement={measured(degradation.step)}
-          format={(value) =>
-            value === 0 ? "Within measured capacity" : `Degradation step ${value}`
-          }
+          format={(value) => (value === 0 ? "Protection inactive" : `Protection step ${value}`)}
           withinBudget={(value) => value === 0}
         />
         <ComparisonRow

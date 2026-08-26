@@ -18,6 +18,11 @@ import { PresenterStrip } from "../components/PresenterStrip";
 import { useRoomSession } from "../hooks/useRoomSession";
 import { type DemoContext, DemoRunner } from "../presenter/DemoScript";
 import { layoutParticipants } from "../room/participantLayout";
+import {
+  microphoneAction,
+  punctuateReason,
+  representedFailureCodes,
+} from "../room/roomPresentation";
 
 export function RoomPage({ code, navigate }: { code: string; navigate: (path: string) => void }) {
   const [stored] = useState<StoredSession | null>(() => loadSession(code));
@@ -27,12 +32,48 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
     presenterMode,
   );
   const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const [leaving, setLeaving] = useState(false);
+  const [leaveError, setLeaveError] = useState<string | null>(null);
+  const leaveDialog = useRef<HTMLDialogElement>(null);
   const runner = useRef(new DemoRunner());
   const [runnerTick, setRunnerTick] = useState(0);
   const prominentIds = useRef<string[]>([]);
 
   const room = state?.room ?? null;
   const viewerId = stored?.participantId ?? "";
+  const micAction = microphoneAction(state?.capture, state?.publishing ?? false, state?.phase);
+  const hiddenFailureCodes = representedFailureCodes(
+    state?.capture,
+    Boolean(state?.degradation.announcement),
+  );
+
+  const copyInvite = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(`${location.origin}/room/${code}`);
+      setCopyState("copied");
+    } catch {
+      setCopyState("failed");
+    }
+  }, [code]);
+
+  const confirmLeave = useCallback(async () => {
+    if (leaving) return;
+    setLeaving(true);
+    setLeaveError(null);
+    try {
+      await leave();
+      clearSession(code);
+      navigate("/");
+    } catch (leaveFailure) {
+      setLeaveError(
+        leaveFailure instanceof Error
+          ? `The room could not be left: ${leaveFailure.message}`
+          : "The room could not be left. Try again.",
+      );
+      setLeaving(false);
+    }
+  }, [code, leave, leaving, navigate]);
 
   const connectedHumanIds = useMemo(
     () =>
@@ -148,121 +189,165 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
 
   return (
     <main className="room-page">
+      <h1 className="sr-only">Real Fabric room {code}</h1>
       <header className="room-topbar">
         <Brand />
-        <span>
+        <span title={`Room ${code}`}>
           Room <b>{code}</b>
         </span>
         {/* H4: stated in the room as well as before joining. */}
         <span className="headphones headphones--small">⌁ Headphones required</span>
         <button
-          className="button button--compact"
+          className={`button button--compact${copyState === "copied" ? " button--success" : ""}`}
           type="button"
-          onClick={() => void navigator.clipboard.writeText(`${location.origin}/room/${code}`)}
+          onClick={() => void copyInvite()}
         >
-          Copy invite
+          {copyState === "copied"
+            ? "Invite copied"
+            : copyState === "failed"
+              ? "Retry copy"
+              : "Copy invite"}
         </button>
-        {state?.publishing ? null : (
+        {micAction.visible ? (
           <button
             className="button button--compact button--primary"
-            disabled={
-              state?.capture.name === "starting" || state?.capture.name === "opening_publication"
-            }
+            disabled={micAction.disabled}
             type="button"
             onClick={() => void startPublishing()}
           >
-            {state?.capture.name === "starting"
-              ? "Starting microphone…"
-              : state?.capture.name === "opening_publication"
-                ? "Opening publication…"
-                : "Start microphone"}
+            {micAction.label}
           </button>
-        )}
+        ) : null}
         <button
           className="button button--compact button--danger"
           type="button"
           onClick={() => {
-            void leave().then(() => {
-              clearSession(code);
-              navigate("/");
-            });
+            setLeaveError(null);
+            leaveDialog.current?.showModal();
           }}
         >
           Leave room
         </button>
       </header>
 
-      {/* H3 */}
-      <PinnedConfigBanner />
-      <div className="mobile-warning" role="status">
-        <b>!</b> Desktop Chrome required for live audio
+      <span className="sr-only" role="status" aria-live="polite">
+        {copyState === "copied"
+          ? "Invite link copied to the clipboard."
+          : copyState === "failed"
+            ? "The invite link could not be copied."
+            : ""}
+      </span>
+
+      <dialog
+        ref={leaveDialog}
+        className="leave-dialog"
+        aria-labelledby="leave-dialog-title"
+        onCancel={() => setLeaveError(null)}
+      >
+        <h2 id="leave-dialog-title">Leave room {code}?</h2>
+        <p>You will stop sending and receiving audio. You can rejoin with the same invite link.</p>
+        {leaveError ? (
+          <p className="leave-dialog__error" role="alert">
+            {leaveError}
+          </p>
+        ) : null}
+        <div className="leave-dialog__actions">
+          <button
+            className="button button--compact"
+            type="button"
+            disabled={leaving}
+            onClick={() => leaveDialog.current?.close()}
+          >
+            Stay
+          </button>
+          <button
+            className="button button--compact button--danger"
+            type="button"
+            disabled={leaving}
+            onClick={() => void confirmLeave()}
+          >
+            {leaving ? "Leaving…" : "Leave room"}
+          </button>
+        </div>
+      </dialog>
+
+      <div className="room-status-stack">
+        <h2 className="sr-only">Room status</h2>
+        {/* H3 */}
+        <PinnedConfigBanner />
+        <div className="mobile-warning" role="status">
+          <b>!</b> Desktop Chrome required for live audio
+        </div>
+
+        {reclaimed ? (
+          <p className="reclaim-banner" role="status">
+            Identity and routing reclaimed inside the 60-second window. Nothing was played twice.
+          </p>
+        ) : null}
+
+        {state?.phase.name === "terminal" ? (
+          <p className="error-banner" role="alert">
+            Reconnection was abandoned after 30 seconds.{" "}
+            <button type="button" onClick={() => void retry()}>
+              Retry now
+            </button>
+          </p>
+        ) : null}
+
+        {error ? (
+          <p className="error-banner" role="alert">
+            {error}
+          </p>
+        ) : null}
+
+        {/* H7: the engaged degradation step is named, never silent. */}
+        {state?.degradation.announcement ? (
+          <p className="degradation-banner" role="status">
+            <b>Capacity protection:</b> {state.degradation.announcement}
+          </p>
+        ) : null}
+
+        {/* §11.3: listen-only is a named mode. The one retry action stays in the header. */}
+        {state?.capture.name === "listen_only" ? (
+          <section className="degradation-banner listen-only-banner" role="status">
+            <b>Listen-only.</b> Listening and the inspector are unaffected.
+            <details>
+              <summary>Technical reason</summary>
+              <code>{punctuateReason(state.capture.reason)}</code>
+            </details>
+          </section>
+        ) : null}
+        {state?.capture.name === "listen_only_device_available" ? (
+          <section className="degradation-banner listen-only-banner" role="status">
+            <b>Microphone available.</b> Use Start microphone when you are ready.
+            <details>
+              <summary>Previous technical reason</summary>
+              <code>{punctuateReason(state.capture.reason)}</code>
+            </details>
+          </section>
+        ) : null}
+
+        {/* H14 */}
+        <FailureList
+          codes={state?.failures ?? []}
+          hiddenCodes={hiddenFailureCodes}
+          onDismiss={(failureCode) => session?.clearFailure(failureCode)}
+        />
+
+        {room && !room.composition.valid ? (
+          <p className="error-banner" role="alert">
+            This room has no connected human. Any composition with at least one human is valid; this
+            one is not.
+          </p>
+        ) : null}
       </div>
-
-      {reclaimed ? (
-        <p className="reclaim-banner" role="status">
-          Identity and routing reclaimed inside the 60-second window. Nothing was played twice.
-        </p>
-      ) : null}
-
-      {state?.phase.name === "terminal" ? (
-        <p className="error-banner" role="alert">
-          Reconnection was abandoned after 30 seconds.{" "}
-          <button type="button" onClick={() => void retry()}>
-            Retry now
-          </button>
-        </p>
-      ) : null}
-
-      {error ? (
-        <p className="error-banner" role="alert">
-          {error}
-        </p>
-      ) : null}
-
-      {/* H7: the engaged degradation step is named, never silent. */}
-      {state?.degradation.announcement ? (
-        <p className="degradation-banner" role="status">
-          <b>Capacity:</b> {state.degradation.announcement}
-        </p>
-      ) : null}
-
-      {/* §11.3: listen-only is a named mode, not a microphone button that
-          silently does nothing. The retry is offered where the reason is given. */}
-      {state?.capture.name === "listen_only" ? (
-        <p className="degradation-banner" role="status">
-          <b>Listen-only:</b> {state.capture.reason} Listening and the inspector are unaffected.{" "}
-          <button type="button" onClick={() => void startPublishing()}>
-            Try the microphone again
-          </button>
-        </p>
-      ) : null}
-      {state?.capture.name === "listen_only_device_available" ? (
-        <p className="degradation-banner" role="status">
-          <b>Microphone available:</b> {state.capture.reason}{" "}
-          <button type="button" onClick={() => void startPublishing()}>
-            Start microphone
-          </button>
-        </p>
-      ) : null}
-
-      {/* H14 */}
-      <FailureList
-        codes={state?.failures ?? []}
-        onDismiss={(failureCode) => session?.clearFailure(failureCode)}
-      />
-
-      {room && !room.composition.valid ? (
-        <p className="error-banner" role="alert">
-          This room has no connected human. Any composition with at least one human is valid; this
-          one is not.
-        </p>
-      ) : null}
 
       <div className="room-layout">
         <section
           className={`participant-surface participant-surface--${layout.layout}`}
           aria-label="Room participants"
         >
+          <h2 className="sr-only">Room participants</h2>
           <p className="mobile-readonly">▣ Read-only room view</p>
           <div className="participant-grid participant-grid--prominent">
             {layout.prominent.map(renderCard)}
