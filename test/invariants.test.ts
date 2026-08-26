@@ -28,8 +28,12 @@ import { ALL_FAILURE_CODES, allFailureStates, failureState } from "../src/shared
 import { formatMeasurement, measured, notExposed } from "../src/shared/measurement";
 import {
   currentUserAgentFacts,
+  describePin,
+  describeTargets,
+  IOS_SAFARI_CONFIGURATION,
   matchConfiguration,
   PINNED_CONFIGURATION,
+  type PinnedConfiguration,
 } from "../src/shared/pinnedConfiguration";
 import {
   audioTrack,
@@ -159,6 +163,49 @@ describe("H3 — one pinned browser, others warned", () => {
   it("does not present a provisional pin as a decision", () => {
     expect(PINNED_CONFIGURATION.status).toBe("provisional");
     expect(PINNED_CONFIGURATION.note).toMatch(/Gate 2/);
+  });
+
+  describe("describePin & describeTargets", () => {
+    it("describes the pinned configuration using default argument", () => {
+      expect(describePin()).toBe("Google Chrome 141+ on macOS");
+    });
+
+    it("describes the default desktop pinned configuration explicitly", () => {
+      expect(describePin(PINNED_CONFIGURATION)).toBe("Google Chrome 141+ on macOS");
+    });
+
+    it("describes the iOS Safari configuration", () => {
+      expect(describePin(IOS_SAFARI_CONFIGURATION)).toBe("Safari 27+ on iPhone iOS 27+");
+    });
+
+    it("handles custom configuration with platform major version floor", () => {
+      const customPin: PinnedConfiguration = {
+        browser: "Google Chrome",
+        minimumMajorVersion: 140,
+        platform: "macOS",
+        minimumPlatformMajorVersion: 15,
+        device: "desktop",
+        status: "provisional",
+        note: "Custom pin test.",
+      };
+      expect(describePin(customPin)).toBe("Google Chrome 140+ on macOS 15+");
+    });
+
+    it("handles custom iPhone configuration without platform major version floor", () => {
+      const customIphonePin: PinnedConfiguration = {
+        browser: "Safari",
+        minimumMajorVersion: 26,
+        platform: "iOS",
+        device: "iPhone",
+        status: "provisional",
+        note: "Custom iPhone pin test.",
+      };
+      expect(describePin(customIphonePin)).toBe("Safari 26+ on iPhone iOS");
+    });
+
+    it("describes all configured targets", () => {
+      expect(describeTargets()).toBe("Google Chrome 141+ on macOS; Safari 27+ on iPhone iOS 27+");
+    });
   });
 
   it("extracts user agent facts from the global navigator object", () => {
