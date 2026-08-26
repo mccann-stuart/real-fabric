@@ -959,7 +959,9 @@ export class RoomSession {
           onFirstObject: (trackId) => {
             if (this.firstAudioAt === null) this.firstAudioAt = this.now();
             this.log.record("first_object", trackId, { subject: participantId });
-            void markActive(this.options.session, this.options.session.participantId).catch(() => undefined);
+            void markActive(this.options.session, this.options.session.participantId).catch(
+              () => undefined,
+            );
           },
           onDriftCorrection: (correction) =>
             this.log.record(
@@ -1323,14 +1325,13 @@ export class RoomSession {
     const socket = new WebSocket(roomEventsUrl(this.options.session));
     socket.addEventListener("open", () => {
       if (socket !== this.socket || this.closed) return;
-      const restored = this.controlReconnectAttempt > 0;
-      this.controlReconnectAttempt = 0;
-      if (this.controlRetryTimer) clearTimeout(this.controlRetryTimer);
-      this.controlRetryTimer = null;
-      if (restored) {
-        this.log.record("reconnect", "Control channel restored; refreshing the room snapshot.");
-        void this.refresh();
-      }
+      socket.send(
+        JSON.stringify({
+          type: "auth",
+          participantId: this.options.session.participantId,
+          token: this.options.session.rejoinToken,
+        }),
+      );
       this.emit();
     });
     socket.addEventListener("message", (event) => {
@@ -1339,6 +1340,15 @@ export class RoomSession {
         parsed = JSON.parse(String(event.data)) as RoomEvent;
       } catch {
         return;
+      }
+      if (parsed.type === "snapshot") {
+        const restored = this.controlReconnectAttempt > 0;
+        this.controlReconnectAttempt = 0;
+        if (this.controlRetryTimer) clearTimeout(this.controlRetryTimer);
+        this.controlRetryTimer = null;
+        if (restored) {
+          this.log.record("reconnect", "Control channel authenticated and restored.");
+        }
       }
       this.applyEvent(parsed);
     });

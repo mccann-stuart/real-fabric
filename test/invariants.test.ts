@@ -194,7 +194,10 @@ describe("H3 — one pinned browser, others warned", () => {
         brands: mockBrands,
         platform: "macOS",
       });
-      expect(matchConfiguration(facts).tested).toBe(true);
+      expect(matchConfiguration(facts)).toMatchObject({
+        status: "provisional",
+        liveAudioEligible: true,
+      });
 
       // 3. Modern browser with userAgentData having only brands
       Object.defineProperty(globalThis, "navigator", {

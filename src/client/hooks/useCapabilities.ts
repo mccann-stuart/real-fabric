@@ -38,6 +38,28 @@ export interface CapabilityReport {
   failure: FailureCode | null;
 }
 
+export interface EvaluatedCapabilities
+  extends Pick<
+    CapabilityReport,
+    | "secureContext"
+    | "webTransport"
+    | "opusEncoder"
+    | "opusDecoder"
+    | "capture"
+    | "captureReason"
+    | "playout"
+    | "playoutReason"
+    | "audioSession"
+    | "wakeLock"
+    | "dtx"
+    | "codecReason"
+    | "relay"
+    | "relayReason"
+    | "failure"
+  > {
+  relayEndpoint: string | null;
+}
+
 const INITIAL: CapabilityReport = {
   secureContext: "checking",
   webTransport: "checking",
@@ -60,6 +82,97 @@ const INITIAL: CapabilityReport = {
   failure: null,
 };
 
+export async function evaluateCapabilities(
+  fetchHealthImpl = fetchHealth,
+): Promise<EvaluatedCapabilities> {
+  const [encoder, opusDecoder] = await Promise.all([probeOpusEncoderSupport(), checkOpusDecoder()]);
+  const secureContext: CheckState = globalThis.isSecureContext ? "ready" : "unavailable";
+  const webTransport: CheckState = "WebTransport" in globalThis ? "ready" : "unavailable";
+  const captureSupport = inspectAudioWorkletCaptureSupport();
+  const capture: CheckState = captureSupport.available ? "ready" : "unavailable";
+  const playoutSupport = inspectPlayoutSupport();
+  const playout: CheckState = playoutSupport.available ? "ready" : "unavailable";
+  const opusEncoder: CheckState = encoder.supported ? "ready" : "unavailable";
+  const browserNavigator = globalThis.navigator;
+  const audioSession: CheckState =
+    browserNavigator && "audioSession" in browserNavigator ? "ready" : "not_tested";
+  const wakeLock: CheckState =
+    browserNavigator && "wakeLock" in browserNavigator ? "ready" : "not_tested";
+  const dtx: CheckState = encoder.dtx.exposed
+    ? encoder.dtx.value
+      ? "ready"
+      : "unavailable"
+    : "not_tested";
+  let relay: CheckState = "unavailable";
+  let relayReason = "The room service is unreachable.";
+  let failure: FailureCode | null = null;
+  let relayEndpoint: string | null = null;
+
+  try {
+    const health = await fetchHealthImpl();
+    relayEndpoint = health.relayEndpoint;
+    const framed = draftsFramedByClient();
+    const endpoint = health.relayEndpointName ?? "no configured endpoint";
+
+    if (!health.relayEndpoint) {
+      // H14: no endpoint is a different fact from an endpoint that fails.
+      relay = "unavailable";
+      relayReason = `No relay endpoint is configured for MOQT draft ${health.draft}.`;
+      failure = "draft_endpoint_missing";
+    } else if (!health.relayCredentialConfigured) {
+      relay = "unavailable";
+      relayReason = `No provisioned relay credential is configured for ${endpoint}.`;
+      failure = "relay_auth_unavailable";
+    } else if (!framed.includes(health.draft as (typeof framed)[number])) {
+      relay = "unavailable";
+      relayReason = `This build frames MOQT draft ${framed.join(", ") || "no draft"}, but the room service is pinned to draft ${health.draft}.`;
+      failure = "draft_mismatch";
+    } else {
+      // Configured and frameable: a live session will be attempted. Gate 1
+      // verification is reported separately, never implied by "ready".
+      relay = "ready";
+      relayReason = health.transportVerified
+        ? `MOQT draft ${health.draft} on ${endpoint} passed a browser-to-relay trace. Inbound routing is ${health.routingEnforcement}; discovery is ${health.discovery}.`
+        : `MOQT draft ${health.draft} on ${endpoint} is configured and will be attempted live. No Gate 1 trace has been recorded, so transport is not yet claimed as verified.`;
+    }
+  } catch {
+    relayReason = "The room service or relay probe could not be reached.";
+    failure = "udp_blocked";
+  }
+
+  // A missing local capability outranks the relay: it is the nearer cause,
+  // and its recovery advice is different.
+  if (
+    secureContext === "unavailable" ||
+    webTransport === "unavailable" ||
+    opusEncoder === "unavailable" ||
+    opusDecoder === "unavailable" ||
+    capture === "unavailable" ||
+    playout === "unavailable"
+  ) {
+    failure = "transport_unsupported";
+  }
+
+  return {
+    secureContext,
+    webTransport,
+    opusEncoder,
+    opusDecoder,
+    capture,
+    captureReason: captureSupport.reason,
+    playout,
+    playoutReason: playoutSupport.reason,
+    audioSession,
+    wakeLock,
+    dtx,
+    codecReason: `${encoder.reason} ${opusDecoder === "ready" ? "Opus decode is available." : "The required Opus decoder configuration is unavailable."}`,
+    relay,
+    relayReason,
+    failure,
+    relayEndpoint,
+  };
+}
+
 export function useCapabilities() {
   const [report, setReport] = useState<CapabilityReport>(INITIAL);
   const [level, setLevel] = useState(0);
@@ -70,92 +183,13 @@ export function useCapabilities() {
   useEffect(() => {
     let active = true;
     const run = async () => {
-      const [encoder, opusDecoder] = await Promise.all([
-        probeOpusEncoderSupport(),
-        checkOpusDecoder(),
-      ]);
-      const secureContext: CheckState = globalThis.isSecureContext ? "ready" : "unavailable";
-      const webTransport: CheckState = "WebTransport" in globalThis ? "ready" : "unavailable";
-      const captureSupport = inspectAudioWorkletCaptureSupport();
-      const capture: CheckState = captureSupport.available ? "ready" : "unavailable";
-      const playoutSupport = inspectPlayoutSupport();
-      const playout: CheckState = playoutSupport.available ? "ready" : "unavailable";
-      const opusEncoder: CheckState = encoder.supported ? "ready" : "unavailable";
-      const audioSession: CheckState = "audioSession" in navigator ? "ready" : "not_tested";
-      const wakeLock: CheckState = "wakeLock" in navigator ? "ready" : "not_tested";
-      const dtx: CheckState = encoder.dtx.exposed
-        ? encoder.dtx.value
-          ? "ready"
-          : "unavailable"
-        : "not_tested";
-      let relay: CheckState = "unavailable";
-      let relayReason = "The room service is unreachable.";
-      let failure: FailureCode | null = null;
-      let relayEndpoint: string | null = null;
-
-      try {
-        const health = await fetchHealth();
-        relayEndpoint = health.relayEndpoint;
-        const framed = draftsFramedByClient();
-        const endpoint = health.relayEndpointName ?? "no configured endpoint";
-
-        if (!health.relayEndpoint) {
-          // H14: no endpoint is a different fact from an endpoint that fails.
-          relay = "unavailable";
-          relayReason = `No relay endpoint is configured for MOQT draft ${health.draft}.`;
-          failure = "draft_endpoint_missing";
-        } else if (!health.relayCredentialConfigured) {
-          relay = "unavailable";
-          relayReason = `No provisioned relay credential is configured for ${endpoint}.`;
-          failure = "relay_auth_unavailable";
-        } else if (!framed.includes(health.draft as (typeof framed)[number])) {
-          relay = "unavailable";
-          relayReason = `This build frames MOQT draft ${framed.join(", ") || "no draft"}, but the room service is pinned to draft ${health.draft}.`;
-          failure = "draft_mismatch";
-        } else {
-          // Configured and frameable: a live session will be attempted. Gate 1
-          // verification is reported separately, never implied by "ready".
-          relay = "ready";
-          relayReason = health.transportVerified
-            ? `MOQT draft ${health.draft} on ${endpoint} passed a browser-to-relay trace. Inbound routing is ${health.routingEnforcement}; discovery is ${health.discovery}.`
-            : `MOQT draft ${health.draft} on ${endpoint} is configured and will be attempted live. No Gate 1 trace has been recorded, so transport is not yet claimed as verified.`;
-        }
-      } catch {
-        relayReason = "The room service or relay probe could not be reached.";
-        failure = "udp_blocked";
-      }
-
-      // A missing local capability outranks the relay: it is the nearer cause,
-      // and its recovery advice is different.
-      if (
-        secureContext === "unavailable" ||
-        webTransport === "unavailable" ||
-        opusEncoder === "unavailable" ||
-        opusDecoder === "unavailable" ||
-        capture === "unavailable" ||
-        playout === "unavailable"
-      ) {
-        failure = "transport_unsupported";
-      }
-
+      const evaluation = await evaluateCapabilities();
       if (!active) return;
+
+      const { relayEndpoint, ...evaluatedReport } = evaluation;
       setReport((current) => ({
         ...current,
-        secureContext,
-        webTransport,
-        opusEncoder,
-        opusDecoder,
-        capture,
-        captureReason: captureSupport.reason,
-        playout,
-        playoutReason: playoutSupport.reason,
-        audioSession,
-        wakeLock,
-        dtx,
-        codecReason: `${encoder.reason} ${opusDecoder === "ready" ? "Opus decode is available." : "The required Opus decoder configuration is unavailable."}`,
-        relay,
-        relayReason,
-        failure,
+        ...evaluatedReport,
       }));
 
       // §11.2 deliverable three: the probe runs in the background and never
