@@ -18,7 +18,11 @@ import {
 import { RoomSession, type SessionPhase } from "../src/client/session/RoomSession";
 import { requiredTransportReliabilityError } from "../src/client/transport/MoqTransportAdapter";
 import { probeRelayReachability } from "../src/client/transport/NetworkProbe";
-import { IOS_SAFARI_CONFIGURATION, matchConfiguration } from "../src/shared/pinnedConfiguration";
+import {
+  IOS_CHROME_CONFIGURATION,
+  IOS_SAFARI_CONFIGURATION,
+  matchConfiguration,
+} from "../src/shared/pinnedConfiguration";
 
 const SAFARI_27 =
   "Mozilla/5.0 (iPhone; CPU iPhone OS 27_0 like Mac OS X) AppleWebKit/619.1.12 (KHTML, like Gecko) Version/27.0 Mobile/15E148 Safari/604.1";
@@ -60,7 +64,7 @@ describe("iOS 27 Safari configuration floor", () => {
   });
 
   it("leaves alternative iOS browsers, web views and Home Screen mode read-only", () => {
-    for (const token of ["CriOS", "FxiOS", "EdgiOS", "OPiOS"] as const) {
+    for (const token of ["FxiOS", "EdgiOS", "OPiOS"] as const) {
       const alternative = matchConfiguration({
         userAgent: SAFARI_27.replace("Version/27.0", `${token}/141.0.0.0`),
         platform: "iPhone",
@@ -83,6 +87,81 @@ describe("iOS 27 Safari configuration floor", () => {
     });
     expect(standalone.status).toBe("readOnly");
     expect(standalone.reasons.join(" ")).toMatch(/Home Screen/i);
+  });
+});
+
+describe("Chrome for iOS configuration floor", () => {
+  // Chrome for iOS reports CriOS and carries no Version/ token at all.
+  const CHROME_IOS_141 = SAFARI_27.replace("Version/27.0", "CriOS/141.0.7390.35");
+
+  it("admits top-level Chrome for iOS at the floor as provisional", () => {
+    const match = matchConfiguration({ userAgent: CHROME_IOS_141, platform: "iPhone" });
+    expect(match).toMatchObject({
+      status: "provisional",
+      liveAudioEligible: true,
+      browser: "Google Chrome 141",
+      browserMajorVersion: 141,
+      platform: "iOS",
+      osMajorVersion: 27,
+      device: "iPhone",
+      target: IOS_CHROME_CONFIGURATION,
+    });
+  });
+
+  it("records that Chrome for iOS inherits WebKit rather than a Blink capability set", () => {
+    const match = matchConfiguration({ userAgent: CHROME_IOS_141, platform: "iPhone" });
+    expect(match.reasons.join(" ")).toMatch(/WebKit/i);
+    expect(match.reasons.join(" ")).not.toMatch(/verified|supported browser/i);
+  });
+
+  it("keeps Chrome for iOS below either floor read-only and names the floor it missed", () => {
+    const belowOs = matchConfiguration({
+      userAgent: CHROME_IOS_141.replace("CPU iPhone OS 27_0", "CPU iPhone OS 26_0"),
+      platform: "iPhone",
+    });
+    expect(belowOs.status).toBe("readOnly");
+    expect(belowOs.liveAudioEligible).toBe(false);
+    expect(belowOs.reasons.join(" ")).toMatch(/floor is iOS 27 and Chrome 141/i);
+
+    const belowChrome = matchConfiguration({
+      userAgent: CHROME_IOS_141.replace("CriOS/141", "CriOS/140"),
+      platform: "iPhone",
+    });
+    expect(belowChrome.status).toBe("readOnly");
+    expect(belowChrome.liveAudioEligible).toBe(false);
+    expect(belowChrome.reasons.join(" ")).toMatch(/reports iOS 27 and Chrome 140/i);
+  });
+
+  it("fails closed when the iOS major cannot be read from a Chrome for iOS agent", () => {
+    const match = matchConfiguration({
+      userAgent: CHROME_IOS_141.replace("CPU iPhone OS 27_0 like Mac OS X", "like Mac OS X"),
+      platform: "iPhone",
+    });
+    expect(match.status).toBe("readOnly");
+    expect(match.liveAudioEligible).toBe(false);
+    expect(match.reasons.join(" ")).toMatch(/iOS version could not be identified/i);
+  });
+
+  it("does not admit Chrome for iOS installed to the Home Screen", () => {
+    const match = matchConfiguration({
+      userAgent: CHROME_IOS_141,
+      platform: "iPhone",
+      standalone: true,
+    });
+    expect(match.status).toBe("readOnly");
+    expect(match.reasons.join(" ")).toMatch(/Home Screen/i);
+  });
+
+  it("never admits desktop Chrome's CriOS-free agent through the iPhone branch", () => {
+    // Desktop Chrome on macOS must still match the desktop pin, not this one.
+    const desktop = matchConfiguration({
+      userAgent:
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+      brands: [{ brand: "Google Chrome", version: "141" }],
+      platform: "macOS",
+    });
+    expect(desktop.target).not.toBe(IOS_CHROME_CONFIGURATION);
+    expect(desktop.device).toBe("desktop");
   });
 });
 

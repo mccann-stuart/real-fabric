@@ -42,9 +42,9 @@ As reconciled on 26 August 2026 with the current repository state:
 - Dynamic device tracking, packet-loss concealment, bounded recovery and silence-gated drift correction are implemented and unit-tested, but lack live acoustic acceptance.
 - Room entry establishes membership and the control plane without starting audio. **Start audio** and **Resume audio** initiate capture, AudioContext activation and MOQT from a user action. Permission denial or missing hardware falls back visibly to listen-only. Background, lock, page-hide, Audio Session interruption or an already-running AudioContext suspension tears audio down into `resume_required`; capture never restarts automatically. Capture is shown separately from relay-accepted publication; `publishing`, the inspector uplink and the publish event begin only after `PUBLISH_OK`, and a refusal stops capture while retaining its exact code and reason across a same-tab reload.
 - Human clients default to being interested in every other permitted real-party audio track and expose local subscribe/unsubscribe controls. A namespace-pushed track is accepted by default; an explicit listening opt-out answers `UNINTERESTED`. Code-16 `Track not found` responses use a capped exponential retry sequence; a late MOQT namespace announcement or accepted pushed publication retries immediately. Accepted subscriptions alone appear in the inspector graph.
-- A bounded `UniversalAudioCaptureAdapter` retains `MediaStreamTrackProcessor` as the preferred Chrome path and adds an exact-frame AudioWorklet path. Safari exposes no `MediaStreamTrackProcessor`, so the macOS and iPhone Safari candidates take the AudioWorklet path. Path selection and framing are unit-tested, but that path has not passed real-browser or acoustic parity, so it keeps those candidates provisional rather than expanding H3 support.
+- A bounded `UniversalAudioCaptureAdapter` retains `MediaStreamTrackProcessor` as the preferred Chrome path and adds an exact-frame AudioWorklet path. WebKit exposes no `MediaStreamTrackProcessor`, so the macOS Safari, iPhone Safari and Chrome for iOS candidates all take the AudioWorklet path. Path selection and framing are unit-tested, but that path has not passed real-browser or acoustic parity, so it keeps those candidates provisional rather than expanding H3 support.
 - Presenter AI responses are scripted and labelled. There is no live recognition, model, synthesis or AI-worker transport pipeline.
-- H3 now requires a documented matrix of all supported browser, OS and major-version combinations. The client recognises provisional Chrome 141+ on macOS, top-level Safari 27+ on macOS and top-level Safari 27+ on iPhone with iOS 27+; all three still require their applicable real-browser acceptance evidence. The macOS Safari pin names a browser major only, because Safari freezes the `Mac OS X 10_15_7` token and exposes no readable OS major; iPadOS desktop mode is separated from macOS by `navigator.maxTouchPoints` and stays read-only.
+- H3 now requires a documented matrix of all supported browser, OS and major-version combinations. The client recognises provisional Chrome 141+ on macOS, top-level Safari 27+ on macOS, top-level Safari 27+ on iPhone with iOS 27+ and top-level Chrome for iOS 141+ on iPhone with iOS 27+; all four still require their applicable real-browser acceptance evidence. The macOS Safari pin names a browser major only, because Safari freezes the `Mac OS X 10_15_7` token and exposes no readable OS major; iPadOS desktop mode is separated from macOS by `navigator.maxTouchPoints` and stays read-only. Chrome for iOS is read from `CriOS/` and is a WebKit shell, so the iOS major carries its capability floor; Firefox, Edge and Opera on iOS, embedded web views and installed Home Screen mode remain read-only.
 - Unit tests do not satisfy the live trace, acoustic latency, measured-capacity, audible ten-minute or two-clean-run acceptance gates.
 
 Keep this snapshot current when implementation status changes. Never convert an implemented component or a passing unit test into a claim that a live acceptance boundary has passed.
@@ -68,7 +68,7 @@ Keep this snapshot current when implementation status changes. Never convert an 
 
 ## v1 boundaries
 
-Video, screen sharing, recording, captions, dial-in, accounts, moderation, WebRTC comparison, general mobile publishing outside the named foreground iPhone Safari candidate, or production-readiness claims will come later.
+Video, screen sharing, recording, captions, dial-in, accounts, moderation, WebRTC comparison, general mobile publishing outside the named foreground iPhone Safari and Chrome for iOS candidates, or production-readiness claims will come later.
 
 Presenter simulation is required, but simulated participants and scripted AI responses must be unmistakably labelled. Simulation must never masquerade as a working relay or AI pipeline.
 
@@ -139,7 +139,7 @@ Use the design references in `design/concepts/` as the visual direction:
 
 Avoid decorative card grids, bento layouts, neon glow, purple gradients, fake metrics, avatars, stock imagery and generic dashboard chrome.
 
-The desktop room keeps the participant surface primary and the protocol inspector persistently visible. Narrow screens remain read-only except for the qualifying top-level iPhone Safari 27+/iOS 27+ candidate, which restores routing, inspector and foreground Start/Resume controls while remaining provisionally labelled until physical-device acceptance.
+The desktop room keeps the participant surface primary and the protocol inspector persistently visible. Narrow screens remain read-only except for the qualifying top-level iPhone candidates — Safari 27+ and Chrome for iOS 141+, both on iOS 27+ — which restore routing, inspector and foreground Start/Resume controls while remaining provisionally labelled until physical-device acceptance.
 
 Preserve these entry strings unless the product specification changes:
 
