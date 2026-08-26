@@ -115,7 +115,8 @@ describe("H3 — one pinned browser, others warned", () => {
       brands: [{ brand: "Google Chrome", version: "141" }],
       platform: "macOS",
     });
-    expect(match.tested).toBe(true);
+    expect(match.status).toBe("provisional");
+    expect(match.liveAudioEligible).toBe(true);
   });
 
   it("rejects a different browser, an older version and another platform", () => {
@@ -123,20 +124,20 @@ describe("H3 — one pinned browser, others warned", () => {
       userAgent: "Mozilla/5.0 (Macintosh) Chrome/141.0.0.0 Edg/141.0.0.0",
       platform: "macOS",
     });
-    expect(edge.tested).toBe(false);
+    expect(edge.liveAudioEligible).toBe(false);
 
     const old = matchConfiguration({
       userAgent: "Mozilla/5.0 (Macintosh) Chrome/120.0.0.0",
       platform: "macOS",
     });
-    expect(old.tested).toBe(false);
-    if (!old.tested) expect(old.reason).toContain(String(PINNED_CONFIGURATION.minimumMajorVersion));
+    expect(old.liveAudioEligible).toBe(false);
+    expect(old.reasons.join(" ")).toContain(String(PINNED_CONFIGURATION.minimumMajorVersion));
 
     const windows = matchConfiguration({
       userAgent: "Mozilla/5.0 (Windows NT 10.0) Chrome/141.0.0.0",
       platform: "Windows",
     });
-    expect(windows.tested).toBe(false);
+    expect(windows.liveAudioEligible).toBe(false);
   });
 
   it("does not present a provisional pin as a decision", () => {
@@ -334,6 +335,17 @@ describe("room status presentation", () => {
       label: "Start microphone",
       visible: true,
     });
+    expect(microphoneAction({ name: "idle" }, false, { name: "awaiting_audio_start" })).toEqual({
+      disabled: false,
+      label: "Start audio",
+      visible: true,
+    });
+    expect(
+      microphoneAction({ name: "resume_required", reason: "hidden" }, false, {
+        name: "resume_required",
+        reason: "hidden",
+      }),
+    ).toEqual({ disabled: false, label: "Resume audio", visible: true });
     expect(
       microphoneAction(
         { name: "listen_only", failure: "microphone_denied", reason: "Denied" },

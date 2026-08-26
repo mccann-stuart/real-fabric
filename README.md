@@ -33,7 +33,7 @@ Conflating the two would have meant never attempting the connection that produce
 |---|---|---|
 | H1 — MOQT over WebTransport only, no fallback | [`MoqTransportAdapter`](src/client/transport/MoqTransportAdapter.ts) is the sole transport and the only module holding draft constants; [`RoomSession`](src/client/session/RoomSession.ts) imports no alternative | `test/milestone-1-transport.test.ts` asserts the draft registry refuses an unframeable draft by name without downgrading. **A live browser-to-relay trace is still outstanding.** |
 | H2 — one track per participant, no upstream mixing | [`tracks.ts`](src/shared/tracks.ts), [`mixer-worklet.js`](public/audio/mixer-worklet.js) — the only mixing point, on the listener's machine | `test/invariants.test.ts` |
-| H3 — supported browser matrix, others warned | [`pinnedConfiguration.ts`](src/shared/pinnedConfiguration.ts), [`PinnedConfigBanner`](src/client/components/PinnedConfigBanner.tsx), [`UniversalAudioCaptureAdapter`](src/client/audio/UniversalAudioCaptureAdapter.ts) | Configuration detection, capture-path selection and exact frame assembly are unit-tested, but only provisional Chrome 141+ on macOS is recognised. The complete H3 matrix and real-browser acceptance are outstanding. |
+| H3 — supported browser matrix, others warned | [`pinnedConfiguration.ts`](src/shared/pinnedConfiguration.ts), [`PinnedConfigBanner`](src/client/components/PinnedConfigBanner.tsx), [`UniversalAudioCaptureAdapter`](src/client/audio/UniversalAudioCaptureAdapter.ts) | Configuration detection, capture-path selection and exact frame assembly are unit-tested. Provisional Chrome 141+ on macOS and top-level Safari 27+ on iPhone with iOS 27+ are recognised; real-browser acceptance is still outstanding. |
 | H4 — headphones required and stated | Entry page, pre-flight page and room top bar | Visual |
 | H5 — each AI addressed, silent otherwise | [`AiDirector.address`](src/client/ai/AiDirector.ts) is the only path to a turn | `test/invariants.test.ts`, `test/room-service.test.ts` |
 | H6 — barge-in inside 300 ms, including in flight | `AiDirector.bargeIn`, [`AdaptiveJitterBuffer.cancelGroup`](src/client/audio/AdaptiveJitterBuffer.ts), `TrackPlayer.cancelGroup` | `test/invariants.test.ts` measures the latency and the discarded objects |
@@ -50,9 +50,9 @@ Conflating the two would have meant never attempting the connection that produce
 
 ### Currently recognised configuration (H3 gap)
 
-**Google Chrome 141 or later on macOS.** Any other browser, platform or major version currently shows a "not the tested configuration" banner and its behaviour is unverified.
+The admitted candidates are **Google Chrome 141 or later on macOS** and **top-level Safari 27 or later on iPhone with iOS 27 or later**. Safari 27.x and iOS 27 are currently beta releases and form the initial iPhone acceptance target; later Safari/iOS majors may run capability pre-flight but remain explicitly unverified. Alternative iOS browsers, embedded web views and installed Home Screen mode remain read-only.
 
-This is a **provisional implementation constraint**, not completion of H3. The specification now requires every supported browser, OS and major-version combination to be tested and named. Gate 2 must define that matrix and the client must represent it rather than a single pin.
+Both are **provisional configurations**, not completion of H3. iPhone audio is foreground-only: room membership completes first, then **Start audio** begins capture and transport from the user's tap. Backgrounding, locking or an audio interruption tears down audio and requires an explicit **Resume audio** tap. There is no automatic microphone restart and no fallback transport.
 
 ### Measured capacity (H7, §9.2)
 
@@ -124,7 +124,7 @@ The production relay is `real-fabric-production` (`5266d64d9209fb9a8961f00974580
 - `src/client/components`, `src/client/pages` — entry, pre-flight, room, inspector and presenter surfaces.
 - `public/audio/mixer-worklet.js` — the single mixing point, served same-origin so it satisfies the existing `script-src 'self'` policy.
 - `src/worker` — API routing, security headers, redacted structured logs, provisioned relay credential handling and the SQLite Durable Object room service.
-- `test` — 141 automated tests across nine files covering the requirements above.
+- `test` — 152 automated tests across ten files covering the requirements above.
 
 ## Local setup
 
@@ -189,7 +189,7 @@ Automated checks cover the requirements marked above. They do not cover, and thi
 - the ten-minute reference-composition run (H13);
 - milestones 3 and 4 of the §11 release plan, which are not built;
 - the §12 script on a venue network (H16);
-- browser behaviour on any configuration other than the provisional pin, and the complete supported-browser matrix required by H3.
+- physical-device Safari 27 behaviour and browser behaviour beyond the two provisional configurations, including the complete supported-browser acceptance matrix required by H3;
 - real-browser and acoustic parity of the AudioWorklet capture path against `MediaStreamTrackProcessor`.
 
 Production deployment requires separate, explicit authorisation. A successful local build or GitHub push is not a production deployment.

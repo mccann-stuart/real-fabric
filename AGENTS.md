@@ -31,7 +31,7 @@ If this file and the product specification otherwise conflict, preserve the hard
 
 As reconciled on 26 August 2026 with the current repository state:
 
-- The React/Vite client, SQLite Durable Object room service, control-plane WebSocket, presenter simulation, browser media components, inspector, telemetry and failure registry are implemented with 141 automated tests across nine files.
+- The React/Vite client, SQLite Durable Object room service, control-plane WebSocket, presenter simulation, browser media components, inspector, telemetry and failure registry are implemented with 152 automated tests across ten files.
 - The inspector's Objects and Latency tabs compare exposed session measurements with specification-defined budgets or targets. Diagnostic-only values say `Reported · no gate`, and acoustic loopback acceptance remains `Not exposed` until it actually runs.
 - `wrangler.jsonc` pins MOQT draft 16, configures the Cloudflare isolated relay URL, and deliberately keeps `MOQT_TRANSPORT_VERIFIED=false`, `MOQ_ROUTING_ENFORCEMENT=cooperative` and `MOQ_DISCOVERY=unknown`.
 - `moqtail@0.12.1` frames draft 16. `MoqTransportAdapter` attempts draft-16 transport with provisioned token in URL path, uses the relay-supported `PUBLISH` request directly, and answers permitted room-namespace pushes with `PUBLISH_OK` before routing their object streams through the ordinary subscription path. A narrow pnpm patch preserves the caught MOQtail control-stream termination cause. Live transport is not yet trace-verified (`MOQT_TRANSPORT_VERIFIED=false`).
@@ -40,11 +40,11 @@ As reconciled on 26 August 2026 with the current repository state:
 - Treat the shared credential disclosure as unresolved, not as an accepted production risk or a passed Gate 1 control. Do not claim tenant isolation or credential-enforced routing, and do not describe application-signed claims, token labels, client checks or coarse per-client relay tokens as a fix. Keep code unchanged until a relay credential model can enforce room and participant scope without adding a participant cap, unless a later explicit user request changes that decision.
 - `NetworkProbe` implements a draft-free relay reachability check alongside `/api/health`.
 - Dynamic device tracking, packet-loss concealment, bounded recovery and silence-gated drift correction are implemented and unit-tested, but lack live acoustic acceptance.
-- Room entry starts microphone capture automatically, with permission denial or missing hardware falling back visibly to listen-only. Capture is shown separately from relay-accepted publication; `publishing`, the inspector uplink and the publish event begin only after `PUBLISH_OK`, and a refusal stops capture while retaining its exact code and reason across a same-tab reload.
+- Room entry establishes membership and the control plane without starting audio. **Start audio** and **Resume audio** initiate capture, AudioContext activation and MOQT from a user action. Permission denial or missing hardware falls back visibly to listen-only. Background, lock, page-hide, Audio Session interruption or an already-running AudioContext suspension tears audio down into `resume_required`; capture never restarts automatically. Capture is shown separately from relay-accepted publication; `publishing`, the inspector uplink and the publish event begin only after `PUBLISH_OK`, and a refusal stops capture while retaining its exact code and reason across a same-tab reload.
 - Human clients default to being interested in every other permitted real-party audio track and expose local subscribe/unsubscribe controls. A namespace-pushed track is accepted by default; an explicit listening opt-out answers `UNINTERESTED`. Code-16 `Track not found` responses use a capped exponential retry sequence; a late MOQT namespace announcement or accepted pushed publication retries immediately. Accepted subscriptions alone appear in the inspector graph.
 - A bounded `UniversalAudioCaptureAdapter` retains `MediaStreamTrackProcessor` as the preferred Chrome path and adds an exact-frame AudioWorklet path for future desktop evaluation. Path selection and framing are unit-tested, but the alternative path has not passed real-browser or acoustic parity, so it does not expand H3 support.
 - Presenter AI responses are scripted and labelled. There is no live recognition, model, synthesis or AI-worker transport pipeline.
-- H3 now requires a documented matrix of all supported browser, OS and major-version combinations. The current client recognises only provisional Chrome 141+ on macOS, so cross-browser support remains open.
+- H3 now requires a documented matrix of all supported browser, OS and major-version combinations. The client recognises provisional Chrome 141+ on macOS and top-level Safari 27+ on iPhone with iOS 27+; both still require their applicable real-browser acceptance evidence.
 - Unit tests do not satisfy the live trace, acoustic latency, measured-capacity, audible ten-minute or two-clean-run acceptance gates.
 
 Keep this snapshot current when implementation status changes. Never convert an implemented component or a passing unit test into a claim that a live acceptance boundary has passed.
@@ -68,7 +68,7 @@ Keep this snapshot current when implementation status changes. Never convert an 
 
 ## v1 boundaries
 
-Video, screen sharing, recording, captions, dial-in, accounts, mobile publishing, moderation, WebRTC comparison, or production-readiness claims will come later.
+Video, screen sharing, recording, captions, dial-in, accounts, moderation, WebRTC comparison, general mobile publishing outside the named foreground iPhone Safari candidate, or production-readiness claims will come later.
 
 Presenter simulation is required, but simulated participants and scripted AI responses must be unmistakably labelled. Simulation must never masquerade as a working relay or AI pipeline.
 
@@ -139,7 +139,7 @@ Use the design references in `design/concepts/` as the visual direction:
 
 Avoid decorative card grids, bento layouts, neon glow, purple gradients, fake metrics, avatars, stock imagery and generic dashboard chrome.
 
-The desktop room keeps the participant surface primary and the protocol inspector persistently visible. Narrow screens are read-only and must state that desktop Chrome is required for live audio until a mobile configuration has been verified.
+The desktop room keeps the participant surface primary and the protocol inspector persistently visible. Narrow screens remain read-only except for the qualifying top-level iPhone Safari 27+/iOS 27+ candidate, which restores routing, inspector and foreground Start/Resume controls while remaining provisionally labelled until physical-device acceptance.
 
 Preserve these entry strings unless the product specification changes:
 
@@ -234,10 +234,10 @@ Also verify in a real browser:
 - per-AI routing controls and inspector edge changes;
 - unsupported-browser and relay-unavailable states;
 - microphone permission denial and no-input-device states;
-- desktop and narrow read-only layouts;
+- desktop, qualifying iPhone and other narrow read-only layouts;
 - no WebRTC or WebSocket audio path in code or network traffic.
 
-The current `/preflight` page verifies browser APIs and the room-service health gate only. Do not record the relay/UDP check as passed until an active UDP/HTTP-3 probe exists and runs successfully.
+The current `/preflight` page separates required WebTransport reliability, Opus encoder and decoder, capture, playout and microphone gates from optional Audio Session, wake lock, DTX and congestion-control diagnostics. It runs a draft-free UDP-capable WebTransport probe, but no live result may be recorded as passed until a real browser completes it successfully.
 
 When a live draft-20 relay exists, the release gate additionally requires a reproducible trace proving MOQT over WebTransport and HTTP/3/QUIC, plus the product specification’s ten-minute reference-composition run and complete demo script twice.
 

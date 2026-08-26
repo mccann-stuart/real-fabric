@@ -32,8 +32,13 @@ import {
 import { CaptureController } from "../audio/CaptureController";
 import { DegradationLadder, type LadderState } from "../audio/DegradationLadder";
 import { DeviceWatcher } from "../audio/DeviceWatcher";
+import {
+  ForegroundAudioLifecycle,
+  type ForegroundAudioLifecycleState,
+} from "../audio/ForegroundAudioLifecycle";
 import { encodeAudioObject } from "../audio/frame";
 import { MixerGraph } from "../audio/MixerGraph";
+import { PlaybackDeduplicator } from "../audio/PlaybackDeduplicator";
 import { TrackPlayer } from "../audio/TrackPlayer";
 import type { CapturePath } from "../audio/UniversalAudioCaptureAdapter";
 import { SessionTelemetry } from "../telemetry/SessionTelemetry";
@@ -59,8 +64,10 @@ import { type SessionEvent, SessionEventLog } from "./SessionEventLog";
 
 export type SessionPhase =
   | { name: "idle" }
+  | { name: "awaiting_audio_start" }
   | { name: "connecting_transport" }
   | { name: "live" }
+  | { name: "resume_required"; reason: string }
   | { name: "reconnecting"; attempt: number; nextAttemptInMs: number }
   /** Room and inspector usable, live audio blocked by a named §10 failure. */
   | { name: "blocked"; failure: FailureCode }
@@ -108,6 +115,7 @@ export interface SessionMetrics {
  */
 export type CaptureMode =
   | { name: "idle" }
+  | { name: "resume_required"; reason: string }
   /** The automatic permission and capture request is in flight. */
   | { name: "starting" }
   /** Capture is live, but the relay has not accepted PUBLISH yet. */
@@ -135,7 +143,9 @@ export interface SessionState {
   failures: FailureCode[];
   degradation: LadderState;
   publishing: boolean;
+  muted: boolean;
   capture: CaptureMode;
+  audioLifecycle: ForegroundAudioLifecycleState;
   /** Subscriptions the relay accepted, used by the live inspector graph. */
   subscribedParticipantIds: string[];
   subscriptions: TrackSubscriptionState[];
@@ -200,8 +210,10 @@ export class RoomSession {
       this.retryWaitingSubscriptionsNow();
     },
   });
-  private readonly mixer = new MixerGraph();
+  private mixer: MixerGraph;
   private readonly capture = new CaptureController();
+  private readonly playbackDeduplicator = new PlaybackDeduplicator();
+  private readonly lifecycle: ForegroundAudioLifecycle;
   private readonly ladder = new DegradationLadder();
   private readonly reconnection = new ReconnectionPolicy();
   private readonly players = new Map<string, TrackPlayer>();
@@ -228,7 +240,15 @@ export class RoomSession {
     announcement: null,
   };
   private publishing = false;
+  private muted = false;
   private publishingStart: Promise<void> | null = null;
+  private audioStart: Promise<void> | null = null;
+  private audioGeneration = 0;
+  private lifecycleState: ForegroundAudioLifecycleState = {
+    audioSession: "not_exposed",
+    wakeLock: "not_exposed",
+    wakeLockReason: "Screen Wake Lock is not exposed by this browser.",
+  };
   private sequence = 0;
   private currentGroup = 0;
   private groupStartedAt = 0;
@@ -257,6 +277,14 @@ export class RoomSession {
     }
     this.devices = new DeviceWatcher({
       onChange: (transition) => this.onDeviceChange(transition),
+    });
+    this.mixer = this.createMixer();
+    this.lifecycle = new ForegroundAudioLifecycle({
+      onInterrupted: (reason) => void this.interruptAudio(reason),
+      onChange: (state) => {
+        this.lifecycleState = state;
+        this.emit();
+      },
     });
   }
 
@@ -297,10 +325,9 @@ export class RoomSession {
   }
 
   /**
-   * Applies a room snapshot the caller already fetched, starts microphone
-   * capture, then opens the control channel and evaluates transport. Capture
-   * is independent from relay availability so a slow permission prompt never
-   * delays membership, discovery or the inspector.
+   * Applies a room snapshot and opens membership/control state. Capture,
+   * playout and MOQT deliberately wait for an in-room Start audio action so
+   * Safari can associate them with fresh user activation.
    */
   async start(room: RoomSnapshot): Promise<void> {
     this.startedAt = this.now();
@@ -314,10 +341,119 @@ export class RoomSession {
     // before it, so it never delays the join, and its answer is ready when a
     // transport failure needs classifying.
     void this.runNetworkProbe(room);
-    // The room entry action expresses the user's intent to join live audio.
-    // Browser permission remains authoritative; denial becomes listen-only.
-    void this.startPublishing();
-    await this.openTransport();
+    this.setPhase({ name: "awaiting_audio_start" });
+  }
+
+  /**
+   * Starts or resumes the entire audio branch. Call this directly from a user
+   * action: Audio Session, wake lock, AudioContext and getUserMedia are all
+   * initiated before the first await.
+   */
+  async startAudio(): Promise<void> {
+    if (this.closed || this.phase.name === "left") return;
+    if (this.phase.name === "live") {
+      await this.startPublishing();
+      return;
+    }
+    if (this.audioStart) return this.audioStart;
+
+    const generation = ++this.audioGeneration;
+    // Move out of the idle phase synchronously so a visibility or Audio
+    // Session interruption can cancel an activation that is still awaiting
+    // identity or network work.
+    this.setPhase({ name: "connecting_transport" });
+    const lifecycleActivation = this.lifecycle.activate();
+    const publishing = this.startPublishing(generation);
+    const attempt = this.startAudioOnce(generation, lifecycleActivation, publishing);
+    this.audioStart = attempt;
+    try {
+      await attempt;
+    } finally {
+      if (this.audioStart === attempt) this.audioStart = null;
+    }
+  }
+
+  private async startAudioOnce(
+    generation: number,
+    lifecycleActivation: Promise<void>,
+    publishing: Promise<void>,
+  ): Promise<void> {
+    try {
+      // Authenticated activity confirms that the retained participant identity
+      // is still valid before a resumed transport publishes into the room.
+      await markActive(this.options.session, this.options.session.participantId);
+      if (generation !== this.audioGeneration || this.closed) return;
+      this.applyRoom(await fetchRoom(this.options.session.code));
+      if (generation !== this.audioGeneration || this.closed) return;
+      await this.openTransport(generation);
+    } catch (error) {
+      if (generation === this.audioGeneration && !this.closed) {
+        const reason =
+          error instanceof Error
+            ? `The participant identity could not be revalidated: ${error.message}`
+            : "The participant identity could not be revalidated.";
+        this.raise("participant_disconnected");
+        await this.interruptAudio(reason);
+      }
+    } finally {
+      await Promise.allSettled([lifecycleActivation, publishing]);
+    }
+  }
+
+  /**
+   * Foreground-only contract: hiding or interrupting Safari tears down every
+   * audio resource and leaves room/control state visible. Returning never
+   * restarts the microphone without a new Resume audio action.
+   */
+  async interruptAudio(reason: string): Promise<void> {
+    if (
+      this.closed ||
+      this.phase.name === "left" ||
+      this.phase.name === "awaiting_audio_start" ||
+      this.phase.name === "resume_required"
+    ) {
+      return;
+    }
+
+    this.audioGeneration += 1;
+    this.publishing = false;
+    this.captureMode = { name: "resume_required", reason };
+    this.setPhase({ name: "resume_required", reason });
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    if (this.drainTimer) clearInterval(this.drainTimer);
+    this.retryTimer = null;
+    this.drainTimer = null;
+    this.clearSubscriptionRetryTimer();
+    this.subscriptionsOpening.clear();
+    this.subscriptionRetries.clear();
+    for (const player of this.players.values()) player.close();
+    this.players.clear();
+    await Promise.allSettled([
+      this.capture.stop(),
+      this.transport.close("foreground audio interrupted"),
+      this.mixer.close(),
+      this.lifecycle.releaseWakeLock(reason),
+    ]);
+    this.mixer = this.createMixer();
+    this.log.record("failure", `${reason} Audio stopped; tap Resume audio to reconnect.`);
+    this.emit();
+  }
+
+  setMuted(muted: boolean): void {
+    this.muted = muted;
+    this.capture.setMuted(muted);
+    this.log.record(
+      "device",
+      muted ? "Microphone muted by participant." : "Microphone unmuted by participant.",
+    );
+    this.emit();
+  }
+
+  private createMixer(): MixerGraph {
+    return new MixerGraph({
+      onSuspended: () =>
+        void this.interruptAudio("The browser suspended the audio output context."),
+    });
   }
 
   private async runNetworkProbe(room: RoomSnapshot): Promise<void> {
@@ -332,7 +468,7 @@ export class RoomSession {
    * relay unavailable, this records that specific failure and stops. It never
    * tries a different draft or a different transport.
    */
-  private async openTransport(): Promise<void> {
+  private async openTransport(generation = this.audioGeneration): Promise<void> {
     const room = this.room;
     if (!room) return;
 
@@ -358,6 +494,10 @@ export class RoomSession {
 
     try {
       await this.transport.connect(room.transport.endpoint, credential, room.transport.draft);
+      if (generation !== this.audioGeneration || this.closed) {
+        await this.transport.close("stale audio activation");
+        return;
+      }
       this.transportReadyAt = this.now();
       const negotiation = this.transport.sessionStats().negotiation;
       // §11.2 deliverable two: the negotiated draft and endpoint are recorded
@@ -424,7 +564,7 @@ export class RoomSession {
     // improve with backoff. Only an indeterminate relay outage is retryable.
     if (!isRetryableTransportFailure(failure)) {
       this.setPhase({ name: "blocked", failure });
-      if (failure === "udp_blocked") {
+      if (failure === "udp_blocked" || failure === "transport_reliable_only") {
         this.log.record("failure", this.network.remediation ?? "Switch to the documented hotspot.");
       }
       return;
@@ -493,6 +633,8 @@ export class RoomSession {
         return "transport_unsupported";
       case "relay_configuration":
         return "relay_auth_unavailable";
+      case "reliable_transport":
+        return "transport_reliable_only";
       case "protocol_error":
         return "relay_protocol_error";
       case "request_refused":
@@ -510,17 +652,11 @@ export class RoomSession {
   }
 
   /**
-   * FR2 and §11.3 deliverable one: publication starts automatically as the
-   * room opens. A microphone that is denied, missing or unsupported drops this
-   * browser into listen-only rather than throwing. Subscriptions, the mixer
-   * and the inspector are untouched — the person can still hear the room and
-   * see the protocol, which is most of what the demo is for.
-   *
-   * This method does not throw. A caller that had to catch a hardware failure
-   * would end up writing its own fallback, and the point is that there is
-   * exactly one.
+   * Starts publication from the explicit Start/Resume action, or retries only
+   * the microphone after a permission/device failure. It never substitutes a
+   * transport when capture fails.
    */
-  async startPublishing(): Promise<void> {
+  async startPublishing(generation = this.audioGeneration): Promise<void> {
     if (this.publishing) return;
     if (this.captureMode.name === "opening_publication") return;
     if (this.publishingStart) return this.publishingStart;
@@ -538,7 +674,7 @@ export class RoomSession {
 
     this.captureMode = { name: "starting" };
     this.emit();
-    const attempt = this.startPublishingOnce();
+    const attempt = this.startPublishingOnce(generation);
     this.publishingStart = attempt;
     try {
       await attempt;
@@ -547,13 +683,30 @@ export class RoomSession {
     }
   }
 
-  private async startPublishingOnce(): Promise<void> {
+  private async startPublishingOnce(generation: number): Promise<void> {
     if (this.closed) return;
-    try {
-      // The mixer is started first and deliberately kept running: listen-only
-      // still needs an output clock.
-      await this.mixer.start();
-    } catch (error) {
+    const mixerStart = this.mixer.start();
+    // Invoked before the first await so Safari sees getUserMedia in the same
+    // transient user activation as the Start/Resume button.
+    const captureStart = this.capture.start({
+      onEncodedFrame: (frame) => this.publishFrame(frame),
+      onOnset: () => void this.onHumanOnset(),
+      onRelease: () => this.emit(),
+      onError: (error) => {
+        this.raise("audio_behind");
+        this.log.record("failure", error.message);
+      },
+    });
+    const [mixerResult, captureResult] = await Promise.allSettled([mixerStart, captureStart]);
+
+    if (generation !== this.audioGeneration || this.closed) {
+      await this.capture.stop();
+      return;
+    }
+
+    if (mixerResult.status === "rejected") {
+      await this.capture.stop();
+      const error = mixerResult.reason;
       this.enterListenOnly(
         "transport_unsupported",
         error instanceof Error ? error.message : "The audio output graph could not start.",
@@ -564,26 +717,15 @@ export class RoomSession {
 
     if (this.closed) return;
 
-    try {
-      await this.capture.start({
-        onEncodedFrame: (frame) => this.publishFrame(frame),
-        onOnset: () => void this.onHumanOnset(),
-        onRelease: () => this.emit(),
-        onError: (error) => {
-          this.raise("audio_behind");
-          this.log.record("failure", error.message);
-        },
-      });
-      if (this.closed) {
-        await this.capture.stop();
-        return;
-      }
+    if (captureResult.status === "fulfilled") {
+      this.capture.setMuted(this.muted);
       this.mixer.resume();
       // Capture and accepted relay publication are deliberately separate.
       // The first encoded frame opens PUBLISH; only its PUBLISH_OK changes the
       // state to publishing and creates the inspector event.
       if (!this.publishing) this.captureMode = { name: "opening_publication" };
-    } catch (error) {
+    } else {
+      const error = captureResult.reason;
       const name = error instanceof DOMException ? error.name : "";
       const failure: FailureCode =
         name === "NotFoundError" || name === "DevicesNotFoundError"
@@ -809,41 +951,47 @@ export class RoomSession {
       const retry = this.subscriptionRetries.get(participantId);
       if (retry && (retry.nextAttemptAt === null || retry.nextAttemptAt > this.now())) continue;
       const track = audioTrack(room.code, participantId);
-      const player = new TrackPlayer(participantId, trackKey(track), this.mixer, {
-        onFirstObject: (trackId) => {
-          if (this.firstAudioAt === null) this.firstAudioAt = this.now();
-          this.log.record("first_object", trackId, { subject: participantId });
-          void markActive(this.options.session, participantId).catch(() => undefined);
+      const player = new TrackPlayer(
+        participantId,
+        trackKey(track),
+        this.mixer,
+        {
+          onFirstObject: (trackId) => {
+            if (this.firstAudioAt === null) this.firstAudioAt = this.now();
+            this.log.record("first_object", trackId, { subject: participantId });
+            void markActive(this.options.session, participantId).catch(() => undefined);
+          },
+          onDriftCorrection: (correction) =>
+            this.log.record(
+              "drift",
+              `ratio ${correction.ratio.toFixed(5)} at ${Math.round(correction.skewPpm)} ppm`,
+              { subject: participantId },
+            ),
+          onDriftBeyondRange: () => {
+            this.raise("drift_uncorrectable");
+            // §11.3: scheduled, not immediate. Rebuilding mid-word is audible.
+            this.log.record("drift", "Beyond correction range; buffer rebuild queued for a pause", {
+              subject: participantId,
+            });
+          },
+          onConcealment: (_trackId, frames, kind) => {
+            // §10.5: concealment is a quality warning, never a silent repair.
+            this.raise("audio_behind");
+            this.log.record(
+              "concealment",
+              kind === "comfort_noise"
+                ? `${frames} frames missing; sustained loss, emitting comfort noise`
+                : `${frames} frames missing; concealed by pitch repetition`,
+              { subject: participantId },
+            );
+          },
+          onError: (_trackId, error) => {
+            this.raise("audio_behind");
+            this.log.record("failure", error.message, { subject: participantId });
+          },
         },
-        onDriftCorrection: (correction) =>
-          this.log.record(
-            "drift",
-            `ratio ${correction.ratio.toFixed(5)} at ${Math.round(correction.skewPpm)} ppm`,
-            { subject: participantId },
-          ),
-        onDriftBeyondRange: () => {
-          this.raise("drift_uncorrectable");
-          // §11.3: scheduled, not immediate. Rebuilding mid-word is audible.
-          this.log.record("drift", "Beyond correction range; buffer rebuild queued for a pause", {
-            subject: participantId,
-          });
-        },
-        onConcealment: (_trackId, frames, kind) => {
-          // §10.5: concealment is a quality warning, never a silent repair.
-          this.raise("audio_behind");
-          this.log.record(
-            "concealment",
-            kind === "comfort_noise"
-              ? `${frames} frames missing; sustained loss, emitting comfort noise`
-              : `${frames} frames missing; concealed by pitch repetition`,
-            { subject: participantId },
-          );
-        },
-        onError: (_trackId, error) => {
-          this.raise("audio_behind");
-          this.log.record("failure", error.message, { subject: participantId });
-        },
-      });
+        this.playbackDeduplicator,
+      );
       this.subscriptionsOpening.add(participantId);
       this.log.record("subscribe", `audio/${participantId}`, { subject: participantId });
       this.emit();
@@ -1314,6 +1462,8 @@ export class RoomSession {
     this.captureMode = { name: "idle" };
     await this.transport.close("participant left");
     await this.mixer.close();
+    await this.lifecycle.dispose();
+    this.playbackDeduplicator.clear();
     this.socket?.close(1000, "left");
     this.socket = null;
     this.log.record("close", "Capture stopped, publications and subscriptions closed.");
@@ -1337,7 +1487,9 @@ export class RoomSession {
       failures: [...this.failures],
       degradation: this.degradation,
       publishing: this.publishing,
+      muted: this.muted,
       capture: this.captureMode,
+      audioLifecycle: { ...this.lifecycleState },
       subscribedParticipantIds: [...this.players.keys()],
       subscriptions: this.subscriptionStates(),
       speaking: this.capture.speaking,
