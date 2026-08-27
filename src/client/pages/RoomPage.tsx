@@ -206,16 +206,6 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
         onConfirmLeave={() => void confirmLeave()}
       />
 
-      <RoomStatusStack
-        state={state}
-        reclaimed={reclaimed}
-        error={error}
-        iphoneAudioCandidate={iphoneAudioCandidate}
-        hiddenFailureCodes={hiddenFailureCodes}
-        onRetry={() => void retry()}
-        onDismissFailure={(failureCode) => session?.clearFailure(failureCode)}
-      />
-
       <div className="room-layout">
         <section
           className={`participant-surface participant-surface--${layout.layout}`}
@@ -306,6 +296,16 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
           />
         </>
       ) : null}
+
+      <RoomStatusStack
+        state={state}
+        reclaimed={reclaimed}
+        error={error}
+        iphoneAudioCandidate={iphoneAudioCandidate}
+        hiddenFailureCodes={hiddenFailureCodes}
+        onRetry={() => void retry()}
+        onDismissFailure={(failureCode) => session?.clearFailure(failureCode)}
+      />
 
       {iphoneAudioCandidate ? (
         <nav className="mobile-audio-rail" aria-label="Foreground audio controls">
