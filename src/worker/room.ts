@@ -234,8 +234,26 @@ export class Room extends DurableObject<Env> {
     return this.removeAiInternal(aiId);
   }
 
+  private assertAiParticipant(aiId: string): ParticipantRow {
+    const row = this.ctx.storage.sql
+      .exec<ParticipantRow>(
+        "SELECT * FROM participants WHERE id = ? AND role = 'ai' AND state != 'left' LIMIT 1",
+        aiId,
+      )
+      .toArray()[0];
+    if (!row) {
+      throw roomError(
+        404,
+        "ai_not_found",
+        "The requested AI participant does not exist in this room.",
+      );
+    }
+    return row;
+  }
+
   private async removeAiInternal(aiId: string): Promise<RoomSnapshot> {
     this.assertActive();
+    this.assertAiParticipant(aiId);
     const now = Date.now();
     this.ctx.storage.sql.exec(
       "UPDATE participants SET state = 'left', pipeline = 'unavailable', reconnect_until = NULL WHERE id = ? AND role = 'ai'",
@@ -283,19 +301,7 @@ export class Room extends DurableObject<Env> {
     if (human.role !== "human") {
       throw roomError(403, "human_only", "Only a human can own a routing preference.");
     }
-    const ai = this.ctx.storage.sql
-      .exec<ParticipantRow>(
-        "SELECT * FROM participants WHERE id = ? AND role = 'ai' AND state != 'left'",
-        aiId,
-      )
-      .toArray()[0];
-    if (!ai) {
-      throw roomError(
-        404,
-        "ai_not_found",
-        "The requested AI participant does not exist in this room.",
-      );
-    }
+    this.assertAiParticipant(aiId);
     const now = Date.now();
     this.ctx.storage.sql.exec(
       `INSERT INTO routing (human_id, ai_id, hears_me, i_hear_it, updated_at)
@@ -321,6 +327,7 @@ export class Room extends DurableObject<Env> {
   ): Promise<RoomSnapshot> {
     await this.assertHuman(credential);
     this.assertActive();
+    this.assertAiParticipant(aiId);
     const now = Date.now();
     this.ctx.storage.sql.exec(
       "UPDATE participants SET pipeline = ?, last_active_at = ? WHERE id = ? AND role = 'ai'",
@@ -342,6 +349,7 @@ export class Room extends DurableObject<Env> {
   ): Promise<{ granted: boolean; room: RoomSnapshot }> {
     await this.assertHuman(credential);
     this.assertActive();
+    this.assertAiParticipant(aiId);
     const now = Date.now();
     const meta = this.meta();
     if (!meta) throw roomError(404, "room_not_found", "Room is not initialised.");
@@ -379,6 +387,7 @@ export class Room extends DurableObject<Env> {
   async releaseFloor(credential: ParticipantCredential, aiId: string): Promise<RoomSnapshot> {
     await this.assertHuman(credential);
     this.assertActive();
+    this.assertAiParticipant(aiId);
     await this.releaseFloorInternal(aiId, Date.now());
     return this.snapshot();
   }
