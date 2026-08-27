@@ -371,6 +371,14 @@ input::placeholder {
 .maturity-row span:last-child {
   margin-left: auto;
 }
+.page-alerts {
+  display: grid;
+  gap: 10px;
+  margin: 0 26px 18px;
+}
+.page-alerts:empty {
+  display: none;
+}
 
 .preflight-page {
   min-height: 100vh;
@@ -1391,13 +1399,18 @@ input::placeholder {
 .room-status-stack {
   display: grid;
   gap: 10px;
-  margin: 0 26px 14px;
+  margin: 14px 26px 18px;
 }
 .room-status-stack > .pin-banner,
 .room-status-stack > .degradation-banner,
 .room-status-stack > .reclaim-banner,
 .room-status-stack > .error-banner,
 .room-status-stack > .failure-list {
+  margin: 0;
+}
+.page-alerts > .error-banner,
+.page-alerts > .failure-banner,
+.page-alerts > .pin-banner {
   margin: 0;
 }
 .listen-only-banner {

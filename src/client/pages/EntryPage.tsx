@@ -1,5 +1,6 @@
 import { MAX_SIMULATED_PARTICIPANTS, PINNED_MOQT_DRAFT } from "../../shared/contracts";
 import { Brand } from "../components/Brand";
+import { FailureBanner } from "../components/FailureBanner";
 import { PinnedConfigBanner } from "../components/PinnedConfigBanner";
 import { PreflightPanel } from "../components/PreflightPanel";
 import { SignalPath } from "../components/SignalPath";
@@ -38,7 +39,6 @@ export function EntryPage({
           Protocol inspector →
         </button>
       </header>
-      <PinnedConfigBanner />
       <div className="entry-layout">
         <section className="entry-form" aria-labelledby="entry-title">
           <h1 id="entry-title">People and AIs speaking over Media over QUIC.</h1>
@@ -140,15 +140,10 @@ export function EntryPage({
               ))}
             </span>
           </button>
-          {error ? (
-            <p className="error-banner" role="alert">
-              {error}
-            </p>
-          ) : null}
         </section>
         <SignalPath />
       </div>
-      <PreflightPanel report={report} />
+      <PreflightPanel report={report} showFailure={false} />
       <footer className="maturity-row">
         <span>
           <b>QUIC</b> — standard
@@ -161,6 +156,18 @@ export function EntryPage({
         </span>
         <span>No media is stored.</span>
       </footer>
+      <section className="page-alerts" aria-labelledby="entry-alerts-title">
+        <h2 className="sr-only" id="entry-alerts-title">
+          Alerts and notices
+        </h2>
+        {error ? (
+          <p className="error-banner" role="alert">
+            {error}
+          </p>
+        ) : null}
+        {report.failure ? <FailureBanner code={report.failure} /> : null}
+        <PinnedConfigBanner />
+      </section>
     </main>
   );
 }

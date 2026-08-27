@@ -1,4 +1,5 @@
 import { Brand } from "../components/Brand";
+import { FailureBanner } from "../components/FailureBanner";
 import { PinnedConfigSummary } from "../components/PinnedConfigBanner";
 import { PreflightPanel } from "../components/PreflightPanel";
 import { SignalPath } from "../components/SignalPath";
@@ -34,7 +35,7 @@ export function PreflightPage({ navigate }: { navigate: (path: string) => void }
         <SignalPath />
       </section>
 
-      <PreflightPanel report={report} expanded />
+      <PreflightPanel report={report} expanded showFailure={false} />
 
       {/* H3 */}
       <section className="advice-rail">
@@ -53,6 +54,15 @@ export function PreflightPage({ navigate }: { navigate: (path: string) => void }
           audio stays blocked until a browser-to-relay trace passes on the pinned draft.
         </p>
       </section>
+
+      {report.failure ? (
+        <section className="page-alerts" aria-labelledby="preflight-alerts-title">
+          <h2 className="sr-only" id="preflight-alerts-title">
+            Alerts and notices
+          </h2>
+          <FailureBanner code={report.failure} />
+        </section>
+      ) : null}
     </main>
   );
 }

@@ -40,9 +40,11 @@ function probeLight(state: ProbeState): CheckState {
 export function PreflightPanel({
   report,
   expanded = false,
+  showFailure = true,
 }: {
   report: CapabilityReport;
   expanded?: boolean;
+  showFailure?: boolean;
 }) {
   return (
     <section
@@ -84,7 +86,7 @@ export function PreflightPanel({
         <p className="preflight-reason">{report.network.remediation}</p>
       ) : null}
       {/* H14: name the specific missing capability, with its own recovery advice. */}
-      {report.failure ? <FailureBanner code={report.failure} /> : null}
+      {showFailure && report.failure ? <FailureBanner code={report.failure} /> : null}
     </section>
   );
 }
