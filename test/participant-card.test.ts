@@ -30,7 +30,7 @@ describe("ParticipantCard component", () => {
     },
   ];
 
-  it("renders AI participant card correctly", () => {
+  it("renders AI participant card correctly with accessible toggle labels", () => {
     const html = renderToStaticMarkup(
       React.createElement(ParticipantCard, {
         participant: mockAi,
@@ -44,6 +44,7 @@ describe("ParticipantCard component", () => {
 
     expect(html).toContain("Ada AI");
     expect(html).toContain("Hold to ask Ada AI");
+    expect(html).toContain('aria-label="Hears me (Ada AI)"');
   });
 
   it("invokes onAddressDown and onAddressUp on keyboard Space/Enter events", () => {
