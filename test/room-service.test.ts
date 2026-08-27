@@ -306,6 +306,31 @@ describe("FR4 — floor control serialises AI speech", () => {
     expect(released.value.floor.holderId).toBe(sage?.id);
     expect(released.value.floor.queue).toEqual([]);
   });
+
+  it("rejects floor requests and releases for invalid or non-AI targets", async () => {
+    const created = await createRoom();
+
+    const nonExistent = await call(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: "non-existent-ai",
+      operation: "request",
+    });
+    expect(nonExistent.status).toBe(404);
+
+    const humanTarget = await call(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: created.participant.id,
+      operation: "request",
+    });
+    expect(humanTarget.status).toBe(404);
+
+    const releaseNonExistent = await call(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: "non-existent-ai",
+      operation: "release",
+    });
+    expect(releaseNonExistent.status).toBe(404);
+  });
 });
 
 describe("H11 — presenter simulation is configurable and labelled", () => {
