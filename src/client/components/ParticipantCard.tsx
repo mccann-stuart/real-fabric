@@ -58,6 +58,7 @@ export function ParticipantCard({
       <div className="track-controls">
         <Toggle
           label={isAi ? "I hear it" : "I hear them"}
+          ariaLabel={`${isAi ? "I hear it" : "I hear them"} (${participant.displayName})`}
           checked={subscription.intent}
           onChange={(enabled) => onSubscription(participant.id, enabled)}
         />
@@ -115,6 +116,7 @@ export function ParticipantCard({
         <div className="routing-controls">
           <Toggle
             label="Hears me"
+            ariaLabel={`Hears me (${participant.displayName})`}
             checked={row?.hearsMe ?? false}
             onChange={(hearsMe) => onRouting(participant.id, hearsMe, row?.iHearIt ?? true)}
           />
@@ -157,10 +159,12 @@ function Toggle({
   label,
   checked,
   onChange,
+  ariaLabel,
 }: {
   label: string;
   checked: boolean;
   onChange: (value: boolean) => void;
+  ariaLabel?: string;
 }) {
   return (
     <label className="toggle-row">
@@ -168,6 +172,7 @@ function Toggle({
       <input
         type="checkbox"
         checked={checked}
+        aria-label={ariaLabel}
         onChange={(event) => onChange(event.target.checked)}
       />
       <i aria-hidden="true" />

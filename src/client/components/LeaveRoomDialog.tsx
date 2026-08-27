@@ -22,10 +22,13 @@ export function LeaveRoomDialog({
       ref={dialogRef}
       className="leave-dialog"
       aria-labelledby="leave-dialog-title"
+      aria-describedby="leave-dialog-desc"
       onCancel={onCancel}
     >
       <h2 id="leave-dialog-title">Leave room {code}?</h2>
-      <p>You will stop sending and receiving audio. You can rejoin with the same invite link.</p>
+      <p id="leave-dialog-desc">
+        You will stop sending and receiving audio. You can rejoin with the same invite link.
+      </p>
       {leaveError ? (
         <p className="leave-dialog__error" role="alert">
           {leaveError}
