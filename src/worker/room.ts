@@ -788,7 +788,9 @@ export class Room extends DurableObject<Env> {
           .exec<ParticipantRow>("SELECT id FROM participants WHERE role = 'ai' AND state != 'left'")
           .toArray();
 
-        const CHUNK_SIZE = 10;
+        // Performance optimization (⚡ Bolt): Batch SQL inserts into 12-row chunks (84 variables: 7 per row)
+        // to maximize batching while respecting Cloudflare Workers SQLite's 100-variable limit.
+        const CHUNK_SIZE = 12;
         for (let i = 0; i < added.length; i += CHUNK_SIZE) {
           const chunk = added.slice(i, i + CHUNK_SIZE);
           const valuePlaceholders: string[] = [];
@@ -850,7 +852,9 @@ export class Room extends DurableObject<Env> {
           )
           .toArray();
 
-        const CHUNK_SIZE = 10;
+        // Performance optimization (⚡ Bolt): Batch SQL inserts into 12-row chunks (84 variables: 7 per row)
+        // to maximize batching while respecting Cloudflare Workers SQLite's 100-variable limit.
+        const CHUNK_SIZE = 12;
         for (let i = 0; i < added.length; i += CHUNK_SIZE) {
           const chunk = added.slice(i, i + CHUNK_SIZE);
           const valuePlaceholders: string[] = [];
@@ -1209,7 +1213,9 @@ function batchInsertRouting(
   rows: Array<{ humanId: string; aiId: string; updatedAt: number }>,
 ): void {
   if (rows.length === 0) return;
-  const CHUNK_SIZE = 25;
+  // Performance optimization (⚡ Bolt): Increase chunk size to 30 rows per INSERT statement (90 variables)
+  // to maximize batching while respecting Cloudflare Workers SQLite's 100-variable limit.
+  const CHUNK_SIZE = 30;
   for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
     const chunk = rows.slice(i, i + CHUNK_SIZE);
     const placeholders: string[] = [];
