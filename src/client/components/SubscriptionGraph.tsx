@@ -34,6 +34,9 @@ export function buildEdges(
       live: true,
     });
   }
+  // Performance optimization (⚡ Bolt): Convert subscribedIds array to a Set for O(1) lookups
+  // during participant iteration, reducing overall complexity from O(P * S) to O(P + S).
+  const subscribedSet = new Set(subscribedIds);
   for (const participant of participants) {
     if (participant.id === viewerId || participant.state === "left") continue;
     edges.push({
@@ -41,7 +44,7 @@ export function buildEdges(
       from: "relay",
       to: viewerId,
       kind: "subscription",
-      live: subscribedIds.includes(participant.id),
+      live: subscribedSet.has(participant.id),
     });
   }
   // Inbound routing: which humans each AI is subscribed to. Only the viewer's
