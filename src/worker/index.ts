@@ -124,9 +124,9 @@ async function handleCreateRoom(
   env: Env,
   correlationId: string,
 ): Promise<Response> {
+  await enforceCreationRateLimit(request, env);
   const body = await readJsonObject(request);
   const displayName = requiredString(body, "displayName", 80);
-  await enforceCreationRateLimit(request, env);
   const code = roomCode();
   const stub = roomStub(env, code);
   await stub.initialise(code, Date.now());
