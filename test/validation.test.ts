@@ -199,4 +199,32 @@ describe("request validation", () => {
       code: "unsupported_media_type",
     } satisfies Partial<HttpError>);
   });
+
+  it("rejects declared payload exceeding maxBytes with HTTP 413 payload_too_large", async () => {
+    const request = new Request("https://example.test", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "content-length": "10000",
+      },
+      body: JSON.stringify({ displayName: "Ada" }),
+    });
+    await expect(readJsonObject(request, 8192)).rejects.toMatchObject({
+      status: 413,
+      code: "payload_too_large",
+    } satisfies Partial<HttpError>);
+  });
+
+  it("rejects actual body buffer exceeding maxBytes with HTTP 413 payload_too_large", async () => {
+    const largePayload = JSON.stringify({ displayName: "A".repeat(9000) });
+    const request = new Request("https://example.test", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: largePayload,
+    });
+    await expect(readJsonObject(request, 8192)).rejects.toMatchObject({
+      status: 413,
+      code: "payload_too_large",
+    } satisfies Partial<HttpError>);
+  });
 });
