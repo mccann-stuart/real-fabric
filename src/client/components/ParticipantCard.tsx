@@ -1,3 +1,4 @@
+import { memo } from "react";
 import {
   type AiDisplayActivity,
   aiDisplayActivity,
@@ -28,7 +29,9 @@ export interface ParticipantCardProps {
   onAddressUp?: (aiId: string) => void;
 }
 
-export function ParticipantCard({
+// Performance optimization (⚡ Bolt): Memoize ParticipantCard to avoid re-rendering
+// remote participant cards when unrelated state updates (such as local mic level).
+export const ParticipantCard = memo(function ParticipantCard({
   participant,
   current,
   viewerId,
@@ -153,7 +156,7 @@ export function ParticipantCard({
       ) : null}
     </article>
   );
-}
+});
 
 function Toggle({
   label,
