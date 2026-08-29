@@ -8,14 +8,29 @@ export class HttpError extends Error {
   }
 }
 
+export const MAX_BODY_BYTES = 64 * 1024; // 64 KiB limit to prevent resource exhaustion (SEC-08)
+
 export async function readJsonObject(request: Request): Promise<Record<string, unknown>> {
   const contentType = request.headers.get("content-type") ?? "";
   if (!contentType.toLowerCase().includes("application/json")) {
     throw new HttpError(415, "unsupported_media_type", "Expected an application/json request.");
   }
 
+  const contentLengthHeader = request.headers.get("content-length");
+  if (contentLengthHeader) {
+    const contentLength = Number.parseInt(contentLengthHeader, 10);
+    if (!Number.isNaN(contentLength) && contentLength > MAX_BODY_BYTES) {
+      throw new HttpError(413, "payload_too_large", "Request body exceeds maximum allowed size.");
+    }
+  }
+
+  const text = await request.text();
+  if (text.length > MAX_BODY_BYTES || new TextEncoder().encode(text).byteLength > MAX_BODY_BYTES) {
+    throw new HttpError(413, "payload_too_large", "Request body exceeds maximum allowed size.");
+  }
+
   try {
-    const value: unknown = await request.json();
+    const value: unknown = JSON.parse(text);
     if (!value || typeof value !== "object" || Array.isArray(value)) {
       throw new Error("body is not an object");
     }
