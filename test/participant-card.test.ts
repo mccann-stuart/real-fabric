@@ -1,7 +1,10 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { ParticipantCard } from "../src/client/components/ParticipantCard";
+import {
+  ParticipantCard,
+  type ParticipantCardProps,
+} from "../src/client/components/ParticipantCard";
 import type { Participant, RoutingPreference } from "../src/shared/contracts";
 
 describe("ParticipantCard component", () => {
@@ -51,7 +54,7 @@ describe("ParticipantCard component", () => {
     const onAddressDown = vi.fn();
     const onAddressUp = vi.fn();
 
-    const element = ParticipantCard({
+    const element = (ParticipantCard.type as (props: ParticipantCardProps) => React.JSX.Element)({
       participant: mockAi,
       current: false,
       viewerId: "human-1",
