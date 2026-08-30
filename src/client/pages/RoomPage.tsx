@@ -225,7 +225,12 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
             <p className="empty-room">No active participants are exposed.</p>
           ) : null}
           <div className="mobile-actions">
-            <button type="button" onClick={() => setInspectorOpen(true)}>
+            <button
+              type="button"
+              aria-expanded={inspectorOpen}
+              aria-controls="inspector-panel"
+              onClick={() => setInspectorOpen(true)}
+            >
               Open inspector →
             </button>
           </div>
@@ -328,7 +333,12 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
           >
             {state?.muted ? "Unmute" : "Mute"}
           </button>
-          <button type="button" onClick={() => setInspectorOpen(true)}>
+          <button
+            type="button"
+            aria-expanded={inspectorOpen}
+            aria-controls="inspector-panel"
+            onClick={() => setInspectorOpen(true)}
+          >
             Inspector
           </button>
           <button
@@ -346,6 +356,8 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
         <button
           className="mobile-inspector-button"
           type="button"
+          aria-expanded={inspectorOpen}
+          aria-controls="inspector-panel"
           onClick={() => setInspectorOpen(true)}
         >
           Open inspector
