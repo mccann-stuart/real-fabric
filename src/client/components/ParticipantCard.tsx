@@ -24,6 +24,7 @@ export interface ParticipantCardProps {
   subscription?: TrackSubscriptionState | undefined;
   onSubscription?: ((participantId: string, enabled: boolean) => void) | undefined;
   onRouting?: (aiId: string, hearsMe: boolean, iHearIt: boolean) => void;
+  isAddressing?: boolean;
   onAddressDown?: (aiId: string) => void;
   onAddressUp?: (aiId: string) => void;
 }
@@ -39,6 +40,7 @@ export function ParticipantCard({
   subscription,
   onSubscription,
   onRouting,
+  isAddressing = false,
   onAddressDown,
   onAddressUp,
 }: ParticipantCardProps) {
@@ -124,9 +126,11 @@ export function ParticipantCard({
           <button
             className="ask-button"
             type="button"
+            aria-pressed={isAddressing}
             onPointerDown={() => onAddressDown?.(participant.id)}
             onPointerUp={() => onAddressUp?.(participant.id)}
             onPointerLeave={() => onAddressUp?.(participant.id)}
+            onBlur={() => onAddressUp?.(participant.id)}
             onKeyDown={(event) => {
               if ((event.key === " " || event.key === "Enter") && !event.repeat) {
                 event.preventDefault();

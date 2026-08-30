@@ -93,4 +93,62 @@ describe("ParticipantCard component", () => {
     askButton.props.onKeyUp({ key: "Enter", preventDefault });
     expect(onAddressUp).toHaveBeenCalledWith("ai-1");
   });
+
+  it("includes aria-pressed and releases on address button blur", () => {
+    const onAddressDown = vi.fn();
+    const onAddressUp = vi.fn();
+
+    const htmlIdle = renderToStaticMarkup(
+      React.createElement(ParticipantCard, {
+        participant: mockAi,
+        current: false,
+        viewerId: "human-1",
+        routing: mockRouting,
+        connectedHumanIds: ["human-1"],
+        onRouting: () => {},
+        onAddressDown,
+        onAddressUp,
+      }),
+    );
+    expect(htmlIdle).toContain('aria-pressed="false"');
+
+    const htmlActive = renderToStaticMarkup(
+      React.createElement(ParticipantCard, {
+        participant: mockAi,
+        current: false,
+        viewerId: "human-1",
+        routing: mockRouting,
+        connectedHumanIds: ["human-1"],
+        isAddressing: true,
+        onRouting: () => {},
+        onAddressDown,
+        onAddressUp,
+      }),
+    );
+    expect(htmlActive).toContain('aria-pressed="true"');
+
+    const element = ParticipantCard({
+      participant: mockAi,
+      current: false,
+      viewerId: "human-1",
+      routing: mockRouting,
+      connectedHumanIds: ["human-1"],
+      onRouting: () => {},
+      onAddressDown,
+      onAddressUp,
+    });
+
+    const routingDiv = element.props.children[4];
+    const askButton = routingDiv.props.children[2];
+
+    const preventDefault = vi.fn();
+
+    // Trigger keydown space to start addressing
+    askButton.props.onKeyDown({ key: " ", repeat: false, preventDefault });
+    expect(onAddressDown).toHaveBeenCalledWith("ai-1");
+
+    // Trigger blur when addressing
+    askButton.props.onBlur();
+    expect(onAddressUp).toHaveBeenCalledWith("ai-1");
+  });
 });
