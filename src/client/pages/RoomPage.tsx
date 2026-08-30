@@ -77,6 +77,22 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
     [room],
   );
 
+  // Performance optimization (⚡ Bolt): Memoize layout calculation so high-frequency updates
+  // (such as mic volume meter changes or demo runner ticks) do not trigger sorting and filtering
+  // of room.participants on every render frame.
+  const layout = useMemo(() => {
+    if (!room) {
+      return {
+        layout: "equal" as const,
+        prominent: [] as Participant[],
+        rest: [] as Participant[],
+      };
+    }
+    const result = layoutParticipants(room.participants, viewerId, prominentIds.current);
+    prominentIds.current = result.prominent.map((participant) => participant.id);
+    return result;
+  }, [room, viewerId]);
+
   const changeRouting = useCallback(
     (aiId: string, hearsMe: boolean, iHearIt: boolean) => {
       void session?.changeRouting(aiId, hearsMe, iHearIt);
@@ -155,11 +171,6 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
       </main>
     );
   }
-
-  const layout = room
-    ? layoutParticipants(room.participants, viewerId, prominentIds.current)
-    : { layout: "equal" as const, prominent: [] as Participant[], rest: [] as Participant[] };
-  prominentIds.current = layout.prominent.map((participant) => participant.id);
 
   const renderCard = (participant: Participant) => (
     <ParticipantCard
