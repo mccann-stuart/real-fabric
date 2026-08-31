@@ -92,5 +92,10 @@ describe("ParticipantCard component", () => {
     // KeyUp Enter
     askButton.props.onKeyUp({ key: "Enter", preventDefault });
     expect(onAddressUp).toHaveBeenCalledWith("ai-1");
+
+    // Blur event
+    onAddressUp.mockClear();
+    askButton.props.onBlur();
+    expect(onAddressUp).toHaveBeenCalledWith("ai-1");
   });
 });

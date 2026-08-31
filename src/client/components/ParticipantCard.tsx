@@ -139,6 +139,7 @@ export function ParticipantCard({
                 onAddressUp?.(participant.id);
               }
             }}
+            onBlur={() => onAddressUp?.(participant.id)}
           >
             Hold to ask {participant.displayName}
           </button>
