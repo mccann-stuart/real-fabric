@@ -123,6 +123,7 @@ export function PresenterStrip({
           <input
             type="checkbox"
             checked={room.aiToAi.enabled}
+            aria-label="AI hears AI"
             onChange={(event) => onAiToAi(event.target.checked)}
           />
           <i aria-hidden="true" />
