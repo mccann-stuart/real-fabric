@@ -716,23 +716,51 @@ export class Room extends DurableObject<Env> {
   }
 
   private seedRoutingForHuman(humanId: string, now: number): void {
-    this.ctx.storage.sql.exec(
-      `INSERT INTO routing (human_id, ai_id, hears_me, i_hear_it, updated_at)
-       SELECT ?, id, 0, 1, ? FROM participants WHERE role = 'ai' AND state != 'left'
-       ON CONFLICT(human_id, ai_id) DO NOTHING`,
-      humanId,
-      now,
-    );
+    this.seedRoutingForHumans([humanId], now);
   }
 
   private seedRoutingForAi(aiId: string, now: number): void {
-    this.ctx.storage.sql.exec(
-      `INSERT INTO routing (human_id, ai_id, hears_me, i_hear_it, updated_at)
-       SELECT id, ?, 0, 1, ? FROM participants WHERE role = 'human' AND state != 'left'
-       ON CONFLICT(human_id, ai_id) DO NOTHING`,
-      aiId,
-      now,
-    );
+    this.seedRoutingForAis([aiId], now);
+  }
+
+  // Performance optimization (⚡ Bolt): Batch seed routing rows using SQLite SELECT with IN (?) clause,
+  // executing 1 SQL query per chunk of 90 IDs rather than loop-based multi-row INSERTs.
+  private seedRoutingForHumans(humanIds: string[], now: number): void {
+    if (humanIds.length === 0) return;
+    const CHUNK_SIZE = 90;
+    for (let i = 0; i < humanIds.length; i += CHUNK_SIZE) {
+      const chunk = humanIds.slice(i, i + CHUNK_SIZE);
+      const placeholders = chunk.map(() => "?").join(", ");
+      this.ctx.storage.sql.exec(
+        `INSERT INTO routing (human_id, ai_id, hears_me, i_hear_it, updated_at)
+         SELECT p_human.id, p_ai.id, 0, 1, ?
+         FROM participants p_human
+         JOIN participants p_ai ON p_ai.role = 'ai' AND p_ai.state != 'left'
+         WHERE p_human.id IN (${placeholders})
+         ON CONFLICT(human_id, ai_id) DO NOTHING`,
+        now,
+        ...chunk,
+      );
+    }
+  }
+
+  private seedRoutingForAis(aiIds: string[], now: number): void {
+    if (aiIds.length === 0) return;
+    const CHUNK_SIZE = 90;
+    for (let i = 0; i < aiIds.length; i += CHUNK_SIZE) {
+      const chunk = aiIds.slice(i, i + CHUNK_SIZE);
+      const placeholders = chunk.map(() => "?").join(", ");
+      this.ctx.storage.sql.exec(
+        `INSERT INTO routing (human_id, ai_id, hears_me, i_hear_it, updated_at)
+         SELECT p_human.id, p_ai.id, 0, 1, ?
+         FROM participants p_ai
+         JOIN participants p_human ON p_human.role = 'human' AND p_human.state != 'left'
+         WHERE p_ai.id IN (${placeholders})
+         ON CONFLICT(human_id, ai_id) DO NOTHING`,
+        now,
+        ...chunk,
+      );
+    }
   }
 
   private async releaseFloorInternal(aiId: string, now: number): Promise<void> {
@@ -784,21 +812,15 @@ export class Room extends DurableObject<Env> {
     if (countToAdd > 0) {
       const now = Date.now();
       if (role === "human") {
-        const added = await Promise.all(
-          Array.from({ length: countToAdd }, (_, i) => {
-            const index = existing.length + i;
-            const name = simulatedName("human", index);
-            const id = crypto.randomUUID();
-            return sha256(randomToken()).then((hash) => ({ id, name, hash }));
-          }),
-        );
+        // Performance optimization (⚡ Bolt): Synchronously generate unique random UUIDs for simulated
+        // participants instead of awaiting WebCrypto SHA-256 digests in an async loop.
+        const added = Array.from({ length: countToAdd }, (_, i) => {
+          const index = existing.length + i;
+          const name = simulatedName("human", index);
+          const id = crypto.randomUUID();
+          return { id, name, hash: crypto.randomUUID() };
+        });
 
-        const ais = this.ctx.storage.sql
-          .exec<ParticipantRow>("SELECT id FROM participants WHERE role = 'ai' AND state != 'left'")
-          .toArray();
-
-        // Performance optimization (⚡ Bolt): Batch SQL inserts into 12-row chunks (84 variables: 7 per row)
-        // to maximize batching while respecting Cloudflare Workers SQLite's 100-variable limit.
         const CHUNK_SIZE = 12;
         for (let i = 0; i < added.length; i += CHUNK_SIZE) {
           const chunk = added.slice(i, i + CHUNK_SIZE);
@@ -819,15 +841,10 @@ export class Room extends DurableObject<Env> {
           );
         }
 
-        if (ais.length > 0) {
-          const routingRows: Array<{ humanId: string; aiId: string; updatedAt: number }> = [];
-          for (const item of added) {
-            for (const ai of ais) {
-              routingRows.push({ humanId: item.id, aiId: ai.id, updatedAt: now });
-            }
-          }
-          batchInsertRouting(this.ctx.storage.sql, routingRows);
-        }
+        this.seedRoutingForHumans(
+          added.map((item) => item.id),
+          now,
+        );
 
         for (const item of added) {
           this.broadcast({
@@ -838,31 +855,23 @@ export class Room extends DurableObject<Env> {
           });
         }
       } else {
-        const added = await Promise.all(
-          Array.from({ length: countToAdd }, (_, i) => {
-            const index = existing.length + i;
-            const name = simulatedName("ai", index);
-            const aiId = crypto.randomUUID();
-            const address = `ai/${slug(name)}`;
-            const wakeName = name;
-            return sha256(randomToken()).then((hash) => ({
-              id: aiId,
-              name,
-              hash,
-              address,
-              wakeName,
-            }));
-          }),
-        );
+        // Performance optimization (⚡ Bolt): Synchronously generate unique random UUIDs for simulated
+        // participants instead of awaiting WebCrypto SHA-256 digests in an async loop.
+        const added = Array.from({ length: countToAdd }, (_, i) => {
+          const index = existing.length + i;
+          const name = simulatedName("ai", index);
+          const aiId = crypto.randomUUID();
+          const address = `ai/${slug(name)}`;
+          const wakeName = name;
+          return {
+            id: aiId,
+            name,
+            hash: crypto.randomUUID(),
+            address,
+            wakeName,
+          };
+        });
 
-        const humans = this.ctx.storage.sql
-          .exec<ParticipantRow>(
-            "SELECT id FROM participants WHERE role = 'human' AND state != 'left'",
-          )
-          .toArray();
-
-        // Performance optimization (⚡ Bolt): Batch SQL inserts into 12-row chunks (84 variables: 7 per row)
-        // to maximize batching while respecting Cloudflare Workers SQLite's 100-variable limit.
         const CHUNK_SIZE = 12;
         for (let i = 0; i < added.length; i += CHUNK_SIZE) {
           const chunk = added.slice(i, i + CHUNK_SIZE);
@@ -883,15 +892,10 @@ export class Room extends DurableObject<Env> {
           );
         }
 
-        if (humans.length > 0) {
-          const routingRows: Array<{ humanId: string; aiId: string; updatedAt: number }> = [];
-          for (const item of added) {
-            for (const human of humans) {
-              routingRows.push({ humanId: human.id, aiId: item.id, updatedAt: now });
-            }
-          }
-          batchInsertRouting(this.ctx.storage.sql, routingRows);
-        }
+        this.seedRoutingForAis(
+          added.map((item) => item.id),
+          now,
+        );
 
         for (const item of added) {
           this.broadcast({
@@ -906,10 +910,10 @@ export class Room extends DurableObject<Env> {
 
     const surplus = existing.slice(target);
     if (surplus.length > 0) {
+      const now = Date.now();
+      const surplusIds = surplus.map((p) => p.id);
+      const placeholders = surplusIds.map(() => "?").join(", ");
       if (role === "human") {
-        const now = Date.now();
-        const surplusIds = surplus.map((p) => p.id);
-        const placeholders = surplusIds.map(() => "?").join(", ");
         this.ctx.storage.sql.exec(
           `UPDATE participants SET state = 'left', reconnect_until = NULL WHERE id IN (${placeholders})`,
           ...surplusIds,
@@ -927,8 +931,24 @@ export class Room extends DurableObject<Env> {
           });
         }
       } else {
-        for (const item of surplus) {
-          await this.removeAiInternal(item.id);
+        // Performance optimization (⚡ Bolt): Batch update surplus AI states and routing rows
+        // instead of calling removeAiInternal in a loop (which triggers redundant snapshot() calls).
+        this.ctx.storage.sql.exec(
+          `UPDATE participants SET state = 'left', pipeline = 'unavailable', reconnect_until = NULL WHERE id IN (${placeholders})`,
+          ...surplusIds,
+        );
+        this.ctx.storage.sql.exec(
+          `DELETE FROM routing WHERE ai_id IN (${placeholders})`,
+          ...surplusIds,
+        );
+        for (const id of surplusIds) {
+          await this.releaseFloorInternal(id, now);
+          this.broadcast({
+            type: "participant_changed",
+            participantId: id,
+            state: "left",
+            at: now,
+          });
         }
       }
     }
@@ -1215,30 +1235,6 @@ function slug(value: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
-}
-
-function batchInsertRouting(
-  sql: SqlStorage,
-  rows: Array<{ humanId: string; aiId: string; updatedAt: number }>,
-): void {
-  if (rows.length === 0) return;
-  // Performance optimization (⚡ Bolt): Increase chunk size to 30 rows per INSERT statement (90 variables)
-  // to maximize batching while respecting Cloudflare Workers SQLite's 100-variable limit.
-  const CHUNK_SIZE = 30;
-  for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
-    const chunk = rows.slice(i, i + CHUNK_SIZE);
-    const placeholders: string[] = [];
-    const params: SqlStorageValue[] = [];
-    for (const r of chunk) {
-      placeholders.push("(?, ?, 0, 1, ?)");
-      params.push(r.humanId, r.aiId, r.updatedAt);
-    }
-    sql.exec(
-      `INSERT INTO routing (human_id, ai_id, hears_me, i_hear_it, updated_at)
-       VALUES ${placeholders.join(", ")} ON CONFLICT(human_id, ai_id) DO NOTHING`,
-      ...params,
-    );
-  }
 }
 
 function clampSimulated(value: number): number {
