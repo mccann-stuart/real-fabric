@@ -199,4 +199,32 @@ describe("request validation", () => {
       code: "unsupported_media_type",
     } satisfies Partial<HttpError>);
   });
+
+  it("rejects request payload exceeding max byte limit via content-length header", async () => {
+    const request = new Request("https://example.test", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "content-length": "20000",
+      },
+      body: JSON.stringify({ data: "a".repeat(100) }),
+    });
+    await expect(readJsonObject(request)).rejects.toMatchObject({
+      status: 413,
+      code: "payload_too_large",
+    } satisfies Partial<HttpError>);
+  });
+
+  it("rejects request payload exceeding max byte limit via body size", async () => {
+    const largeBody = JSON.stringify({ padding: "a".repeat(17000) });
+    const request = new Request("https://example.test", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: largeBody,
+    });
+    await expect(readJsonObject(request)).rejects.toMatchObject({
+      status: 413,
+      code: "payload_too_large",
+    } satisfies Partial<HttpError>);
+  });
 });
