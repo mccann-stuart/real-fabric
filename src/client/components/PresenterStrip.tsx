@@ -122,6 +122,7 @@ export function PresenterStrip({
           <span>AI hears AI</span>
           <input
             type="checkbox"
+            aria-label="AI hears AI"
             checked={room.aiToAi.enabled}
             onChange={(event) => onAiToAi(event.target.checked)}
           />
