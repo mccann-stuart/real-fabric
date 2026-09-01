@@ -793,10 +793,6 @@ export class Room extends DurableObject<Env> {
           }),
         );
 
-        const ais = this.ctx.storage.sql
-          .exec<ParticipantRow>("SELECT id FROM participants WHERE role = 'ai' AND state != 'left'")
-          .toArray();
-
         // Performance optimization (⚡ Bolt): Batch SQL inserts into 12-row chunks (84 variables: 7 per row)
         // to maximize batching while respecting Cloudflare Workers SQLite's 100-variable limit.
         const CHUNK_SIZE = 12;
@@ -819,15 +815,7 @@ export class Room extends DurableObject<Env> {
           );
         }
 
-        if (ais.length > 0) {
-          const routingRows: Array<{ humanId: string; aiId: string; updatedAt: number }> = [];
-          for (const item of added) {
-            for (const ai of ais) {
-              routingRows.push({ humanId: item.id, aiId: ai.id, updatedAt: now });
-            }
-          }
-          batchInsertRouting(this.ctx.storage.sql, routingRows);
-        }
+        this.seedRoutingMatrix(now);
 
         for (const item of added) {
           this.broadcast({
@@ -855,12 +843,6 @@ export class Room extends DurableObject<Env> {
           }),
         );
 
-        const humans = this.ctx.storage.sql
-          .exec<ParticipantRow>(
-            "SELECT id FROM participants WHERE role = 'human' AND state != 'left'",
-          )
-          .toArray();
-
         // Performance optimization (⚡ Bolt): Batch SQL inserts into 12-row chunks (84 variables: 7 per row)
         // to maximize batching while respecting Cloudflare Workers SQLite's 100-variable limit.
         const CHUNK_SIZE = 12;
@@ -883,15 +865,7 @@ export class Room extends DurableObject<Env> {
           );
         }
 
-        if (humans.length > 0) {
-          const routingRows: Array<{ humanId: string; aiId: string; updatedAt: number }> = [];
-          for (const item of added) {
-            for (const human of humans) {
-              routingRows.push({ humanId: human.id, aiId: item.id, updatedAt: now });
-            }
-          }
-          batchInsertRouting(this.ctx.storage.sql, routingRows);
-        }
+        this.seedRoutingMatrix(now);
 
         for (const item of added) {
           this.broadcast({
@@ -1131,6 +1105,24 @@ export class Room extends DurableObject<Env> {
     );
   }
 
+  /**
+   * Performance optimization (⚡ Bolt): Populates the routing matrix for all active human-AI pairs
+   * directly in SQLite with a single CROSS JOIN query, avoiding JS array allocations and multiple
+   * chunked INSERT statements.
+   */
+  private seedRoutingMatrix(now: number): void {
+    this.ctx.storage.sql.exec(
+      `INSERT INTO routing (human_id, ai_id, hears_me, i_hear_it, updated_at)
+       SELECT p_human.id, p_ai.id, 0, 1, ?
+       FROM participants p_human
+       CROSS JOIN participants p_ai
+       WHERE p_human.role = 'human' AND p_human.state != 'left'
+         AND p_ai.role = 'ai' AND p_ai.state != 'left'
+       ON CONFLICT(human_id, ai_id) DO NOTHING`,
+      now,
+    );
+  }
+
   private async rescheduleAlarm(): Promise<void> {
     const meta = this.meta();
     if (!meta) return;
@@ -1215,30 +1207,6 @@ function slug(value: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
-}
-
-function batchInsertRouting(
-  sql: SqlStorage,
-  rows: Array<{ humanId: string; aiId: string; updatedAt: number }>,
-): void {
-  if (rows.length === 0) return;
-  // Performance optimization (⚡ Bolt): Increase chunk size to 30 rows per INSERT statement (90 variables)
-  // to maximize batching while respecting Cloudflare Workers SQLite's 100-variable limit.
-  const CHUNK_SIZE = 30;
-  for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
-    const chunk = rows.slice(i, i + CHUNK_SIZE);
-    const placeholders: string[] = [];
-    const params: SqlStorageValue[] = [];
-    for (const r of chunk) {
-      placeholders.push("(?, ?, 0, 1, ?)");
-      params.push(r.humanId, r.aiId, r.updatedAt);
-    }
-    sql.exec(
-      `INSERT INTO routing (human_id, ai_id, hears_me, i_hear_it, updated_at)
-       VALUES ${placeholders.join(", ")} ON CONFLICT(human_id, ai_id) DO NOTHING`,
-      ...params,
-    );
-  }
 }
 
 function clampSimulated(value: number): number {

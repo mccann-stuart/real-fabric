@@ -34,6 +34,7 @@ export function buildEdges(
       live: true,
     });
   }
+  const subscribedSet = new Set(subscribedIds);
   for (const participant of participants) {
     if (participant.id === viewerId || participant.state === "left") continue;
     edges.push({
@@ -41,7 +42,7 @@ export function buildEdges(
       from: "relay",
       to: viewerId,
       kind: "subscription",
-      live: subscribedIds.includes(participant.id),
+      live: subscribedSet.has(participant.id),
     });
   }
   // Inbound routing: which humans each AI is subscribed to. Only the viewer's
