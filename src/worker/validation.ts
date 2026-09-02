@@ -8,14 +8,67 @@ export class HttpError extends Error {
   }
 }
 
-export async function readJsonObject(request: Request): Promise<Record<string, unknown>> {
+export async function readJsonObject(
+  request: Request,
+  maximumBytes = 8192,
+): Promise<Record<string, unknown>> {
   const contentType = request.headers.get("content-type") ?? "";
   if (!contentType.toLowerCase().includes("application/json")) {
     throw new HttpError(415, "unsupported_media_type", "Expected an application/json request.");
   }
 
+  const contentLengthHeader = request.headers.get("content-length");
+  if (contentLengthHeader !== null) {
+    const contentLength = Number.parseInt(contentLengthHeader, 10);
+    if (!Number.isNaN(contentLength) && contentLength > maximumBytes) {
+      throw new HttpError(
+        413,
+        "payload_too_large",
+        `Request body exceeds maximum allowed size of ${maximumBytes} bytes.`,
+      );
+    }
+  }
+
+  let text = "";
+  if (request.body) {
+    const reader = request.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let totalBytes = 0;
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+          totalBytes += value.byteLength;
+          if (totalBytes > maximumBytes) {
+            await reader.cancel("Payload too large");
+            throw new HttpError(
+              413,
+              "payload_too_large",
+              `Request body exceeds maximum allowed size of ${maximumBytes} bytes.`,
+            );
+          }
+          chunks.push(value);
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    const combined = new Uint8Array(totalBytes);
+    let offset = 0;
+    for (const chunk of chunks) {
+      combined.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    text = new TextDecoder().decode(combined);
+  } else {
+    text = await request.text();
+  }
+
   try {
-    const value: unknown = await request.json();
+    const value: unknown = JSON.parse(text);
     if (!value || typeof value !== "object" || Array.isArray(value)) {
       throw new Error("body is not an object");
     }
