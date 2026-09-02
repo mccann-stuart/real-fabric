@@ -1,3 +1,4 @@
+import { memo, useMemo } from "react";
 import type { Participant, RoutingPreference } from "../../shared/contracts";
 
 /**
@@ -34,6 +35,8 @@ export function buildEdges(
       live: true,
     });
   }
+  // Performance optimization (⚡ Bolt): Use Set for O(1) subscription checks instead of O(M) array lookup inside loop
+  const subscribedSet = new Set(subscribedIds);
   for (const participant of participants) {
     if (participant.id === viewerId || participant.state === "left") continue;
     edges.push({
@@ -41,7 +44,7 @@ export function buildEdges(
       from: "relay",
       to: viewerId,
       kind: "subscription",
-      live: subscribedIds.includes(participant.id),
+      live: subscribedSet.has(participant.id),
     });
   }
   // Inbound routing: which humans each AI is subscribed to. Only the viewer's
@@ -59,7 +62,7 @@ export function buildEdges(
   return edges;
 }
 
-export function SubscriptionGraph({
+export const SubscriptionGraph = memo(function SubscriptionGraph({
   participants,
   routing,
   viewerId,
@@ -72,21 +75,25 @@ export function SubscriptionGraph({
   publishing: boolean;
   subscribedIds: readonly string[];
 }) {
-  const active = participants.filter((participant) => participant.state !== "left");
-  const edges = buildEdges(participants, routing, viewerId, publishing, subscribedIds);
   const size = 260;
   const centre = size / 2;
   const radius = size / 2 - 30;
 
-  const positions = new Map<string, { x: number; y: number }>();
-  positions.set("relay", { x: centre, y: centre });
-  active.forEach((participant, index) => {
-    const angle = (index / Math.max(1, active.length)) * Math.PI * 2 - Math.PI / 2;
-    positions.set(participant.id, {
-      x: centre + Math.cos(angle) * radius,
-      y: centre + Math.sin(angle) * radius,
+  // Performance optimization (⚡ Bolt): Memoize active participant filtering, edge building, and trigonometric node positioning
+  const { active, edges, positions } = useMemo(() => {
+    const activeParticipants = participants.filter((participant) => participant.state !== "left");
+    const computedEdges = buildEdges(participants, routing, viewerId, publishing, subscribedIds);
+    const posMap = new Map<string, { x: number; y: number }>();
+    posMap.set("relay", { x: centre, y: centre });
+    activeParticipants.forEach((participant, index) => {
+      const angle = (index / Math.max(1, activeParticipants.length)) * Math.PI * 2 - Math.PI / 2;
+      posMap.set(participant.id, {
+        x: centre + Math.cos(angle) * radius,
+        y: centre + Math.sin(angle) * radius,
+      });
     });
-  });
+    return { active: activeParticipants, edges: computedEdges, positions: posMap };
+  }, [participants, routing, viewerId, publishing, subscribedIds, centre, radius]);
 
   return (
     <div className="graph-view">
@@ -144,4 +151,4 @@ export function SubscriptionGraph({
       </ul>
     </div>
   );
-}
+});
