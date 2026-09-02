@@ -199,4 +199,50 @@ describe("request validation", () => {
       code: "unsupported_media_type",
     } satisfies Partial<HttpError>);
   });
+
+  describe("readJsonObject body size limits", () => {
+    it("rejects request when Content-Length header exceeds maximumBytes", async () => {
+      const request = new Request("https://example.test", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "content-length": "10000",
+        },
+        body: JSON.stringify({ key: "value" }),
+      });
+      await expect(readJsonObject(request, 8192)).rejects.toMatchObject({
+        status: 413,
+        code: "payload_too_large",
+      } satisfies Partial<HttpError>);
+    });
+
+    it("rejects request when streaming body exceeds maximumBytes", async () => {
+      const largePayload = { padding: "a".repeat(10000) };
+      const bodyText = JSON.stringify(largePayload);
+      const request = new Request("https://example.test", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: bodyText,
+      });
+      await expect(readJsonObject(request, 8192)).rejects.toMatchObject({
+        status: 413,
+        code: "payload_too_large",
+      } satisfies Partial<HttpError>);
+    });
+
+    it("parses valid JSON within byte limit successfully", async () => {
+      const payload = { test: "data" };
+      const request = new Request("https://example.test", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+      const result = await readJsonObject(request, 8192);
+      expect(result).toEqual(payload);
+    });
+  });
 });
