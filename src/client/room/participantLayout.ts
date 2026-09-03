@@ -39,12 +39,20 @@ export function layoutParticipants(
   const prominent: Participant[] = viewer ? [viewer] : [];
   const taken = new Set(prominent.map((participant) => participant.id));
 
+  // Performance optimization (⚡ Bolt): Build a Map for O(1) candidate lookup instead of
+  // O(N) array search inside previousProminent loop.
+  const activeMap = new Map<string, Participant>();
+  for (let index = 0; index < byRecency.length; index += 1) {
+    const item = byRecency[index];
+    if (item) activeMap.set(item.id, item);
+  }
+
   // Keep whoever was already prominent and is still recent, before admitting
   // anyone new. This is the churn damping.
   for (const id of previousProminent) {
     if (prominent.length >= PROMINENT_SPEAKERS) break;
     if (taken.has(id)) continue;
-    const candidate = byRecency.find((participant) => participant.id === id);
+    const candidate = activeMap.get(id);
     if (candidate) {
       prominent.push(candidate);
       taken.add(id);
