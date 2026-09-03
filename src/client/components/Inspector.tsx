@@ -101,7 +101,12 @@ export function Inspector({
         </button>
       </div>
 
-      <div className="inspector__tabs" role="tablist">
+      <div
+        className="inspector__tabs"
+        role="tablist"
+        aria-label="Inspector sections"
+        aria-orientation="horizontal"
+      >
         {INSPECTOR_TABS.map(([id, label, accessibleLabel], index) => (
           <button
             key={id}

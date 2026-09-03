@@ -45,9 +45,10 @@ export function EntryPage({
           {/* H4: stated before joining. */}
           <p className="headphones">⌁ Headphones required</p>
           <div className="form-grid">
-            <label>
+            <label htmlFor="entry-display-name">
               Your name
               <input
+                id="entry-display-name"
                 autoComplete="name"
                 maxLength={80}
                 value={displayName}
@@ -55,9 +56,10 @@ export function EntryPage({
                 placeholder="Ada Lovelace"
               />
             </label>
-            <label>
+            <label htmlFor="entry-room-code">
               Room code
               <input
+                id="entry-room-code"
                 autoCapitalize="characters"
                 maxLength={20}
                 value={roomCode}
@@ -100,9 +102,10 @@ export function EntryPage({
 
           <fieldset className="simulation-config">
             <legend>Solo presenter mode — simulated participants</legend>
-            <label>
+            <label htmlFor="entry-simulated-humans">
               Humans
               <input
+                id="entry-simulated-humans"
                 type="number"
                 min={0}
                 max={MAX_SIMULATED_PARTICIPANTS}
@@ -110,9 +113,10 @@ export function EntryPage({
                 onChange={(event) => setSimulatedHumans(Number(event.target.value))}
               />
             </label>
-            <label>
+            <label htmlFor="entry-simulated-ais">
               AIs
               <input
+                id="entry-simulated-ais"
                 type="number"
                 min={0}
                 max={MAX_SIMULATED_PARTICIPANTS}

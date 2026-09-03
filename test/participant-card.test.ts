@@ -45,26 +45,39 @@ describe("ParticipantCard component", () => {
     expect(html).toContain("Ada AI");
     expect(html).toContain("Hold to ask Ada AI");
     expect(html).toContain('aria-label="Hears me (Ada AI)"');
+    expect(html).toContain('aria-pressed="false"');
   });
 
   it("invokes onAddressDown and onAddressUp on keyboard Space/Enter events", () => {
     const onAddressDown = vi.fn();
     const onAddressUp = vi.fn();
 
-    const element = ParticipantCard({
-      participant: mockAi,
-      current: false,
-      viewerId: "human-1",
-      routing: mockRouting,
-      connectedHumanIds: ["human-1"],
-      onRouting: () => {},
-      onAddressDown,
-      onAddressUp,
-    });
+    let cardElement: React.ReactElement | null = null;
+    renderToStaticMarkup(
+      React.createElement(() => {
+        cardElement = ParticipantCard({
+          participant: mockAi,
+          current: false,
+          viewerId: "human-1",
+          routing: mockRouting,
+          connectedHumanIds: ["human-1"],
+          onRouting: () => {},
+          onAddressDown,
+          onAddressUp,
+        });
+        return cardElement;
+      }),
+    );
 
+    if (!cardElement) throw new Error("Card element was not rendered");
     // Find ask-button in element tree
-    const routingDiv = element.props.children[4];
-    const askButton = routingDiv.props.children[2];
+    const elementProps = (cardElement as React.ReactElement<{ children: unknown[] }>).props;
+    const routingDiv = elementProps.children[4] as React.ReactElement<{ children: unknown[] }>;
+    const askButton = routingDiv.props.children[2] as React.ReactElement<{
+      className: string;
+      onKeyDown: (event: unknown) => void;
+      onKeyUp: (event: unknown) => void;
+    }>;
 
     expect(askButton.props.className).toBe("ask-button");
 
