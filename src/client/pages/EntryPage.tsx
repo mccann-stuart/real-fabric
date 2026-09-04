@@ -134,7 +134,12 @@ export function EntryPage({
             </p>
           </fieldset>
 
-          <button className="mic-test" type="button" onClick={() => void testMicrophone()}>
+          <button
+            className="mic-test"
+            type="button"
+            aria-label="Mic level test"
+            onClick={() => void testMicrophone()}
+          >
             <span>◉ Mic level test</span>
             <output className="sr-only" aria-live="polite" aria-atomic="true">
               Microphone level {Math.round(level * 100)} percent
