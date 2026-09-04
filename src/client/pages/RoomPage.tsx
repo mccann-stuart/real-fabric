@@ -15,6 +15,7 @@ import { useRoomSession } from "../hooks/useRoomSession";
 import { DemoRunner } from "../presenter/DemoScript";
 import { layoutParticipants } from "../room/participantLayout";
 import { microphoneAction, representedFailureCodes } from "../room/roomPresentation";
+import type { TrackSubscriptionState } from "../session/RoomSession";
 
 export function RoomPage({ code, navigate }: { code: string; navigate: (path: string) => void }) {
   const [stored] = useState(() => loadSession(code));
@@ -76,6 +77,18 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
         .map((participant) => participant.id),
     [room],
   );
+
+  const subscriptionMap = useMemo(() => {
+    const map = new Map<string, TrackSubscriptionState>();
+    const subscriptions = state?.subscriptions;
+    if (subscriptions) {
+      for (let index = 0; index < subscriptions.length; index += 1) {
+        const item = subscriptions[index];
+        if (item) map.set(item.participantId, item);
+      }
+    }
+    return map;
+  }, [state?.subscriptions]);
 
   const changeRouting = useCallback(
     (aiId: string, hearsMe: boolean, iHearIt: boolean) => {
@@ -171,9 +184,7 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
       connectedHumanIds={connectedHumanIds}
       level={participant.id === viewerId && !state?.muted ? (state?.micLevel ?? 0) : 0}
       speaking={participant.id === viewerId && !state?.muted ? (state?.speaking ?? false) : false}
-      subscription={state?.subscriptions.find(
-        (subscription) => subscription.participantId === participant.id,
-      )}
+      subscription={subscriptionMap.get(participant.id)}
       onSubscription={changeSubscription}
       onRouting={changeRouting}
       onAddressDown={(aiId) => void session?.address(aiId)}

@@ -191,14 +191,32 @@ export function aiDisplayActivity(
 ): AiDisplayActivity {
   if (ai.pipeline === "unavailable" || ai.state === "left") return "Unavailable";
 
-  const viewerRow = routing.find((row) => row.aiId === ai.id && row.humanId === viewerId);
-  if (viewerRow && !viewerRow.hearsMe) return "Not listening to you";
+  // Performance optimization (⚡ Bolt): Single linear pass over routing array instead of
+  // O(|connectedHumanIds| * |routing|) nested iterations with .find() and .every() + .some().
+  let viewerHearsMe: boolean | undefined;
+  const hearingHumans = new Set<string>();
+
+  for (let index = 0; index < routing.length; index += 1) {
+    const row = routing[index];
+    if (row && row.aiId === ai.id) {
+      if (row.humanId === viewerId) {
+        viewerHearsMe = row.hearsMe;
+      }
+      if (row.hearsMe) {
+        hearingHumans.add(row.humanId);
+      }
+    }
+  }
+
+  if (viewerHearsMe === false) return "Not listening to you";
 
   // Visible to everyone: this AI is answering on an incomplete picture.
-  const hearsEveryHuman = connectedHumanIds.every((humanId) =>
-    routing.some((row) => row.aiId === ai.id && row.humanId === humanId && row.hearsMe),
-  );
-  if (!hearsEveryHuman) return "Partial context";
+  for (let index = 0; index < connectedHumanIds.length; index += 1) {
+    const humanId = connectedHumanIds[index];
+    if (humanId && !hearingHumans.has(humanId)) {
+      return "Partial context";
+    }
+  }
 
   switch (ai.pipeline) {
     case "thinking":
