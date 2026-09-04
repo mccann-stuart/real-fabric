@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   type AiDisplayActivity,
   aiDisplayActivity,
@@ -42,6 +43,8 @@ export function ParticipantCard({
   onAddressDown,
   onAddressUp,
 }: ParticipantCardProps) {
+  const [isAddressing, setIsAddressing] = useState(false);
+
   const isAi = participant.role === "ai";
   const activity: AiDisplayActivity | "Reconnecting" | "Speaking" | "Listening" =
     participant.state === "reconnecting"
@@ -51,6 +54,16 @@ export function ParticipantCard({
         : speaking
           ? "Speaking"
           : "Listening";
+
+  const handleAddressStart = () => {
+    setIsAddressing(true);
+    onAddressDown?.(participant.id);
+  };
+
+  const handleAddressEnd = () => {
+    setIsAddressing(false);
+    onAddressUp?.(participant.id);
+  };
 
   const row = routing.find((entry) => entry.aiId === participant.id && entry.humanId === viewerId);
   const subscriptionControl =
@@ -124,19 +137,20 @@ export function ParticipantCard({
           <button
             className="ask-button"
             type="button"
-            onPointerDown={() => onAddressDown?.(participant.id)}
-            onPointerUp={() => onAddressUp?.(participant.id)}
-            onPointerLeave={() => onAddressUp?.(participant.id)}
+            aria-pressed={isAddressing}
+            onPointerDown={handleAddressStart}
+            onPointerUp={handleAddressEnd}
+            onPointerLeave={handleAddressEnd}
             onKeyDown={(event) => {
               if ((event.key === " " || event.key === "Enter") && !event.repeat) {
                 event.preventDefault();
-                onAddressDown?.(participant.id);
+                handleAddressStart();
               }
             }}
             onKeyUp={(event) => {
               if (event.key === " " || event.key === "Enter") {
                 event.preventDefault();
-                onAddressUp?.(participant.id);
+                handleAddressEnd();
               }
             }}
           >

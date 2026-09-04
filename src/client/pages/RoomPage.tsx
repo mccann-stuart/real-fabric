@@ -324,6 +324,7 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
           <button
             type="button"
             disabled={!state?.publishing}
+            aria-pressed={state?.muted ?? false}
             onClick={() => setMuted(!(state?.muted ?? false))}
           >
             {state?.muted ? "Unmute" : "Mute"}

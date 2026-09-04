@@ -97,9 +97,10 @@ export function PresenterStrip({
 
       <div className="presenter-controls">
         {/* H11: a configurable number of labelled simulated participants. */}
-        <label>
+        <label htmlFor="presenter-simulated-humans">
           Simulated humans
           <input
+            id="presenter-simulated-humans"
             type="number"
             min={0}
             max={MAX_SIMULATED_PARTICIPANTS}
@@ -107,9 +108,10 @@ export function PresenterStrip({
             onChange={(event) => onSimulate(clamp(Number(event.target.value)), simulatedAis)}
           />
         </label>
-        <label>
+        <label htmlFor="presenter-simulated-ais">
           Simulated AIs
           <input
+            id="presenter-simulated-ais"
             type="number"
             min={0}
             max={MAX_SIMULATED_PARTICIPANTS}
@@ -123,6 +125,7 @@ export function PresenterStrip({
           <input
             type="checkbox"
             checked={room.aiToAi.enabled}
+            aria-label="AI hears AI"
             onChange={(event) => onAiToAi(event.target.checked)}
           />
           <i aria-hidden="true" />
