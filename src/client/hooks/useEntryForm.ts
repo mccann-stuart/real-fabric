@@ -14,6 +14,7 @@ export function useEntryForm({ navigate, initialCode = "", stopMicrophone }: Use
   const [displayName, setDisplayName] = useState("");
   const [roomCode, setRoomCode] = useState(normaliseCode(initialCode));
   const [busy, setBusy] = useState(false);
+  const [pendingMode, setPendingMode] = useState<"create" | "join" | "presenter" | null>(null);
   const [error, setError] = useState("");
   const [simulatedHumans, setSimulatedHumans] = useState(5);
   const [simulatedAis, setSimulatedAis] = useState(2);
@@ -37,6 +38,7 @@ export function useEntryForm({ navigate, initialCode = "", stopMicrophone }: Use
       return;
     }
     setBusy(true);
+    setPendingMode(mode);
     setError("");
     try {
       const result =
@@ -67,6 +69,7 @@ export function useEntryForm({ navigate, initialCode = "", stopMicrophone }: Use
       setError(reason instanceof Error ? reason.message : "The room could not be opened.");
     } finally {
       setBusy(false);
+      setPendingMode(null);
     }
   };
 
@@ -76,6 +79,7 @@ export function useEntryForm({ navigate, initialCode = "", stopMicrophone }: Use
     roomCode,
     setRoomCode: (code: string) => setRoomCode(normaliseCode(code)),
     busy,
+    pendingMode,
     error,
     simulatedHumans,
     setSimulatedHumans: updateSimulatedHumans,

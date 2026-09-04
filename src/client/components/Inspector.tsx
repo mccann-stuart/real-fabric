@@ -1,4 +1,4 @@
-import { type KeyboardEvent, type ReactNode, useState } from "react";
+import { type KeyboardEvent, type ReactNode, useEffect, useState } from "react";
 import {
   BARGE_IN_BUDGET_MS,
   ROUTING_CHANGE_BUDGET_MS,
@@ -71,6 +71,17 @@ export function Inspector({
   onClose,
 }: InspectorProps) {
   const [tab, setTab] = useState<Tab>("signal");
+
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+    globalThis.addEventListener?.("keydown", handleKeyDown);
+    return () => globalThis.removeEventListener?.("keydown", handleKeyDown);
+  }, [open, onClose]);
 
   const moveTabFocus = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
     let nextIndex: number | null = null;

@@ -23,6 +23,7 @@ export function EntryPage({
     roomCode,
     setRoomCode,
     busy,
+    pendingMode,
     error,
     simulatedHumans,
     setSimulatedHumans,
@@ -70,26 +71,29 @@ export function EntryPage({
             <button
               className="button button--primary"
               disabled={busy}
+              aria-busy={pendingMode === "create"}
               type="button"
               onClick={() => void enterRoom("create")}
             >
-              Create demo room
+              {pendingMode === "create" ? "Creating demo room…" : "Create demo room"}
             </button>
             <button
               className="button"
               disabled={busy}
+              aria-busy={pendingMode === "join"}
               type="button"
               onClick={() => void enterRoom("join")}
             >
-              Join room
+              {pendingMode === "join" ? "Joining room…" : "Join room"}
             </button>
             <button
               className="button"
               disabled={busy}
+              aria-busy={pendingMode === "presenter"}
               type="button"
               onClick={() => void enterRoom("presenter")}
             >
-              Solo presenter mode
+              {pendingMode === "presenter" ? "Opening presenter mode…" : "Solo presenter mode"}
             </button>
             <button
               className="link-button link-button--large"
