@@ -26,12 +26,46 @@ export async function readJsonObject(request: Request): Promise<Record<string, u
     }
   }
 
-  try {
-    const text = await request.text();
-    // Security: Check actual byte size before parsing JSON to prevent memory/CPU exhaustion
+  let text: string;
+  if (request.body) {
+    const reader = request.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let totalBytes = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+          totalBytes += value.byteLength;
+          if (totalBytes > MAX_BODY_BYTES) {
+            await reader.cancel("payload_too_large");
+            throw new HttpError(
+              413,
+              "payload_too_large",
+              "Request body exceeds maximum allowed size.",
+            );
+          }
+          chunks.push(value);
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    const concatenated = new Uint8Array(totalBytes);
+    let offset = 0;
+    for (const chunk of chunks) {
+      concatenated.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    text = new TextDecoder().decode(concatenated);
+  } else {
+    text = await request.text();
     if (new TextEncoder().encode(text).byteLength > MAX_BODY_BYTES) {
       throw new HttpError(413, "payload_too_large", "Request body exceeds maximum allowed size.");
     }
+  }
+
+  try {
     const value: unknown = JSON.parse(text);
     if (!value || typeof value !== "object" || Array.isArray(value)) {
       throw new Error("body is not an object");
