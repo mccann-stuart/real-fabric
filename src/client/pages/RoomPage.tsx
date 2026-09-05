@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Participant } from "../../shared/contracts";
 import { notExposed } from "../../shared/measurement";
 import { currentUserAgentFacts, matchConfiguration } from "../../shared/pinnedConfiguration";
@@ -28,6 +28,7 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
   const iphoneAudioCandidate = configuration.device === "iPhone" && configuration.liveAudioEligible;
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [leaving, setLeaving] = useState(false);
   const [leaveError, setLeaveError] = useState<string | null>(null);
   const leaveDialog = useRef<HTMLDialogElement>(null);
@@ -43,13 +44,27 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
     Boolean(state?.degradation.announcement),
   );
 
+  useEffect(() => {
+    return () => {
+      if (copyTimeoutRef.current) {
+        clearTimeout(copyTimeoutRef.current);
+      }
+    };
+  }, []);
+
   const copyInvite = useCallback(async () => {
+    if (copyTimeoutRef.current) {
+      clearTimeout(copyTimeoutRef.current);
+    }
     try {
       await navigator.clipboard.writeText(`${location.origin}/room/${code}`);
       setCopyState("copied");
     } catch {
       setCopyState("failed");
     }
+    copyTimeoutRef.current = setTimeout(() => {
+      setCopyState("idle");
+    }, 2500);
   }, [code]);
 
   const confirmLeave = useCallback(async () => {
