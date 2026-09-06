@@ -141,6 +141,8 @@ export function ParticipantCard({
             onPointerDown={handleAddressStart}
             onPointerUp={handleAddressEnd}
             onPointerLeave={handleAddressEnd}
+            onPointerCancel={handleAddressEnd}
+            onBlur={handleAddressEnd}
             onKeyDown={(event) => {
               if ((event.key === " " || event.key === "Enter") && !event.repeat) {
                 event.preventDefault();
@@ -154,7 +156,9 @@ export function ParticipantCard({
               }
             }}
           >
-            Hold to ask {participant.displayName}
+            {isAddressing
+              ? `Asking ${participant.displayName}…`
+              : `Hold to ask ${participant.displayName}`}
           </button>
           {/* FR8: say which form is in effect rather than implying a guarantee
               the transport is not providing. */}

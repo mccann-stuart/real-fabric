@@ -106,4 +106,50 @@ describe("ParticipantCard component", () => {
     askButton.props.onKeyUp({ key: "Enter", preventDefault });
     expect(onAddressUp).toHaveBeenCalledWith("ai-1");
   });
+
+  it("handles onPointerCancel and onBlur to end addressing safely", () => {
+    const onAddressDown = vi.fn();
+    const onAddressUp = vi.fn();
+
+    let cardElement: React.ReactElement | null = null;
+    renderToStaticMarkup(
+      React.createElement(() => {
+        cardElement = ParticipantCard({
+          participant: mockAi,
+          current: false,
+          viewerId: "human-1",
+          routing: mockRouting,
+          connectedHumanIds: ["human-1"],
+          onRouting: () => {},
+          onAddressDown,
+          onAddressUp,
+        });
+        return cardElement;
+      }),
+    );
+
+    if (!cardElement) throw new Error("Card element was not rendered");
+    const elementProps = (cardElement as React.ReactElement<{ children: unknown[] }>).props;
+    const routingDiv = elementProps.children[4] as React.ReactElement<{ children: unknown[] }>;
+    const askButton = routingDiv.props.children[2] as React.ReactElement<{
+      onPointerDown: () => void;
+      onPointerCancel: () => void;
+      onBlur: () => void;
+    }>;
+
+    askButton.props.onPointerDown();
+    expect(onAddressDown).toHaveBeenCalledWith("ai-1");
+
+    onAddressUp.mockClear();
+    askButton.props.onPointerCancel();
+    expect(onAddressUp).toHaveBeenCalledWith("ai-1");
+
+    onAddressDown.mockClear();
+    onAddressUp.mockClear();
+    askButton.props.onPointerDown();
+    expect(onAddressDown).toHaveBeenCalledWith("ai-1");
+
+    askButton.props.onBlur();
+    expect(onAddressUp).toHaveBeenCalledWith("ai-1");
+  });
 });
