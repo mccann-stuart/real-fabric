@@ -55,7 +55,11 @@ describe("ParticipantCard component", () => {
     let cardElement: React.ReactElement | null = null;
     renderToStaticMarkup(
       React.createElement(() => {
-        cardElement = ParticipantCard({
+        const rendered = (
+          ParticipantCard as unknown as {
+            type: (props: React.ComponentProps<typeof ParticipantCard>) => React.ReactElement;
+          }
+        ).type({
           participant: mockAi,
           current: false,
           viewerId: "human-1",
@@ -65,6 +69,7 @@ describe("ParticipantCard component", () => {
           onAddressDown,
           onAddressUp,
         });
+        cardElement = rendered as React.ReactElement;
         return cardElement;
       }),
     );

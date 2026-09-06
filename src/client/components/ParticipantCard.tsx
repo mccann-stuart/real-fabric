@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import {
   type AiDisplayActivity,
   aiDisplayActivity,
@@ -29,7 +29,12 @@ export interface ParticipantCardProps {
   onAddressUp?: (aiId: string) => void;
 }
 
-export function ParticipantCard({
+/**
+ * Performance optimization (⚡ Bolt): Wrap ParticipantCard in React.memo to prevent
+ * expensive card DOM re-renders across large participant grids when unrelated
+ * parent/sibling state changes (such as mic levels, timers, or inspector toggles).
+ */
+export const ParticipantCard = memo(function ParticipantCard({
   participant,
   current,
   viewerId,
@@ -167,7 +172,7 @@ export function ParticipantCard({
       ) : null}
     </article>
   );
-}
+});
 
 function Toggle({
   label,
