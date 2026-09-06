@@ -221,6 +221,57 @@ describe("Real Fabric Worker", () => {
 
     expect((await closed).code).toBe(4408);
   });
+
+  it("enforces one active WebSocket connection per participant ID by closing previous socket", async () => {
+    const createdResponse = await SELF.fetch("https://real-fabric.test/api/rooms", {
+      method: "POST",
+      headers: { "content-type": "application/json", "cf-connecting-ip": "192.0.2.51" },
+      body: JSON.stringify({ displayName: "Margaret" }),
+    });
+    const created = (await createdResponse.json()) as CreateRoomResponse;
+
+    const res1 = await SELF.fetch(
+      `https://real-fabric.test/api/rooms/${created.room.code}/events`,
+      { headers: { upgrade: "websocket" } },
+    );
+    expect(res1.status).toBe(101);
+    const socket1 = res1.webSocket as WebSocket;
+    socket1.accept();
+
+    socket1.send(
+      JSON.stringify({
+        type: "auth",
+        participantId: created.participant.id,
+        token: created.rejoinToken,
+      }),
+    );
+    await nextMessage(socket1);
+
+    const res2 = await SELF.fetch(
+      `https://real-fabric.test/api/rooms/${created.room.code}/events`,
+      { headers: { upgrade: "websocket" } },
+    );
+    expect(res2.status).toBe(101);
+    const socket2 = res2.webSocket as WebSocket;
+    socket2.accept();
+
+    const socket1Closed = nextClose(socket1);
+    socket2.send(
+      JSON.stringify({
+        type: "auth",
+        participantId: created.participant.id,
+        token: created.rejoinToken,
+      }),
+    );
+
+    const closeEvent = await socket1Closed;
+    expect(closeEvent.code).toBe(4000);
+    expect(closeEvent.reason).toBe("replaced by new connection");
+
+    const snapshot2 = await nextMessage(socket2);
+    expect(JSON.parse(String(snapshot2.data))).toMatchObject({ type: "snapshot" });
+    socket2.close(1000, "test complete");
+  });
 });
 
 function nextMessage(socket: WebSocket): Promise<MessageEvent> {
