@@ -1,7 +1,10 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { ParticipantCard } from "../src/client/components/ParticipantCard";
+import {
+  ParticipantCard,
+  type ParticipantCardProps,
+} from "../src/client/components/ParticipantCard";
 import type { Participant, RoutingPreference } from "../src/shared/contracts";
 
 describe("ParticipantCard component", () => {
@@ -52,19 +55,24 @@ describe("ParticipantCard component", () => {
     const onAddressDown = vi.fn();
     const onAddressUp = vi.fn();
 
+    const props: ParticipantCardProps = {
+      participant: mockAi,
+      current: false,
+      viewerId: "human-1",
+      routing: mockRouting,
+      connectedHumanIds: ["human-1"],
+      onRouting: () => {},
+      onAddressDown,
+      onAddressUp,
+    };
+
     let cardElement: React.ReactElement | null = null;
+    const RawParticipantCard = ParticipantCard.type as (
+      props: ParticipantCardProps,
+    ) => React.ReactElement;
     renderToStaticMarkup(
       React.createElement(() => {
-        cardElement = ParticipantCard({
-          participant: mockAi,
-          current: false,
-          viewerId: "human-1",
-          routing: mockRouting,
-          connectedHumanIds: ["human-1"],
-          onRouting: () => {},
-          onAddressDown,
-          onAddressUp,
-        });
+        cardElement = RawParticipantCard(props);
         return cardElement;
       }),
     );
