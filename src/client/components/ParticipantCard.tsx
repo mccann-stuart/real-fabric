@@ -138,6 +138,8 @@ export function ParticipantCard({
             className="ask-button"
             type="button"
             aria-pressed={isAddressing}
+            aria-label={`Hold to ask ${participant.displayName} (press and hold)`}
+            title={`Press and hold (or Space/Enter) to address ${participant.displayName}`}
             onPointerDown={handleAddressStart}
             onPointerUp={handleAddressEnd}
             onPointerLeave={handleAddressEnd}

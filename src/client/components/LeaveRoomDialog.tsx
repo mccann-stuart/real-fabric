@@ -47,6 +47,7 @@ export function LeaveRoomDialog({
           className="button button--compact button--danger"
           type="button"
           disabled={leaving}
+          aria-busy={leaving}
           onClick={onConfirmLeave}
         >
           {leaving ? "Leaving…" : "Leave room"}

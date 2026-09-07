@@ -151,6 +151,8 @@ export function Inspector({
         id="inspector-panel"
         className="inspector__body"
         role="tabpanel"
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: WAI-ARIA tabpanel requires tabIndex=0 for keyboard accessibility
+        tabIndex={0}
         aria-labelledby={`inspector-tab-${tab}`}
       >
         {tab === "signal" ? (
