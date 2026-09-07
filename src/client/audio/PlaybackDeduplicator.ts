@@ -11,6 +11,9 @@
 /** One group is one second of audio (§6.3), so this is a few seconds of memory. */
 const RETAINED_GROUPS_PER_PARTICIPANT = 4;
 
+/** Max object IDs per group (SEC-09 / CWE-770): 50 frames/sec nominal + 100% burst allowance. */
+export const MAX_OBJECTS_PER_GROUP = 100;
+
 export class PlaybackDeduplicator {
   private seen = new Map<string, Map<number, Set<number>>>();
 
@@ -33,6 +36,8 @@ export class PlaybackDeduplicator {
     }
 
     if (objects.has(objectId)) return false;
+    // Security: Bound retained object IDs per group to prevent memory exhaustion DoS (CWE-770).
+    if (objects.size >= MAX_OBJECTS_PER_GROUP) return false;
     objects.add(objectId);
     return true;
   }

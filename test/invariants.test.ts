@@ -4,7 +4,10 @@ import { ScriptedResponder } from "../src/client/ai/ScriptedResponder";
 import { AdaptiveJitterBuffer } from "../src/client/audio/AdaptiveJitterBuffer";
 import { DegradationLadder, describeStep } from "../src/client/audio/DegradationLadder";
 import { DriftEstimator, MAXIMUM_CORRECTION_RATIO } from "../src/client/audio/DriftEstimator";
-import { PlaybackDeduplicator } from "../src/client/audio/PlaybackDeduplicator";
+import {
+  MAX_OBJECTS_PER_GROUP,
+  PlaybackDeduplicator,
+} from "../src/client/audio/PlaybackDeduplicator";
 import { prioritiseFailureCodes } from "../src/client/components/FailureBanner";
 import { buildEdges } from "../src/client/components/SubscriptionGraph";
 import { DEMO_STEPS, DemoRunner, evaluateStep } from "../src/client/presenter/DemoScript";
@@ -703,6 +706,15 @@ describe("H12 — reload reclaims identity without duplicate playback", () => {
     const dedupe = new PlaybackDeduplicator();
     for (let group = 0; group < 40; group += 1) dedupe.accept("p1", group, 1);
     expect(dedupe.retainedGroups("p1")).toBeLessThanOrEqual(4);
+  });
+
+  it("bounds object IDs per group to prevent memory exhaustion (SEC-09 / CWE-770)", () => {
+    const dedupe = new PlaybackDeduplicator();
+    for (let obj = 0; obj < MAX_OBJECTS_PER_GROUP; obj += 1) {
+      expect(dedupe.accept("p1", 1, obj)).toBe(true);
+    }
+    // Any excess object ID beyond the limit in the same group is rejected
+    expect(dedupe.accept("p1", 1, MAX_OBJECTS_PER_GROUP)).toBe(false);
   });
 });
 

@@ -148,7 +148,7 @@ describe("M2 — the drift rebuild waits for a pause", () => {
         { participantHash: 1, mediaTimestamp: media, sequence: index },
         new Uint8Array([1, 2, 3]),
       );
-      player.accept(1, index, payload, arrival);
+      player.accept(Math.floor(index / 50), index, payload, arrival);
     }
     return { player, arrival };
   }
