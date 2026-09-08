@@ -632,6 +632,10 @@ input::placeholder {
   transform: translateX(15px);
   background: #071012;
 }
+.toggle-row input:focus-visible + i {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
 .ask-button {
   width: 100%;
   min-height: 38px;
