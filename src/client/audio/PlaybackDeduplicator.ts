@@ -10,6 +10,8 @@
 
 /** One group is one second of audio (§6.3), so this is a few seconds of memory. */
 const RETAINED_GROUPS_PER_PARTICIPANT = 4;
+/** 50 objects per second expected (20ms frames). Cap at 100 to prevent unbounded memory allocation per group (CWE-770 / SEC-09). */
+const MAXIMUM_OBJECTS_PER_GROUP = 100;
 
 export class PlaybackDeduplicator {
   private seen = new Map<string, Map<number, Set<number>>>();
@@ -33,6 +35,8 @@ export class PlaybackDeduplicator {
     }
 
     if (objects.has(objectId)) return false;
+    // Security: Bound objects per group to prevent resource exhaustion (CWE-770 / SEC-09).
+    if (objects.size >= MAXIMUM_OBJECTS_PER_GROUP) return false;
     objects.add(objectId);
     return true;
   }

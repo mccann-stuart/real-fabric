@@ -704,6 +704,16 @@ describe("H12 — reload reclaims identity without duplicate playback", () => {
     for (let group = 0; group < 40; group += 1) dedupe.accept("p1", group, 1);
     expect(dedupe.retainedGroups("p1")).toBeLessThanOrEqual(4);
   });
+
+  it("bounds objects per group to MAXIMUM_OBJECTS_PER_GROUP (100) (SEC-09)", () => {
+    const dedupe = new PlaybackDeduplicator();
+    for (let obj = 0; obj < 100; obj += 1) {
+      expect(dedupe.accept("p1", 1, obj)).toBe(true);
+    }
+    // Any object past 100 in the same group is rejected to bound memory (CWE-770 / SEC-09)
+    expect(dedupe.accept("p1", 1, 100)).toBe(false);
+    expect(dedupe.accept("p1", 1, 101)).toBe(false);
+  });
 });
 
 describe("H13 — ten minutes without unbounded growth or uncorrected drift", () => {
