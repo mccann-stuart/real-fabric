@@ -805,10 +805,6 @@ export class Room extends DurableObject<Env> {
           }),
         );
 
-        const ais = this.ctx.storage.sql
-          .exec<ParticipantRow>("SELECT id FROM participants WHERE role = 'ai' AND state != 'left'")
-          .toArray();
-
         // Performance optimization (⚡ Bolt): Batch SQL inserts into 12-row chunks (84 variables: 7 per row)
         // to maximize batching while respecting Cloudflare Workers SQLite's 100-variable limit.
         const CHUNK_SIZE = 12;
@@ -829,16 +825,20 @@ export class Room extends DurableObject<Env> {
              ) VALUES ${valuePlaceholders.join(", ")}`,
             ...params,
           );
-        }
 
-        if (ais.length > 0) {
-          const routingRows: Array<{ humanId: string; aiId: string; updatedAt: number }> = [];
-          for (const item of added) {
-            for (const ai of ais) {
-              routingRows.push({ humanId: item.id, aiId: ai.id, updatedAt: now });
-            }
-          }
-          batchInsertRouting(this.ctx.storage.sql, routingRows);
+          // Performance optimization (⚡ Bolt): Set-based SQL CROSS JOIN query inserts routing pairs
+          // directly inside SQLite rather than constructing JS object arrays and executing 20+ queries.
+          const humanPlaceholders = chunk.map(() => "?").join(", ");
+          this.ctx.storage.sql.exec(
+            `INSERT INTO routing (human_id, ai_id, hears_me, i_hear_it, updated_at)
+             SELECT p.id, a.id, 0, 1, ?
+             FROM participants p
+             JOIN participants a ON a.role = 'ai' AND a.state != 'left'
+             WHERE p.id IN (${humanPlaceholders})
+             ON CONFLICT(human_id, ai_id) DO NOTHING`,
+            now,
+            ...chunk.map((item) => item.id),
+          );
         }
 
         for (const item of added) {
@@ -867,12 +867,6 @@ export class Room extends DurableObject<Env> {
           }),
         );
 
-        const humans = this.ctx.storage.sql
-          .exec<ParticipantRow>(
-            "SELECT id FROM participants WHERE role = 'human' AND state != 'left'",
-          )
-          .toArray();
-
         // Performance optimization (⚡ Bolt): Batch SQL inserts into 12-row chunks (84 variables: 7 per row)
         // to maximize batching while respecting Cloudflare Workers SQLite's 100-variable limit.
         const CHUNK_SIZE = 12;
@@ -893,16 +887,20 @@ export class Room extends DurableObject<Env> {
              ) VALUES ${valuePlaceholders.join(", ")}`,
             ...params,
           );
-        }
 
-        if (humans.length > 0) {
-          const routingRows: Array<{ humanId: string; aiId: string; updatedAt: number }> = [];
-          for (const item of added) {
-            for (const human of humans) {
-              routingRows.push({ humanId: human.id, aiId: item.id, updatedAt: now });
-            }
-          }
-          batchInsertRouting(this.ctx.storage.sql, routingRows);
+          // Performance optimization (⚡ Bolt): Set-based SQL CROSS JOIN query inserts routing pairs
+          // directly inside SQLite rather than constructing JS object arrays and executing 20+ queries.
+          const aiPlaceholders = chunk.map(() => "?").join(", ");
+          this.ctx.storage.sql.exec(
+            `INSERT INTO routing (human_id, ai_id, hears_me, i_hear_it, updated_at)
+             SELECT h.id, a.id, 0, 1, ?
+             FROM participants h
+             JOIN participants a ON a.id IN (${aiPlaceholders})
+             WHERE h.role = 'human' AND h.state != 'left'
+             ON CONFLICT(human_id, ai_id) DO NOTHING`,
+            now,
+            ...chunk.map((item) => item.id),
+          );
         }
 
         for (const item of added) {
@@ -1230,30 +1228,6 @@ function slug(value: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
-}
-
-function batchInsertRouting(
-  sql: SqlStorage,
-  rows: Array<{ humanId: string; aiId: string; updatedAt: number }>,
-): void {
-  if (rows.length === 0) return;
-  // Performance optimization (⚡ Bolt): Increase chunk size to 30 rows per INSERT statement (90 variables)
-  // to maximize batching while respecting Cloudflare Workers SQLite's 100-variable limit.
-  const CHUNK_SIZE = 30;
-  for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
-    const chunk = rows.slice(i, i + CHUNK_SIZE);
-    const placeholders: string[] = [];
-    const params: SqlStorageValue[] = [];
-    for (const r of chunk) {
-      placeholders.push("(?, ?, 0, 1, ?)");
-      params.push(r.humanId, r.aiId, r.updatedAt);
-    }
-    sql.exec(
-      `INSERT INTO routing (human_id, ai_id, hears_me, i_hear_it, updated_at)
-       VALUES ${placeholders.join(", ")} ON CONFLICT(human_id, ai_id) DO NOTHING`,
-      ...params,
-    );
-  }
 }
 
 function clampSimulated(value: number): number {
