@@ -52,7 +52,7 @@ export function RoomStatusStack({
       {state?.phase.name === "terminal" ? (
         <p className="error-banner" role="alert">
           Reconnection was abandoned after 30 seconds.{" "}
-          <button type="button" onClick={onRetry}>
+          <button className="button button--compact" type="button" onClick={onRetry}>
             Retry now
           </button>
         </p>

@@ -27,9 +27,15 @@ export function PreflightPage({ navigate }: { navigate: (path: string) => void }
           <button
             className="button button--primary"
             type="button"
+            disabled={report.microphone === "checking"}
+            aria-busy={report.microphone === "checking"}
             onClick={() => void testMicrophone()}
           >
-            Test microphone permission
+            {report.microphone === "checking"
+              ? "Testing microphone…"
+              : report.microphone === "ready"
+                ? "Re-test microphone permission"
+                : "Test microphone permission"}
           </button>
         </div>
         <SignalPath />
