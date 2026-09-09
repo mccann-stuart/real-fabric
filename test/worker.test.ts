@@ -88,6 +88,41 @@ describe("Real Fabric Worker", () => {
     });
   });
 
+  it("rate-limits room join attempts per IP", async () => {
+    const createRes = await SELF.fetch("https://real-fabric.test/api/rooms", {
+      method: "POST",
+      headers: { "content-type": "application/json", "cf-connecting-ip": "192.0.2.1" },
+      body: JSON.stringify({ displayName: "Host" }),
+    });
+    const created = (await createRes.json()) as CreateRoomResponse;
+
+    const headers = {
+      "content-type": "application/json",
+      "cf-connecting-ip": "198.51.100.251",
+    };
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const res = await SELF.fetch(`https://real-fabric.test/api/rooms/${created.room.code}/join`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ displayName: `Guest ${attempt}` }),
+      });
+      expect(res.status).toBe(200);
+    }
+
+    const limited = await SELF.fetch(
+      `https://real-fabric.test/api/rooms/${created.room.code}/join`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ displayName: "Guest 21" }),
+      },
+    );
+    expect(limited.status).toBe(429);
+    expect(await limited.json()).toMatchObject({
+      error: { code: "room_join_limited" },
+    });
+  });
+
   it("does not put participant credentials in a shareable room snapshot", async () => {
     const response = await SELF.fetch("https://real-fabric.test/api/rooms", {
       method: "POST",

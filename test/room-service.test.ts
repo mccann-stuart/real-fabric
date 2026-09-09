@@ -30,9 +30,13 @@ async function call<T>(
   body: unknown,
   method = "POST",
 ): Promise<{ status: number; value: T }> {
+  addressCounter += 1;
   const response = await SELF.fetch(`${BASE}${path}`, {
     method,
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      "cf-connecting-ip": `192.0.2.${addressCounter % 250}`,
+    },
     body: JSON.stringify(body),
   });
   const value = response.status === 204 ? (undefined as T) : ((await response.json()) as T);
