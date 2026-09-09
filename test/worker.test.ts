@@ -13,6 +13,7 @@ describe("Real Fabric Worker", () => {
       relayEndpoint: "https://draft-16.example.invalid",
       relayEndpointName: "draft-16.example.invalid",
       relayCredentialConfigured: true,
+      relayCredentialStatus: "available",
       // Gate 1 has not run. Naming the endpoint is not claiming it works.
       transportVerified: false,
       routingEnforcement: "cooperative",

@@ -121,7 +121,12 @@ export async function evaluateCapabilities(
       failure = "draft_endpoint_missing";
     } else if (!health.relayCredentialConfigured) {
       relay = "unavailable";
-      relayReason = `No provisioned relay credential is configured for ${endpoint}.`;
+      relayReason =
+        health.relayCredentialStatus === "expired"
+          ? `The configured relay credential for ${endpoint} has expired.`
+          : health.relayCredentialStatus === "invalid"
+            ? `The configured relay credential for ${endpoint} is not a valid current Cloudflare JWT.`
+            : `No provisioned relay credential is configured for ${endpoint}.`;
       failure = "relay_auth_unavailable";
     } else if (!framed.includes(health.draft as (typeof framed)[number])) {
       relay = "unavailable";

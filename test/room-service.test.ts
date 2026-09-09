@@ -8,6 +8,8 @@ import {
 } from "../src/shared/contracts";
 
 const BASE = "https://real-fabric.test";
+const TEST_RELAY_TOKEN =
+  "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJleHAiOjQxMDI0NDQ4MDB9.test-signature";
 let addressCounter = 0;
 
 async function createRoom(displayName = "Ada"): Promise<CreateRoomResponse> {
@@ -77,7 +79,7 @@ describe("H1 — transport is never claimed before it is traced", () => {
     const created = await createRoom();
     // Cloudflare validates a token provisioned against its isolated relay; an
     // application-signed claim would be ignored by that authentication layer.
-    expect(created.relayCredential).toBe("test-relay-token");
+    expect(created.relayCredential).toBe(TEST_RELAY_TOKEN);
     const credential = created.relayCredential as string;
 
     // It must never be readable from the shareable snapshot (§8 link separation).

@@ -30,7 +30,15 @@ import {
   type RoomSnapshot,
 } from "../src/shared/contracts";
 import { type Measurement, measured } from "../src/shared/measurement";
-import { configuredRelayCredential } from "../src/worker/relayCredential";
+import { configuredRelayCredential, inspectRelayCredential } from "../src/worker/relayCredential";
+
+function relayToken(expiresAtSeconds: number): string {
+  const payload = btoa(JSON.stringify({ exp: expiresAtSeconds }))
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replace(/=+$/, "");
+  return `header.${payload}.signature`;
+}
 
 /**
  * §11.2 milestone 1: live transport unblocking and relay interoperability.
@@ -159,10 +167,18 @@ describe("M1 — draft registry and relay interoperability", () => {
     expect(isRetryableTransportFailure("draft_mismatch")).toBe(false);
   });
 
-  it("accepts only a non-empty configured Cloudflare relay token", () => {
+  it("accepts only a current Cloudflare relay JWT", () => {
+    const current = relayToken(101);
+    const expired = relayToken(100);
     expect(configuredRelayCredential(undefined)).toBeNull();
     expect(configuredRelayCredential("   ")).toBeNull();
-    expect(configuredRelayCredential(" provisioned-token ")).toBe("provisioned-token");
+    expect(configuredRelayCredential("provisioned-token", 100_000)).toBeNull();
+    expect(configuredRelayCredential(expired, 100_000)).toBeNull();
+    expect(configuredRelayCredential(` ${current} `, 100_000)).toBe(current);
+    expect(inspectRelayCredential(undefined, 100_000).status).toBe("missing");
+    expect(inspectRelayCredential("provisioned-token", 100_000).status).toBe("invalid");
+    expect(inspectRelayCredential(expired, 100_000).status).toBe("expired");
+    expect(inspectRelayCredential(current, 100_000).status).toBe("available");
   });
 
   it("reports Not exposed for round-trip time rather than zero", () => {

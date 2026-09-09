@@ -22,7 +22,7 @@ import {
   type TransportStatus,
 } from "../shared/contracts";
 import { configFlag, configValue } from "./env";
-import { configuredRelayCredential } from "./relayCredential";
+import { inspectRelayCredential } from "./relayCredential";
 import { roomError } from "./roomError";
 
 /** The relay's operator-facing name, as the inspector and Gate 1 sheet quote it. */
@@ -1089,12 +1089,19 @@ export class Room extends DurableObject<Env> {
         reason: `No relay endpoint is configured for MOQT draft ${draft}, so no session is attempted.`,
       };
     }
-    if (!configuredRelayCredential(this.env.MOQ_RELAY_TOKEN)) {
+    const relayCredential = inspectRelayCredential(this.env.MOQ_RELAY_TOKEN);
+    if (!relayCredential.credential) {
+      const reason =
+        relayCredential.status === "expired"
+          ? `The configured relay credential for ${shared.endpointName} has expired, so no session is attempted.`
+          : relayCredential.status === "invalid"
+            ? `The configured relay credential for ${shared.endpointName} is not a valid current Cloudflare JWT, so no session is attempted.`
+            : `No provisioned credential is configured for ${shared.endpointName}, so no session is attempted.`;
       return {
         ...shared,
         availability: "relay_unavailable",
         failure: "relay_auth_unavailable",
-        reason: `No provisioned credential is configured for ${shared.endpointName}, so no session is attempted.`,
+        reason,
       };
     }
     return {

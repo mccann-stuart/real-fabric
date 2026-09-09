@@ -42,6 +42,9 @@ export type AiPipelineState = "listening" | "thinking" | "speaking" | "interrupt
 
 export type TransportAvailability = "available" | "draft_unavailable" | "relay_unavailable";
 
+/** Non-secret Worker-side validation state for the configured relay credential. */
+export type RelayCredentialStatus = "available" | "missing" | "invalid" | "expired";
+
 /** FR7: discovery is advisory, and the inspector must say which mechanism ran. */
 export type DiscoveryMechanism = "subscribe_namespace" | "control_channel" | "unknown";
 
