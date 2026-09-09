@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Participant } from "../../shared/contracts";
 import { notExposed } from "../../shared/measurement";
 import { currentUserAgentFacts, matchConfiguration } from "../../shared/pinnedConfiguration";
@@ -17,6 +17,8 @@ import { layoutParticipants } from "../room/participantLayout";
 import { microphoneAction, representedFailureCodes } from "../room/roomPresentation";
 import type { TrackSubscriptionState } from "../session/RoomSession";
 
+const COPY_FEEDBACK_DURATION_MS = 2_500;
+
 export function RoomPage({ code, navigate }: { code: string; navigate: (path: string) => void }) {
   const [stored] = useState(() => loadSession(code));
   const presenterMode = sessionStorage.getItem(`real-fabric:presenter:${code}`) === "true";
@@ -28,6 +30,8 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
   const iphoneAudioCandidate = configuration.device === "iPhone" && configuration.liveAudioEligible;
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const copyAttempt = useRef(0);
+  const copyFeedbackTimer = useRef<ReturnType<typeof globalThis.setTimeout> | null>(null);
   const [leaving, setLeaving] = useState(false);
   const [leaveError, setLeaveError] = useState<string | null>(null);
   const leaveDialog = useRef<HTMLDialogElement>(null);
@@ -43,13 +47,41 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
     Boolean(state?.degradation.announcement),
   );
 
+  useEffect(
+    () => () => {
+      copyAttempt.current += 1;
+      if (copyFeedbackTimer.current !== null) {
+        globalThis.clearTimeout(copyFeedbackTimer.current);
+        copyFeedbackTimer.current = null;
+      }
+    },
+    [],
+  );
+
   const copyInvite = useCallback(async () => {
+    const attempt = copyAttempt.current + 1;
+    copyAttempt.current = attempt;
+    if (copyFeedbackTimer.current !== null) {
+      globalThis.clearTimeout(copyFeedbackTimer.current);
+      copyFeedbackTimer.current = null;
+    }
+
+    let outcome: "copied" | "failed";
     try {
       await navigator.clipboard.writeText(`${location.origin}/room/${code}`);
-      setCopyState("copied");
+      outcome = "copied";
     } catch {
-      setCopyState("failed");
+      outcome = "failed";
     }
+
+    // A slower earlier clipboard request must not replace newer feedback.
+    if (copyAttempt.current !== attempt) return;
+    setCopyState(outcome);
+    copyFeedbackTimer.current = globalThis.setTimeout(() => {
+      if (copyAttempt.current !== attempt) return;
+      setCopyState("idle");
+      copyFeedbackTimer.current = null;
+    }, COPY_FEEDBACK_DURATION_MS);
   }, [code]);
 
   const confirmLeave = useCallback(async () => {
@@ -77,6 +109,22 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
         .map((participant) => participant.id),
     [room],
   );
+
+  const layout = useMemo(
+    () =>
+      room
+        ? layoutParticipants(room.participants, viewerId, prominentIds.current)
+        : {
+            layout: "equal" as const,
+            prominent: [] as Participant[],
+            rest: [] as Participant[],
+          },
+    [room, viewerId],
+  );
+
+  useEffect(() => {
+    prominentIds.current = layout.prominent.map((participant) => participant.id);
+  }, [layout.prominent]);
 
   const subscriptionMap = useMemo(() => {
     const map = new Map<string, TrackSubscriptionState>();
@@ -183,11 +231,6 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
     );
   }
 
-  const layout = room
-    ? layoutParticipants(room.participants, viewerId, prominentIds.current)
-    : { layout: "equal" as const, prominent: [] as Participant[], rest: [] as Participant[] };
-  prominentIds.current = layout.prominent.map((participant) => participant.id);
-
   const renderCard = (participant: Participant) => (
     <ParticipantCard
       key={participant.id}
@@ -250,7 +293,12 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
             <p className="empty-room">No active participants are exposed.</p>
           ) : null}
           <div className="mobile-actions">
-            <button type="button" onClick={() => setInspectorOpen(true)}>
+            <button
+              type="button"
+              aria-expanded={inspectorOpen}
+              aria-controls="inspector-panel"
+              onClick={() => setInspectorOpen(true)}
+            >
               Open inspector →
             </button>
           </div>
@@ -354,7 +402,12 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
           >
             {state?.muted ? "Unmute" : "Mute"}
           </button>
-          <button type="button" onClick={() => setInspectorOpen(true)}>
+          <button
+            type="button"
+            aria-expanded={inspectorOpen}
+            aria-controls="inspector-panel"
+            onClick={() => setInspectorOpen(true)}
+          >
             Inspector
           </button>
           <button
@@ -372,6 +425,8 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
         <button
           className="mobile-inspector-button"
           type="button"
+          aria-expanded={inspectorOpen}
+          aria-controls="inspector-panel"
           onClick={() => setInspectorOpen(true)}
         >
           Open inspector

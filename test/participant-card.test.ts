@@ -114,4 +114,58 @@ describe("ParticipantCard component", () => {
     askButton.props.onKeyUp({ key: "Enter", preventDefault });
     expect(onAddressUp).toHaveBeenCalledWith("ai-1");
   });
+
+  it("releases an active address exactly once on pointer cancellation or focus loss", () => {
+    const onAddressDown = vi.fn();
+    const onAddressUp = vi.fn();
+    const props: ParticipantCardProps = {
+      participant: mockAi,
+      current: false,
+      viewerId: "human-1",
+      routing: mockRouting,
+      connectedHumanIds: ["human-1"],
+      onRouting: () => {},
+      onAddressDown,
+      onAddressUp,
+    };
+
+    let cardElement: React.ReactElement | null = null;
+    const RawParticipantCard = ParticipantCard.type as (
+      props: ParticipantCardProps,
+    ) => React.ReactElement;
+    renderToStaticMarkup(
+      React.createElement(() => {
+        cardElement = RawParticipantCard(props);
+        return cardElement;
+      }),
+    );
+
+    if (!cardElement) throw new Error("Card element was not rendered");
+    const elementProps = (cardElement as React.ReactElement<{ children: unknown[] }>).props;
+    const routingDiv = elementProps.children[4] as React.ReactElement<{ children: unknown[] }>;
+    const askButton = routingDiv.props.children[2] as React.ReactElement<{
+      onBlur: () => void;
+      onPointerCancel: () => void;
+      onPointerDown: () => void;
+      onPointerLeave: () => void;
+      onPointerUp: () => void;
+    }>;
+
+    askButton.props.onBlur();
+    expect(onAddressUp).not.toHaveBeenCalled();
+
+    askButton.props.onPointerDown();
+    expect(onAddressDown).toHaveBeenCalledTimes(1);
+    askButton.props.onPointerCancel();
+    expect(onAddressUp).toHaveBeenCalledTimes(1);
+    askButton.props.onPointerUp();
+    expect(onAddressUp).toHaveBeenCalledTimes(1);
+
+    askButton.props.onPointerDown();
+    askButton.props.onBlur();
+    expect(onAddressDown).toHaveBeenCalledTimes(2);
+    expect(onAddressUp).toHaveBeenCalledTimes(2);
+    askButton.props.onPointerLeave();
+    expect(onAddressUp).toHaveBeenCalledTimes(2);
+  });
 });

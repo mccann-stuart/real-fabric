@@ -63,6 +63,31 @@ describe("Real Fabric Worker", () => {
     expect(rejoined.room.participants).toHaveLength(1);
   });
 
+  it("rate-limits room creation attempts before parsing their bodies", async () => {
+    const headers = {
+      "content-type": "application/json",
+      "cf-connecting-ip": "198.51.100.250",
+    };
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const invalid = await SELF.fetch("https://real-fabric.test/api/rooms", {
+        method: "POST",
+        headers,
+        body: "{",
+      });
+      expect(invalid.status).toBe(400);
+    }
+
+    const limited = await SELF.fetch("https://real-fabric.test/api/rooms", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ displayName: "Ada" }),
+    });
+    expect(limited.status).toBe(429);
+    expect(await limited.json()).toMatchObject({
+      error: { code: "room_creation_limited" },
+    });
+  });
+
   it("does not put participant credentials in a shareable room snapshot", async () => {
     const response = await SELF.fetch("https://real-fabric.test/api/rooms", {
       method: "POST",
