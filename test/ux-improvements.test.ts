@@ -5,8 +5,10 @@ import type { CapturePath } from "../src/client/audio/UniversalAudioCaptureAdapt
 import { Inspector } from "../src/client/components/Inspector";
 import { LeaveRoomDialog } from "../src/client/components/LeaveRoomDialog";
 import { ParticipantCard } from "../src/client/components/ParticipantCard";
+import { RoomStatusStack } from "../src/client/components/RoomStatusStack";
 import { RoomTopBar } from "../src/client/components/RoomTopBar";
 import { EntryPage } from "../src/client/pages/EntryPage";
+import { PreflightPage } from "../src/client/pages/PreflightPage";
 import type { Participant, RoomSnapshot, RoutingPreference } from "../src/shared/contracts";
 import { notExposed } from "../src/shared/measurement";
 
@@ -190,5 +192,110 @@ describe("Micro-UX & Accessibility Improvements", () => {
 
     expect(html).toContain('aria-busy="true"');
     expect(html).toContain("Leaving…");
+  });
+
+  it("renders RoomTopBar live audio button with aria-busy when starting/disabled", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(RoomTopBar, {
+        code: "TEST1234567890123456",
+        copyState: "idle",
+        onCopyInvite: () => {},
+        micAction: { visible: true, disabled: true, label: "Starting audio…" },
+        liveAudioEligible: true,
+        onStartAudio: () => {},
+        onOpenLeaveDialog: () => {},
+      }),
+    );
+
+    expect(html).toContain('aria-busy="true"');
+    expect(html).toContain("Starting audio…");
+  });
+
+  it("renders styled retry button in RoomStatusStack terminal phase", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(RoomStatusStack, {
+        state: {
+          phase: { name: "terminal", failure: "udp_blocked" },
+          room: null,
+          degradation: {
+            step: 0,
+            nominalBufferMs: 60,
+            announcement: null,
+            releasedDecoders: [],
+            unsubscribed: [],
+          },
+          failures: [],
+          capture: { name: "idle" },
+          muted: false,
+          speaking: false,
+          micLevel: 0,
+          publishing: false,
+          audioLifecycle: {
+            audioSession: "not_exposed",
+            wakeLock: "not_exposed",
+            wakeLockReason: "Not exposed",
+          },
+          subscriptions: [],
+          subscribedParticipantIds: [],
+          negotiation: null,
+          network: {
+            state: "not_run",
+            detail: "",
+            remediation: null,
+            elapsedMs: 0,
+            reliability: "Not exposed",
+            congestionControl: "Not exposed",
+          },
+          events: [],
+          metrics: {
+            transportReadyMs: notExposed<number>("Not exposed"),
+            firstAudioMs: notExposed<number>("Not exposed"),
+            publishedTracks: notExposed<number>("Not exposed"),
+            subscribedTracks: notExposed<number>("Not exposed"),
+            worstBufferMs: notExposed<number>("Not exposed"),
+            outputLatencyMs: notExposed<number>("Not exposed"),
+            transportRttMs: notExposed<number>("Not exposed"),
+            lateDrops: notExposed<number>("Not exposed"),
+            cancelledDrops: notExposed<number>("Not exposed"),
+            concealedFrames: notExposed<number>("Not exposed"),
+            comfortNoiseFrames: notExposed<number>("Not exposed"),
+            lastBargeInMs: notExposed<number>("Not exposed"),
+            lastRoutingChangeMs: notExposed<number>("Not exposed"),
+            reconnects: notExposed<number>("Not exposed"),
+            dtxEnabled: notExposed<boolean>("Not exposed"),
+            capturePath: notExposed<CapturePath>("Not exposed"),
+            publishedObjects: notExposed<number>("Not exposed"),
+            subscribedObjects: notExposed<number>("Not exposed"),
+            objectsPerSecond: notExposed<number>("Not exposed"),
+            meanObjectBytes: notExposed<number>("Not exposed"),
+            lateDropRate: notExposed<number>("Not exposed"),
+            aggregateBufferMs: notExposed<number>("Not exposed"),
+            worstDriftPpm: notExposed<number>("Not exposed"),
+            activeDecoders: notExposed<number>("Not exposed"),
+            audioInputs: notExposed<number>("Not exposed"),
+            deviceChanges: notExposed<number>("Not exposed"),
+          },
+        },
+        reclaimed: false,
+        error: null,
+        iphoneAudioCandidate: false,
+        hiddenFailureCodes: [],
+        onRetry: () => {},
+        onDismissFailure: () => {},
+      }),
+    );
+
+    expect(html).toContain('class="button button--compact"');
+    expect(html).toContain("Retry now");
+  });
+
+  it("renders PreflightPage test microphone button with default text", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(PreflightPage, {
+        navigate: () => {},
+      }),
+    );
+
+    expect(html).toContain("Test microphone permission");
   });
 });
