@@ -135,6 +135,7 @@ export class MoqTransportError extends Error {
       | "relay_configuration"
       | "reliable_transport"
       | "relay_unavailable"
+      | "session_closed"
       | "request_refused"
       | "protocol_error",
     message: string,
@@ -312,7 +313,7 @@ export class MoqTransportAdapter {
             this.namespaceCancels.clear();
             this.callbacks.onUnexpectedTermination?.(
               new MoqTransportError(
-                "relay_unavailable",
+                "session_closed",
                 `The established MOQT session ended unexpectedly: ${terminationReason(reason, credential)}`,
               ),
             );
@@ -503,7 +504,7 @@ export class MoqTransportAdapter {
     if (connectionGeneration !== this.connectionGeneration || client !== this.client) {
       controller.close();
       throw new MoqTransportError(
-        "relay_unavailable",
+        "session_closed",
         "The MOQT session ended while the track publication was opening.",
       );
     }
@@ -664,7 +665,7 @@ export class MoqTransportAdapter {
 
   private requireClient(): MOQtailClient {
     if (!this.client || this.stats.state !== "connected") {
-      throw new MoqTransportError("protocol_error", "The MOQT session is not connected.");
+      throw new MoqTransportError("session_closed", "The MOQT session is not connected.");
     }
     return this.client;
   }
