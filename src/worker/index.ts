@@ -7,7 +7,7 @@ import type {
 } from "../shared/contracts";
 import { MAX_SIMULATED_PARTICIPANTS } from "../shared/contracts";
 import { configFlag, configValue } from "./env";
-import { configuredRelayCredential } from "./relayCredential";
+import { configuredRelayCredential, inspectRelayCredential } from "./relayCredential";
 import type { ParticipantCredential } from "./room";
 import { Room } from "./room";
 import { decodeRoomError } from "./roomError";
@@ -105,13 +105,15 @@ function handleHealth(env: Env): Response {
   // renders the specific §10 failure from these, never a generic error.
   // `relayEndpoint` is what the pre-flight HTTP/3 probe aims at (§11.2), so
   // the probe tests the endpoint the room would really use.
+  const relayCredential = inspectRelayCredential(env.MOQ_RELAY_TOKEN);
   return json({
     ok: true,
     service: "real-fabric",
     draft: env.MOQT_DRAFT,
     relayEndpoint: configValue(env.MOQ_RELAY_URL) || null,
     relayEndpointName: endpointName(configValue(env.MOQ_RELAY_URL)),
-    relayCredentialConfigured: configuredRelayCredential(env.MOQ_RELAY_TOKEN) !== null,
+    relayCredentialConfigured: relayCredential.credential !== null,
+    relayCredentialStatus: relayCredential.status,
     transportVerified: configFlag(env.MOQT_TRANSPORT_VERIFIED),
     routingEnforcement:
       configValue(env.MOQ_ROUTING_ENFORCEMENT) === "enforced" ? "enforced" : "cooperative",
@@ -307,7 +309,8 @@ async function handleRoomAction(
 /**
  * Cloudflare draft-16 accepts tokens provisioned against the isolated relay.
  *
- * The Worker returns the configured token only when an endpoint is also set.
+ * The Worker returns the configured token only when an endpoint is also set
+ * and the token passes the local structure and expiry checks.
  * It is not gated on `MOQT_TRANSPORT_VERIFIED`: that flag records whether a
  * trace has proved transport, not whether one may be attempted.
  *

@@ -4,6 +4,7 @@ import type {
   CreateRoomResponse,
   JoinRoomResponse,
   PresenterConfiguration,
+  RelayCredentialStatus,
   RoomSnapshot,
 } from "../shared/contracts";
 
@@ -23,8 +24,10 @@ export interface HealthReport {
   /** §11.2: what the pre-flight HTTP/3 probe aims at. Null when none is set. */
   relayEndpoint: string | null;
   relayEndpointName: string | null;
-  /** Whether the Worker can authenticate to that relay; never exposes the credential. */
+  /** Whether the configured secret is locally eligible for a relay attempt. */
   relayCredentialConfigured: boolean;
+  /** Local structure and expiry status; never exposes token material or claims signature validity. */
+  relayCredentialStatus: RelayCredentialStatus;
   /** Gate 1 exit: whether a browser-to-relay trace has been recorded. */
   transportVerified: boolean;
   routingEnforcement: "enforced" | "cooperative";

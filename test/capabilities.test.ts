@@ -9,6 +9,7 @@ const healthyRelay: HealthReport = {
   relayEndpoint: "https://relay.example.com",
   relayEndpointName: "example-relay",
   relayCredentialConfigured: true,
+  relayCredentialStatus: "available",
   transportVerified: false,
   routingEnforcement: "cooperative",
   discovery: "unknown",
@@ -58,6 +59,7 @@ describe("Capabilities Evaluation", () => {
       relayEndpoint: null,
       relayEndpointName: null,
       relayCredentialConfigured: true,
+      relayCredentialStatus: "available",
       transportVerified: false,
       routingEnforcement: "cooperative",
       discovery: "unknown",
@@ -78,6 +80,7 @@ describe("Capabilities Evaluation", () => {
       relayEndpoint: "https://relay.example.com",
       relayEndpointName: "example-relay",
       relayCredentialConfigured: false,
+      relayCredentialStatus: "missing",
       transportVerified: false,
       routingEnforcement: "cooperative",
       discovery: "unknown",
@@ -90,6 +93,22 @@ describe("Capabilities Evaluation", () => {
     expect(result.failure).toBe("relay_auth_unavailable");
   });
 
+  it("names an expired relay credential without exposing it", async () => {
+    const fetchHealthMock = vi.fn().mockResolvedValue({
+      ...healthyRelay,
+      relayCredentialConfigured: false,
+      relayCredentialStatus: "expired",
+    } satisfies HealthReport);
+
+    const result = await evaluateCapabilities(fetchHealthMock);
+
+    expect(result.relay).toBe("unavailable");
+    expect(result.failure).toBe("relay_auth_unavailable");
+    expect(result.relayReason).toBe(
+      "The configured relay credential for example-relay has expired.",
+    );
+  });
+
   it("handles draft mismatch with draft_mismatch failure", async () => {
     const mockHealth: HealthReport = {
       ok: true,
@@ -98,6 +117,7 @@ describe("Capabilities Evaluation", () => {
       relayEndpoint: "https://relay.example.com",
       relayEndpointName: "example-relay",
       relayCredentialConfigured: true,
+      relayCredentialStatus: "available",
       transportVerified: false,
       routingEnforcement: "cooperative",
       discovery: "unknown",
