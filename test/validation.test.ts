@@ -229,4 +229,32 @@ describe("request validation", () => {
       message: "Request body exceeds maximum allowed size.",
     } satisfies Partial<HttpError>);
   });
+
+  it("throws 413 payload_too_large when chunked stream body exceeds 32 KiB limit", async () => {
+    const encoder = new TextEncoder();
+    const chunk1 = encoder.encode(JSON.stringify({ padding: "a".repeat(20000) }).slice(0, 20000));
+    const chunk2 = encoder.encode(`${"a".repeat(15000)}"}`);
+
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(chunk1);
+        controller.enqueue(chunk2);
+        controller.close();
+      },
+    });
+
+    const request = new Request("https://example.test", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: stream,
+      // @ts-expect-error duplex is required by Node/undici Request init with ReadableStream
+      duplex: "half",
+    });
+
+    await expect(readJsonObject(request)).rejects.toMatchObject({
+      status: 413,
+      code: "payload_too_large",
+      message: "Request body exceeds maximum allowed size.",
+    } satisfies Partial<HttpError>);
+  });
 });
