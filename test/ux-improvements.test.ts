@@ -17,6 +17,7 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(html).toContain("Join room");
     expect(html).toContain("Solo presenter mode");
     expect(html).toContain("button--primary");
+    expect(html).toContain('aria-label="Mic level test"');
   });
 
   it("renders accessible toggle switches inside participant card", () => {
