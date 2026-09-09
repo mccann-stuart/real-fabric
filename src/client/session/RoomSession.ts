@@ -265,6 +265,7 @@ export class RoomSession {
   private subscriptionRetryTimer: ReturnType<typeof setTimeout> | null = null;
   private controlReconnectAttempt = 0;
   private publicationFailureHandling = false;
+  private pendingTransportTermination: MoqTransportError | null = null;
   private closed = false;
 
   constructor(private readonly options: RoomSessionOptions) {
@@ -480,6 +481,7 @@ export class RoomSession {
       return;
     }
 
+    this.pendingTransportTermination = null;
     this.setPhase({ name: "connecting_transport" });
     const credential = this.relayCredential;
     if (!credential) {
@@ -510,10 +512,16 @@ export class RoomSession {
       );
       this.telemetry.record({ type: "transport_ready", value: this.transportReadyMsRaw() ?? 0 });
       await this.discover(room);
+      if (generation !== this.audioGeneration || this.closed) {
+        await this.transport.close("stale audio activation");
+        return;
+      }
+      this.assertTransportConnectedBeforeLive();
       this.setPhase({ name: "live" });
       await this.reconcileSubscriptions();
       this.startDraining();
     } catch (error) {
+      this.pendingTransportTermination = null;
       await this.handleTransportFailure(error);
     }
   }
@@ -534,6 +542,13 @@ export class RoomSession {
       this.recordDiscovery("subscribe_namespace");
       this.log.record("subscribe", `SUBSCRIBE_NAMESPACE on ${roomNamespace(room.code)}`);
     } catch (error) {
+      if (
+        !(error instanceof MoqTransportError) ||
+        error.code !== "request_refused" ||
+        error.request?.operation !== "namespace_subscription"
+      ) {
+        throw error;
+      }
       this.recordDiscovery("control_channel");
       this.raise("namespace_discovery_unavailable");
       this.log.record(
@@ -541,6 +556,18 @@ export class RoomSession {
         `SUBSCRIBE_NAMESPACE was refused; falling back to control-channel discovery${
           error instanceof Error ? `: ${error.message}` : "."
         }`,
+      );
+    }
+  }
+
+  private assertTransportConnectedBeforeLive(): void {
+    const termination = this.pendingTransportTermination;
+    this.pendingTransportTermination = null;
+    if (termination) throw termination;
+    if (this.transport.sessionStats().state !== "connected") {
+      throw new MoqTransportError(
+        "session_closed",
+        "The established MOQT session was no longer connected when discovery completed.",
       );
     }
   }
@@ -594,7 +621,12 @@ export class RoomSession {
   }
 
   private onTransportTerminated(error: MoqTransportError): void {
-    if (this.closed || this.phase.name !== "live") return;
+    if (this.closed) return;
+    if (this.phase.name === "connecting_transport") {
+      this.pendingTransportTermination ??= error;
+      return;
+    }
+    if (this.phase.name !== "live") return;
 
     if (
       this.transportReadyAt !== null &&
@@ -635,6 +667,8 @@ export class RoomSession {
         return "relay_auth_unavailable";
       case "reliable_transport":
         return "transport_reliable_only";
+      case "session_closed":
+        return "relay_failed";
       case "protocol_error":
         return "relay_protocol_error";
       case "request_refused":

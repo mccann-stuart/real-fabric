@@ -11,6 +11,7 @@ import { ReconnectionPolicy, TERMINAL_AFTER_MS } from "../src/client/session/Rec
 import {
   isRetryableTransportFailure,
   RoomSession,
+  rememberRelayCredential,
   type SessionPhase,
   subscriptionRetryDelay,
 } from "../src/client/session/RoomSession";
@@ -167,6 +168,14 @@ describe("M1 — draft registry and relay interoperability", () => {
   it("reports Not exposed for round-trip time rather than zero", () => {
     // H15: a browser that reports nothing must never read as a perfect link.
     expect(new MoqTransportAdapter().sessionStats().transportRttMs).toBe("Not exposed");
+  });
+
+  it("classifies use of a dead session separately from failed negotiation", async () => {
+    const adapter = new MoqTransportAdapter();
+
+    await expect(
+      adapter.subscribe({ namespace: "demo/room", name: "audio/participant" }),
+    ).rejects.toMatchObject({ code: "session_closed" });
   });
 });
 
@@ -601,14 +610,181 @@ describe("M1 — bounded session recovery", () => {
       snapshot: () => { room: RoomSnapshot | null; failures: string[] };
     };
     internal.room = room;
-    internal.transport.subscribeNamespace = vi
-      .fn()
-      .mockRejectedValue(new MoqTransportError("request_refused", "Not supported."));
+    internal.transport.subscribeNamespace = vi.fn().mockRejectedValue(
+      new MoqTransportError("request_refused", "Not supported.", {
+        operation: "namespace_subscription",
+        errorCode: 3,
+        reason: "Not supported.",
+      }),
+    );
 
     await internal.discover(room);
 
     expect(internal.snapshot().room?.transport.discovery).toBe("control_channel");
     expect(internal.snapshot().failures).toContain("namespace_discovery_unavailable");
+  });
+
+  it("propagates namespace stream failures instead of claiming control-channel fallback", async () => {
+    const session = new RoomSession({
+      session: {
+        code: "AAAAAAAAAAAAAAAAAAAA",
+        participantId: "participant-1",
+        rejoinToken: "rejoin-token",
+        displayName: "Test participant",
+        storedAt: 0,
+      },
+      presenterMode: false,
+    });
+    const room = {
+      code: "AAAAAAAAAAAAAAAAAAAA",
+      transport: { discovery: "unknown" },
+    } as RoomSnapshot;
+    const internal = session as unknown as {
+      room: RoomSnapshot;
+      transport: { subscribeNamespace: (namespace: string) => Promise<void> };
+      discover: (room: RoomSnapshot) => Promise<void>;
+      snapshot: () => { room: RoomSnapshot | null; failures: string[] };
+    };
+    internal.room = room;
+    internal.transport.subscribeNamespace = vi
+      .fn()
+      .mockRejectedValue(new Error("RequestStream.send: Failed to write message."));
+
+    await expect(internal.discover(room)).rejects.toThrow(
+      "RequestStream.send: Failed to write message.",
+    );
+
+    expect(internal.snapshot().room?.transport.discovery).toBe("unknown");
+    expect(internal.snapshot().failures).not.toContain("namespace_discovery_unavailable");
+  });
+
+  it("retains termination during discovery and never marks the dead session live", async () => {
+    vi.useFakeTimers();
+    const participantId = "participant-discovery-termination";
+    rememberRelayCredential(participantId, "credential");
+    try {
+      const session = new RoomSession({
+        session: {
+          code: "AAAAAAAAAAAAAAAAAAAA",
+          participantId,
+          rejoinToken: "rejoin-token",
+          displayName: "Test participant",
+          storedAt: 0,
+        },
+        presenterMode: false,
+        now: () => 1_000,
+      });
+      const termination = new MoqTransportError(
+        "session_closed",
+        "The established MOQT session ended during discovery.",
+      );
+      let transportState: "connected" | "closed" = "connected";
+      const internal = session as unknown as {
+        room: RoomSnapshot;
+        transport: {
+          connect: () => Promise<void>;
+          subscribeNamespace: (namespace: string) => Promise<void>;
+          sessionStats: () => ReturnType<MoqTransportAdapter["sessionStats"]>;
+        };
+        onTransportTerminated: (error: MoqTransportError) => void;
+        openTransport: () => Promise<void>;
+        snapshot: () => {
+          phase: SessionPhase;
+          failures: string[];
+          events: Array<{ kind: string; detail: string }>;
+        };
+      };
+      internal.room = {
+        code: "AAAAAAAAAAAAAAAAAAAA",
+        participants: [],
+        routing: [],
+        transport: {
+          availability: "available",
+          endpoint: "https://draft-16.example.invalid",
+          draft: PINNED_MOQT_DRAFT,
+          discovery: "unknown",
+        },
+      } as unknown as RoomSnapshot;
+      internal.transport.connect = vi.fn().mockResolvedValue(undefined);
+      internal.transport.sessionStats = vi.fn(() => ({
+        ...new MoqTransportAdapter().sessionStats(),
+        state: transportState,
+      }));
+      internal.transport.subscribeNamespace = vi.fn().mockImplementation(async () => {
+        transportState = "closed";
+        internal.onTransportTerminated(termination);
+      });
+
+      await internal.openTransport();
+
+      expect(internal.snapshot().phase).toMatchObject({ name: "reconnecting", attempt: 1 });
+      expect(internal.snapshot().failures).toContain("relay_failed");
+      expect(internal.snapshot().failures).not.toContain("relay_protocol_error");
+      expect(internal.snapshot().events).toContainEqual(
+        expect.objectContaining({ kind: "failure", detail: termination.message }),
+      );
+    } finally {
+      rememberRelayCredential(participantId, null);
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
+  it("checks adapter state after discovery before entering live", async () => {
+    vi.useFakeTimers();
+    const participantId = "participant-dead-after-discovery";
+    rememberRelayCredential(participantId, "credential");
+    try {
+      const session = new RoomSession({
+        session: {
+          code: "AAAAAAAAAAAAAAAAAAAA",
+          participantId,
+          rejoinToken: "rejoin-token",
+          displayName: "Test participant",
+          storedAt: 0,
+        },
+        presenterMode: false,
+      });
+      let transportState: "connected" | "closed" = "connected";
+      const internal = session as unknown as {
+        room: RoomSnapshot;
+        transport: {
+          connect: () => Promise<void>;
+          subscribeNamespace: (namespace: string) => Promise<void>;
+          sessionStats: () => ReturnType<MoqTransportAdapter["sessionStats"]>;
+        };
+        openTransport: () => Promise<void>;
+        snapshot: () => { phase: SessionPhase; failures: string[] };
+      };
+      internal.room = {
+        code: "AAAAAAAAAAAAAAAAAAAA",
+        participants: [],
+        routing: [],
+        transport: {
+          availability: "available",
+          endpoint: "https://draft-16.example.invalid",
+          draft: PINNED_MOQT_DRAFT,
+          discovery: "unknown",
+        },
+      } as unknown as RoomSnapshot;
+      internal.transport.connect = vi.fn().mockResolvedValue(undefined);
+      internal.transport.sessionStats = vi.fn(() => ({
+        ...new MoqTransportAdapter().sessionStats(),
+        state: transportState,
+      }));
+      internal.transport.subscribeNamespace = vi.fn().mockImplementation(async () => {
+        transportState = "closed";
+      });
+
+      await internal.openTransport();
+
+      expect(internal.snapshot().phase).toMatchObject({ name: "reconnecting", attempt: 1 });
+      expect(internal.snapshot().failures).toContain("relay_failed");
+    } finally {
+      rememberRelayCredential(participantId, null);
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
   });
 
   it("moves a live room into bounded recovery when its MOQT session terminates", () => {
@@ -636,7 +812,7 @@ describe("M1 — bounded session recovery", () => {
         phase = state.phase;
       });
       internal.onTransportTerminated(
-        new MoqTransportError("relay_unavailable", "The established session ended."),
+        new MoqTransportError("session_closed", "The established session ended."),
       );
 
       expect(phase).toMatchObject({ name: "reconnecting", attempt: 1 });
@@ -670,11 +846,11 @@ describe("M1 — bounded session recovery", () => {
 
       internal.phase = { name: "live" };
       internal.transportReadyAt = now;
-      internal.onTransportTerminated(new MoqTransportError("relay_unavailable", "ended"));
+      internal.onTransportTerminated(new MoqTransportError("session_closed", "ended"));
       now += 100;
       internal.phase = { name: "live" };
       internal.transportReadyAt = now;
-      internal.onTransportTerminated(new MoqTransportError("relay_unavailable", "ended"));
+      internal.onTransportTerminated(new MoqTransportError("session_closed", "ended"));
 
       let phase: SessionPhase = { name: "idle" };
       const unsubscribe = session.subscribe((state) => {
