@@ -112,6 +112,20 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
     [room, session, viewerId],
   );
 
+  const handleAddressDown = useCallback(
+    (aiId: string) => {
+      void session?.address(aiId);
+    },
+    [session],
+  );
+
+  const handleAddressUp = useCallback(
+    (aiId: string) => {
+      void session?.endTurn(aiId);
+    },
+    [session],
+  );
+
   const demoContext = useCallback(() => {
     const metrics = state?.metrics;
     const speaking = (room?.participants ?? []).filter(
@@ -187,8 +201,8 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
       subscription={subscriptionMap.get(participant.id)}
       onSubscription={changeSubscription}
       onRouting={changeRouting}
-      onAddressDown={(aiId) => void session?.address(aiId)}
-      onAddressUp={(aiId) => void session?.endTurn(aiId)}
+      onAddressDown={handleAddressDown}
+      onAddressUp={handleAddressUp}
     />
   );
 

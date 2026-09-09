@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import {
   type AiDisplayActivity,
   aiDisplayActivity,
@@ -29,7 +29,7 @@ export interface ParticipantCardProps {
   onAddressUp?: (aiId: string) => void;
 }
 
-export function ParticipantCard({
+export const ParticipantCard = memo(function ParticipantCard({
   participant,
   current,
   viewerId,
@@ -167,7 +167,7 @@ export function ParticipantCard({
       ) : null}
     </article>
   );
-}
+});
 
 function Toggle({
   label,
