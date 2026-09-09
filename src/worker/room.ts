@@ -1002,10 +1002,13 @@ export class Room extends DurableObject<Env> {
       .exec<ParticipantRow>("SELECT * FROM participants WHERE state != 'left' ORDER BY joined_at")
       .toArray()
       .map(toParticipant);
+    // Performance optimization (⚡ Bolt): Evaluate routingEnforcement once per snapshot
+    // rather than N times per routing row inside .map().
+    const enforcement = this.routingEnforcement();
     const routing = this.ctx.storage.sql
       .exec<RoutingRow>("SELECT * FROM routing ORDER BY updated_at")
       .toArray()
-      .map((row) => toRouting(row, this.routingEnforcement()));
+      .map((row) => toRouting(row, enforcement));
 
     return {
       code: meta.code,
@@ -1254,7 +1257,20 @@ function randomToken(): string {
     .replaceAll("=", "");
 }
 
+// Performance optimization (⚡ Bolt): Reuse textEncoder and byte-to-hex lookup table
+// to eliminate repeated allocations on every authenticated request and hash generation.
+const textEncoder = new TextEncoder();
+const HEX_LOOKUP: string[] = Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(2, "0"));
+
 async function sha256(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  const digest = await crypto.subtle.digest("SHA-256", textEncoder.encode(value));
+  const bytes = new Uint8Array(digest);
+  let hex = "";
+  for (let i = 0; i < bytes.length; i += 1) {
+    const byte = bytes[i];
+    if (byte !== undefined) {
+      hex += HEX_LOOKUP[byte] ?? "";
+    }
+  }
+  return hex;
 }

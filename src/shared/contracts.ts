@@ -236,8 +236,18 @@ export function evaluateComposition(participants: readonly Participant[]): {
   ais: number;
   valid: boolean;
 } {
-  const active = participants.filter((participant) => participant.state !== "left");
-  const humans = active.filter((participant) => participant.role === "human").length;
-  const ais = active.filter((participant) => participant.role === "ai").length;
+  // Performance optimization (⚡ Bolt): Single pass over participants without array allocations
+  let humans = 0;
+  let ais = 0;
+  for (let index = 0; index < participants.length; index += 1) {
+    const participant = participants[index];
+    if (participant && participant.state !== "left") {
+      if (participant.role === "human") {
+        humans += 1;
+      } else if (participant.role === "ai") {
+        ais += 1;
+      }
+    }
+  }
   return { humans, ais, valid: humans >= 1 };
 }
