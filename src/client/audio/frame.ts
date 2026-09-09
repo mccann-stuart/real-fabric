@@ -11,8 +11,12 @@ export interface AudioFrameMetadata {
 }
 
 export function encodeAudioObject(metadata: AudioFrameMetadata, opusFrame: Uint8Array): Uint8Array {
-  const header = new ArrayBuffer(AUDIO_OBJECT_HEADER_BYTES);
-  const view = new DataView(header);
+  // Performance optimization (⚡ Bolt): Write header fields directly into the output
+  // Uint8Array buffer using a DataView, eliminating intermediate ArrayBuffer and
+  // Uint8Array wrapper allocations and redundant byte copying on every 20ms frame.
+  const totalLength = AUDIO_OBJECT_HEADER_BYTES + opusFrame.byteLength;
+  const result = new Uint8Array(totalLength);
+  const view = new DataView(result.buffer, result.byteOffset, AUDIO_OBJECT_HEADER_BYTES);
   view.setUint8(0, AUDIO_FORMAT_VERSION);
   view.setUint8(1, (metadata.endOfTurn ? 1 : 0) | (metadata.cancelled ? 2 : 0));
   view.setUint32(2, metadata.participantHash);
@@ -20,9 +24,7 @@ export function encodeAudioObject(metadata: AudioFrameMetadata, opusFrame: Uint8
   view.setUint32(14, metadata.sequence);
   view.setUint16(18, AUDIO_FRAME_DURATION_MS);
   view.setUint16(20, opusFrame.byteLength);
-  const result = new Uint8Array(header.byteLength + opusFrame.byteLength);
-  result.set(new Uint8Array(header));
-  result.set(opusFrame, header.byteLength);
+  result.set(opusFrame, AUDIO_OBJECT_HEADER_BYTES);
   return result;
 }
 
@@ -51,6 +53,8 @@ export function decodeAudioObject(value: Uint8Array): {
       ...(flags & 1 ? { endOfTurn: true } : {}),
       ...(flags & 2 ? { cancelled: true } : {}),
     },
-    opusFrame: value.slice(AUDIO_OBJECT_HEADER_BYTES),
+    // Performance optimization (⚡ Bolt): Use zero-copy subarray view instead of .slice()
+    // to avoid allocating a new memory copy for every incoming 20ms audio frame.
+    opusFrame: value.subarray(AUDIO_OBJECT_HEADER_BYTES),
   };
 }
