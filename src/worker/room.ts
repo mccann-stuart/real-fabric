@@ -594,6 +594,18 @@ export class Room extends DurableObject<Env> {
         return;
       }
 
+      // Security: Enforce 1 active control socket per participant (SEC-06 / CWE-770)
+      // to prevent resource exhaustion from unbounded concurrent connections.
+      for (const existingSocket of this.ctx.getWebSockets()) {
+        if (existingSocket !== socket) {
+          const existingAttachment =
+            existingSocket.deserializeAttachment() as SocketAttachment | null;
+          if (existingAttachment?.participantId === participantId) {
+            existingSocket.close(4000, "replaced by new connection");
+          }
+        }
+      }
+
       socket.serializeAttachment({
         participantId,
         authDeadline: null,
