@@ -1,4 +1,4 @@
-import { memo, useState } from "react";
+import { memo, useRef, useState } from "react";
 import {
   type AiDisplayActivity,
   aiDisplayActivity,
@@ -44,6 +44,7 @@ export const ParticipantCard = memo(function ParticipantCard({
   onAddressUp,
 }: ParticipantCardProps) {
   const [isAddressing, setIsAddressing] = useState(false);
+  const addressing = useRef(false);
 
   const isAi = participant.role === "ai";
   const activity: AiDisplayActivity | "Reconnecting" | "Speaking" | "Listening" =
@@ -56,11 +57,15 @@ export const ParticipantCard = memo(function ParticipantCard({
           : "Listening";
 
   const handleAddressStart = () => {
+    if (addressing.current) return;
+    addressing.current = true;
     setIsAddressing(true);
     onAddressDown?.(participant.id);
   };
 
   const handleAddressEnd = () => {
+    if (!addressing.current) return;
+    addressing.current = false;
     setIsAddressing(false);
     onAddressUp?.(participant.id);
   };
@@ -138,9 +143,17 @@ export const ParticipantCard = memo(function ParticipantCard({
             className="ask-button"
             type="button"
             aria-pressed={isAddressing}
+            aria-label={
+              isAddressing
+                ? `Asking ${participant.displayName}; release to stop`
+                : `Hold to ask ${participant.displayName} (press and hold)`
+            }
+            title={`Press and hold (or Space/Enter) to address ${participant.displayName}`}
             onPointerDown={handleAddressStart}
             onPointerUp={handleAddressEnd}
             onPointerLeave={handleAddressEnd}
+            onPointerCancel={handleAddressEnd}
+            onBlur={handleAddressEnd}
             onKeyDown={(event) => {
               if ((event.key === " " || event.key === "Enter") && !event.repeat) {
                 event.preventDefault();
@@ -154,7 +167,9 @@ export const ParticipantCard = memo(function ParticipantCard({
               }
             }}
           >
-            Hold to ask {participant.displayName}
+            {isAddressing
+              ? `Asking ${participant.displayName}…`
+              : `Hold to ask ${participant.displayName}`}
           </button>
           {/* FR8: say which form is in effect rather than implying a guarantee
               the transport is not providing. */}
