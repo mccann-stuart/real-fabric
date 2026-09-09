@@ -125,6 +125,17 @@ export class Room extends DurableObject<Env> {
     return true;
   }
 
+  checkJoinRateLimit(now: number): boolean {
+    const cutoff = now - 10 * 60_000;
+    this.ctx.storage.sql.exec("DELETE FROM rate_events WHERE created_at < ?", cutoff);
+    const row = this.ctx.storage.sql
+      .exec<{ count: number }>("SELECT COUNT(*) AS count FROM rate_events")
+      .one();
+    if (row.count >= 20) return false;
+    this.ctx.storage.sql.exec("INSERT INTO rate_events (created_at) VALUES (?)", now);
+    return true;
+  }
+
   async initialise(code: string, now: number): Promise<RoomSnapshot> {
     if (!this.meta()) {
       this.ctx.storage.sql.exec(

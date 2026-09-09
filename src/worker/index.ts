@@ -159,6 +159,7 @@ async function handleRoomAction(
   }
 
   if (request.method === "POST" && action === "join") {
+    await enforceJoinRateLimit(request, env);
     if (!(await stub.getSnapshot())) throw roomNotFound();
     const body = await readJsonObject(request);
     const displayName = requiredString(body, "displayName", 80);
@@ -354,6 +355,17 @@ async function enforceCreationRateLimit(request: Request, env: Env): Promise<voi
       "room_creation_limited",
       "Too many rooms were created recently. Try again later.",
     );
+}
+
+async function enforceJoinRateLimit(request: Request, env: Env): Promise<void> {
+  const address = request.headers.get("cf-connecting-ip") ?? "local";
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(address));
+  const key = Array.from(new Uint8Array(digest).slice(0, 8), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
+  const allowed = await roomStub(env, `rate-join-${key}`).checkJoinRateLimit(Date.now());
+  if (!allowed)
+    throw new HttpError(429, "room_join_limited", "Too many room join attempts. Try again later.");
 }
 
 function roomCode(): string {
