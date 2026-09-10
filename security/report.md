@@ -1,5 +1,29 @@
 # Security Review: real-fabric
 
+## Implementation reconciliation and status (as of 10 September 2026)
+
+This report records the static baseline of revision `a784122aa18c6b7fbee1ae53d34b054a24d71f0b` (26 August 2026). As of 10 September 2026, several findings have been remediated in the codebase and validated across 281 automated tests:
+
+- **SEC-05 ([Finding 9](#finding-9)) — Remediated:** Participant credentials removed from WebSocket query string; authentication takes place via an in-message `{ type: "auth" }` exchange.
+- **SEC-06 ([Finding 5](#finding-5)) — Remediated:** Durable Object enforces at most 1 active control socket per participant, cleanly terminating previous connections.
+- **SEC-07 ([Finding 4](#finding-4)) — Remediated:** Room joins are rate-limited per client IP via `enforceJoinRateLimit` before persistent state allocation.
+- **SEC-08 ([Finding 12](#finding-12)) — Remediated:** Streaming request body reader enforces a 32 KiB limit (`MAX_BODY_BYTES`) with Content-Length validation, returning 413 Payload Too Large.
+- **SEC-09 ([Finding 11](#finding-11)) — Remediated:** `PlaybackDeduplicator` caps retained object identifiers per group at 100 (`MAXIMUM_OBJECTS_PER_GROUP`).
+- **Relay credential validation — Remediated:** Expired or malformed relay JWTs are rejected fail-closed at the Worker boundary.
+
+### Next steps and vision statements (Remediation backlog)
+
+The following items remain open as forward-looking security roadmap targets:
+
+1. **SEC-01 ([Finding 1](#finding-1)) — Shared relay credential disclosure (Known P1):** Blocked on Cloudflare MoQ relay API capabilities. Requires participant- and room-scoped credentials rather than a relay-wide token.
+2. **SEC-02 ([Finding 2](#finding-2)) — Role-based room authority:** Persist room creator/presenter roles to restrict AI lifecycle, floor administration, and simulation controls.
+3. **SEC-03 ([Finding 3](#finding-3)) — AI floor target validation:** Validate `aiId` against active AI participants and require turn capabilities for floor release.
+4. **SEC-04 ([Finding 6](#finding-6)) — Routing preference disclosure:** Project viewer-specific room snapshots so individual routing choices are not readable by other participants.
+5. **SEC-10 ([Finding 8](#finding-8)) — Media burst bounds:** Bound frame sorting and AudioDecoder submission queues against adversarial media packet bursts.
+6. **SEC-11 ([Finding 7](#finding-7)) — Unknown room probe allocation:** Verify room codes before instantiating SQLite Durable Object storage.
+7. **SEC-12 ([Finding 10](#finding-10)) — Explicit session capability policy:** Enforce `{ canCapture, canPublish }` in session core so read-only clients never trigger `getUserMedia`.
+8. **SEC-13 ([Finding 13](#finding-13)) — Activity spoofing:** Remove caller-selected activity updates and derive speaking status locally from received objects.
+
 ## Scope
 
 Standard whole-repository security scan of the exact registered Git revision.

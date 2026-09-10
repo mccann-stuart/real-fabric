@@ -2,7 +2,7 @@
 
 **Status:** Core implementation scaffold complete; live acceptance pending Gate 1
 **Date:** 25 August 2026
-**Implementation reconciliation:** 26 August 2026, current repository state
+**Implementation reconciliation:** 10 September 2026, current repository state
 **Supersedes:** v1 demo scope of 25 August 2026 (three-way)
 **Protocol target:** MOQT `draft-ietf-moq-transport-20`
 
@@ -14,16 +14,19 @@
 | Fixed three-participant room replaced by open membership | Any number of humans and AIs. §5 FR1, FR3, FR7. Capacity is measured and displayed, never configured as a cap |
 | AI audio routing controls added | §5 FR8. Each human independently controls, per AI, whether that AI hears them and whether they hear it |
 | Shared relay credential disclosure recorded as known P1 | §8.1 and Gate 1 now state the current Cloudflare V1 scope limitation, the absence of a compatible complete fix and the claims the demo must not make |
+| Security hardening landed (SEC-05, SEC-06, SEC-07, SEC-08, SEC-09) | In-message WebSocket auth, 1 active socket/participant, IP join rate limit, 32 KiB body stream limit, deduplication bounds |
 
 ### Current implementation snapshot
 
 This section records implementation state; it does not weaken the acceptance criteria below.
 
 - React, TypeScript and Vite client surfaces, the SQLite Durable Object room service, control-plane WebSocket, presenter simulation, media pipeline, inspector, telemetry and failure registry are present.
+- Automated test coverage stands at 281 passing tests across twenty files.
+- Recent security review hardening is implemented and verified: control-plane WebSocket credentials moved from query string to in-message authentication (SEC-05), one active control socket per participant enforced in the Durable Object (SEC-06), client-IP room join rate limiting enforced (SEC-07), streaming request body size capped at 32 KiB (SEC-08), and playback deduplication bounded at 100 objects per group (SEC-09).
 - `moqtail` is exactly pinned at `0.12.1` and imported only by `MoqTransportAdapter`. A narrow pnpm patch passes its caught control-stream error into the existing termination callback instead of replacing it with an undefined reason.
 - `wrangler.jsonc` pins the operational Cloudflare draft-16 endpoint and keeps `MOQT_TRANSPORT_VERIFIED` at `false`, `MOQ_ROUTING_ENFORCEMENT` at `cooperative` and `MOQ_DISCOVERY` at `unknown`. Unknown discovery is probed after live setup and the observed result is recorded in the inspector; it is not inferred from configuration.
 - The adapter registry knows the supported draft metadata, while the pinned client frames draft 16 only and refuses any configured draft it cannot frame without downgrading.
-- The `real-fabric-production` isolated relay is provisioned with upstream fallback disabled. The production Worker holds a seven-day, relay-scoped publish/subscribe token that expires at `2026-09-01T20:38:32Z`; relay acceptance and expiry behaviour remain unverified until a live browser trace runs.
+- The `real-fabric-production` isolated relay is provisioned with upstream fallback disabled. The production Worker holds a relay-scoped publish/subscribe token that expired on `2026-09-01T20:38:32Z`; expired credentials are now rejected fail-closed at the Worker boundary. Relay acceptance and expiry behaviour remain unverified until a live browser trace runs.
 - **Known P1 — shared relay credential disclosure:** unauthenticated room creation and open room joining return that configured token to the browser. It can be reused outside the room service for relay-wide publish and subscribe until expiry or revocation. Cloudflare's current V1 API can create unique, expiring and independently revocable tokens, but it constrains only relay-wide `publish` and `subscribe`; labels do not enforce room, namespace, track or participant scope, and each relay accepts at most ten registered tokens. No compatible complete fix is currently available from that API. The code remains unchanged pending an enforceable room-and-participant-scoped model that preserves H7 open membership.
 - Presenter responses are scripted and visibly labelled. There is no live recognition, model, synthesis or AI-worker transport pipeline.
 - `NetworkProbe` can compare the configured relay's WebTransport reachability with the room-service health gate. The live health endpoint confirms the relay and credential configuration, but no connected browser was available to run the UDP/HTTP-3 probe.
@@ -32,7 +35,7 @@ This section records implementation state; it does not weaken the acceptance cri
 - Concurrent-room limits, relay credential rate-limiting and the per-room AI cost ceiling remain product requirements rather than implemented controls.
 - Capture, relay-accepted publication and local subscription intent are separate states. Room membership completes before audio; **Start audio** and **Resume audio** initiate AudioContext activation, microphone capture and MOQT from the user action. `PUBLISH_OK` is required before the uplink or publish event appears; a rejected request stops capture and its exact sanitised refusal remains in same-tab session history.
 - The iPhone H3 gate does not treat Safari's frozen iOS 18 user-agent value as the phone's OS version. It uses the Safari or Chrome-for-iOS major to identify the admitted top-level browser, then requires concrete secure-context, WebTransport, Opus encoder/decoder, AudioWorklet capture and playout probes before enabling provisional foreground audio.
-- The automated suite contains 278 passing tests across twenty files. The Objects and Latency tabs compare exposed session figures with specification-defined budgets or targets and identify diagnostic-only figures as `Reported · no gate`; acoustic loopback remains `Not exposed`. Gate 1 interoperability, physical-device Safari 27 acceptance, measured capacity, the audible ten-minute run and two clean venue-network script runs remain open.
+- The automated suite contains 281 passing tests across twenty files. The Objects and Latency tabs compare exposed session figures with specification-defined budgets or targets and identify diagnostic-only figures as `Reported · no gate`; acoustic loopback remains `Not exposed`. Gate 1 interoperability, physical-device Safari 27 acceptance, measured capacity, the audible ten-minute run and two clean venue-network script runs remain open.
 
 ---
 
@@ -73,7 +76,7 @@ v1 has failed if any of these is untrue.
 
 Video, screen share, recording, dial-in, moderation, accounts, captions, a WebRTC comparison, mobile outside the named foreground iPhone Safari candidate, end-to-end encryption opaque to the AIs, and any claim of MOQT interoperability or production readiness.
 
-### 0.3 Deferred, to be built
+### 0.3 Next steps and vision statements (Deferred capabilities)
 
 | Item | Why not v1 |
 |---|---|
@@ -606,9 +609,9 @@ Every failure condition encountered in Real Fabric has a distinct, truthful, non
 
 ---
 
-## 11. Delivery gates and current status
+## 11. Delivery gates, next steps and vision statements
 
-The build proceeds around the external draft-20 dependency without changing the live-audio protocol claim. Earlier-draft relays may inform research, but they are not an operational fallback and cannot satisfy Gate 1. Each gate distinguishes code present in the repository from evidence collected at the real browser, relay, audio and venue boundaries.
+The build proceeds around the external draft-20 dependency without changing the live-audio protocol claim. Earlier-draft relays may inform research, but they are not an operational fallback and cannot satisfy Gate 1. Each gate distinguishes code present in the repository from evidence collected at the real browser, relay, audio and venue boundaries. All forward-looking delivery gates represent next steps and vision roadmap targets.
 
 ```mermaid
 flowchart TD
