@@ -1,4 +1,5 @@
 import { type Measurement, measured, notExposed } from "../../shared/measurement";
+import { MeanMetric } from "../telemetry/MeanMetric";
 import { AUDIO_FRAME_DURATION_MS } from "./frame";
 import {
   type AudioCaptureAdapter,
@@ -20,6 +21,14 @@ import { VoiceActivityDetector } from "./VoiceActivityDetector";
  */
 
 export const DEFAULT_BITRATE = 32_000;
+const MAXIMUM_PENDING_ENCODE_TIMINGS = 256;
+
+export interface CaptureLatencyStats {
+  /** Media time represented by each completed capture frame. */
+  frameFillMs: Measurement<number>;
+  /** Time from AudioEncoder.encode() to its output callback. */
+  encodeCallbackMs: Measurement<number>;
+}
 
 export interface CaptureOptions {
   /** Presenter-adjustable per FR3. */
@@ -40,6 +49,9 @@ export class CaptureController {
   private path: Measurement<CapturePath> = notExposed("Capture has not started.");
   private encodedFrames = 0;
   private encodedBytes = 0;
+  private readonly frameFill = new MeanMetric();
+  private readonly encodeCallback = new MeanMetric();
+  private readonly pendingEncodeStartedAt = new Map<number, number>();
   private draining = false;
   private muted = false;
 
@@ -78,9 +90,19 @@ export class CaptureController {
       if (!support.supported || !support.configuration) throw new Error(support.reason);
       this.dtx = support.dtx;
       const configuration = support.configuration;
+      this.encodedFrames = 0;
+      this.encodedBytes = 0;
+      this.frameFill.reset();
+      this.encodeCallback.reset();
+      this.pendingEncodeStartedAt.clear();
 
       this.encoder = new AudioEncoder({
         output: (chunk) => {
+          const encodeStartedAt = this.pendingEncodeStartedAt.get(chunk.timestamp);
+          if (encodeStartedAt !== undefined) {
+            this.pendingEncodeStartedAt.delete(chunk.timestamp);
+            this.encodeCallback.observe(monotonicNow() - encodeStartedAt);
+          }
           this.encodedFrames += 1;
           this.encodedBytes += chunk.byteLength;
           options.onEncodedFrame(chunk);
@@ -102,7 +124,22 @@ export class CaptureController {
             const event = this.detector.observe(scratch);
             if (event === "onset") options.onOnset?.();
             if (event === "release") options.onRelease?.();
-            this.encoder?.encode(data);
+            if (Number.isFinite(data.duration) && data.duration > 0) {
+              this.frameFill.observe(data.duration / 1_000);
+            }
+            const encoder = this.encoder;
+            if (!encoder) return;
+            this.pendingEncodeStartedAt.set(data.timestamp, monotonicNow());
+            if (this.pendingEncodeStartedAt.size > MAXIMUM_PENDING_ENCODE_TIMINGS) {
+              const oldest = this.pendingEncodeStartedAt.keys().next().value;
+              if (oldest !== undefined) this.pendingEncodeStartedAt.delete(oldest);
+            }
+            try {
+              encoder.encode(data);
+            } catch (error) {
+              this.pendingEncodeStartedAt.delete(data.timestamp);
+              throw error;
+            }
           } catch (error) {
             options.onError?.(error instanceof Error ? error : new Error("Capture encode failed."));
           }
@@ -110,8 +147,6 @@ export class CaptureController {
         onError: (error) => options.onError?.(error),
       });
       this.path = measured(this.adapter.path);
-      this.encodedFrames = 0;
-      this.encodedBytes = 0;
       return this.stream;
     } catch (error) {
       await this.stop();
@@ -126,6 +161,18 @@ export class CaptureController {
 
   capturePath(): Measurement<CapturePath> {
     return this.path;
+  }
+
+  /** Session means for the locally observable capture and encode work. */
+  latencyStats(): CaptureLatencyStats {
+    return {
+      frameFillMs: this.frameFill.measurement(
+        "No complete microphone frame has been captured yet.",
+      ),
+      encodeCallbackMs: this.encodeCallback.measurement(
+        "No Opus encoder output callback has completed yet.",
+      ),
+    };
   }
 
   get speaking(): boolean {
@@ -174,6 +221,7 @@ export class CaptureController {
     } finally {
       if (this.encoder?.state !== "closed") this.encoder?.close();
       this.encoder = null;
+      this.pendingEncodeStartedAt.clear();
       for (const track of this.stream?.getTracks() ?? []) track.stop();
       this.stream = null;
       this.detector.reset();
@@ -182,6 +230,10 @@ export class CaptureController {
       this.draining = false;
     }
   }
+}
+
+function monotonicNow(): number {
+  return globalThis.performance?.now?.() ?? Date.now();
 }
 
 export interface OpusEncoderConfig extends AudioEncoderConfig {

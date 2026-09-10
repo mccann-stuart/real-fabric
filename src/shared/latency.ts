@@ -11,7 +11,7 @@ export interface LatencyStage {
   label: string;
   budgetMs: number;
   /** Whether a browser client can observe this stage at all. */
-  observable: "client" | "not_exposed";
+  observable: "client" | "client_partial" | "not_exposed";
   note: string;
 }
 
@@ -20,36 +20,36 @@ export const LATENCY_STAGES: LatencyStage[] = [
     id: "capture",
     label: "Capture quantum and frame fill",
     budgetMs: 20,
-    observable: "not_exposed",
-    note: "The capture graph does not report its own quantum delay.",
+    observable: "client",
+    note: "Mean media span across completed capture frames in this browser session.",
   },
   {
     id: "encode",
     label: "Opus encode, including algorithmic delay",
     budgetMs: 15,
-    observable: "not_exposed",
-    note: "WebCodecs does not expose encoder algorithmic delay.",
+    observable: "client_partial",
+    note: "Encode-to-output callback turnaround; WebCodecs does not expose algorithmic delay.",
   },
   {
     id: "network",
     label: "Send, relay, receive",
     budgetMs: 40,
-    observable: "client",
-    note: "Derived from the WebTransport round-trip time where the browser reports it.",
+    observable: "client_partial",
+    note: "Smoothed relay RTT where WebTransport.getStats() is exposed by the browser.",
   },
   {
     id: "jitter",
     label: "Jitter buffer, nominal",
     budgetMs: 60,
     observable: "client",
-    note: "The adaptive buffer's current target for the worst track.",
+    note: "Mean receiver hold, falling back to the active target before the first decoded object.",
   },
   {
     id: "decode",
     label: "Decode and mix",
     budgetMs: 15,
-    observable: "client",
-    note: "AudioContext output latency, where the browser reports it.",
+    observable: "client_partial",
+    note: "Decoder callback turnaround plus AudioContext output latency where both are exposed.",
   },
 ];
 

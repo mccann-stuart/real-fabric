@@ -328,6 +328,32 @@ function Objects({ metrics, degradation }: { metrics: SessionMetrics; degradatio
           measurement={metrics.publishedObjects}
         />
         <ComparisonRow
+          label="Outbound object rate"
+          budget={`≈${OBJECTS_PER_SECOND_PER_ACTIVE_SPEAKER} obj/s while speaking`}
+          measurement={metrics.publishedObjectsPerSecond}
+          format={(value) => value.toFixed(1)}
+          unit="obj/s"
+        />
+        <ComparisonRow
+          label="Mean outbound object size"
+          budget={`≈${DEFAULT_OBJECT_BYTES} B at 32 kbit/s`}
+          measurement={metrics.meanPublishedObjectBytes}
+          format={(value) => String(Math.round(value))}
+          unit="B"
+        />
+        <ComparisonRow
+          label="Latest outbound object ID"
+          budget="Monotonic within the track"
+          measurement={metrics.lastPublishedObjectId}
+        />
+        <ComparisonRow
+          label="Latest outbound object age"
+          budget="Reported · no gate"
+          measurement={metrics.lastPublishedObjectAgeMs}
+          format={(value) => String(Math.round(value))}
+          unit="ms"
+        />
+        <ComparisonRow
           label="Inbound objects"
           budget="Reported · no gate"
           measurement={metrics.subscribedObjects}
@@ -345,6 +371,18 @@ function Objects({ metrics, degradation }: { metrics: SessionMetrics; degradatio
           measurement={metrics.meanObjectBytes}
           format={(value) => String(Math.round(value))}
           unit="B"
+        />
+        <ComparisonRow
+          label="Most recent inbound object ID"
+          budget="Reported · no gate"
+          measurement={metrics.lastSubscribedObjectId}
+        />
+        <ComparisonRow
+          label="Latest inbound object age"
+          budget="Reported · no gate"
+          measurement={metrics.lastSubscribedObjectAgeMs}
+          format={(value) => String(Math.round(value))}
+          unit="ms"
         />
         <ComparisonRow
           label="Late-drop rate"
@@ -452,30 +490,104 @@ function Objects({ metrics, degradation }: { metrics: SessionMetrics; degradatio
 }
 
 function Latency({ metrics }: { metrics: SessionMetrics }) {
+  const stages = LATENCY_STAGES.map((stage) => ({
+    stage,
+    measurement: measuredStage(stage.id, stage.note, metrics),
+  }));
+  const observableStageTotal = stages.every(({ measurement }) => measurement.exposed)
+    ? measured(
+        stages.reduce(
+          (sum, { measurement }) => sum + (measurement.exposed ? measurement.value : 0),
+          0,
+        ),
+      )
+    : notExposed<number>(
+        "At least one pipeline stage is unavailable, so a stage subtotal would be incomplete.",
+      );
+
   return (
     <div className="comparison-view latency-view">
       <ComparisonTable caption="Per-stream stage latency">
-        {LATENCY_STAGES.map((stage) => (
+        {stages.map(({ stage, measurement }) => (
           <ComparisonRow
             key={stage.id}
             label={stage.label}
             budget={`${stage.budgetMs} ms`}
-            measurement={measuredStage(stage.id, stage.note, metrics)}
+            measurement={measurement}
             format={(value) => String(Math.round(value))}
             unit="ms"
-            withinBudget={(value) => value <= stage.budgetMs}
+            {...(stage.observable === "client"
+              ? { withinBudget: (value: number) => value <= stage.budgetMs }
+              : {})}
           />
         ))}
         <ComparisonRow
-          label="Total"
+          label="Observable stage total"
           budget={`≈${TOTAL_BUDGET_MS} ms`}
-          measurement={notExposed<number>(
-            "End-to-end latency needs the acoustic loopback method in §9.4; a single client cannot observe it.",
-          )}
+          measurement={observableStageTotal}
           format={(value) => String(Math.round(value))}
           unit="ms"
-          withinBudget={(value) => value <= TOTAL_BUDGET_MS}
           emphasised
+        />
+      </ComparisonTable>
+
+      <p className="comparison-note">
+        Capture is the mean media span per completed frame. Encode is callback turnaround and does
+        not include codec algorithmic delay. Network is the browser&apos;s smoothed WebTransport
+        RTT; jitter is receiver hold or the active target; decode and mix combines decoder callback
+        and browser output latency where both are available. These are diagnostics, not an acoustic
+        end-to-end result.
+      </p>
+
+      <ComparisonTable caption="Live pipeline diagnostics">
+        <ComparisonRow
+          label="Minimum WebTransport RTT"
+          budget="Reported · no gate"
+          measurement={metrics.transportMinRttMs}
+          format={(value) => String(Math.round(value))}
+          unit="ms"
+        />
+        <ComparisonRow
+          label="WebTransport RTT variation"
+          budget="Reported · no gate"
+          measurement={metrics.transportRttVariationMs}
+          format={(value) => value.toFixed(1)}
+          unit="ms"
+        />
+        <ComparisonRow
+          label="Publication setup"
+          budget="PUBLISH → PUBLISH_OK · no gate"
+          measurement={metrics.publishSetupMs}
+          format={(value) => value.toFixed(1)}
+          unit="ms"
+        />
+        <ComparisonRow
+          label="Subscription setup"
+          budget="SUBSCRIBE → response · no gate"
+          measurement={metrics.subscribeSetupMs}
+          format={(value) => value.toFixed(1)}
+          unit="ms"
+        />
+        <ComparisonRow
+          label="Receiver hold before decode"
+          budget="Reported · no gate"
+          measurement={metrics.receiverHoldMs}
+          format={(value) => value.toFixed(1)}
+          unit="ms"
+        />
+        <ComparisonRow
+          label="Opus decoder callback"
+          budget="Reported · no gate"
+          measurement={metrics.decodeCallbackMs}
+          format={(value) => value.toFixed(1)}
+          unit="ms"
+        />
+        <ComparisonRow
+          label="Browser output latency"
+          budget="Reported · no gate"
+          measurement={metrics.outputLatencyMs}
+          format={(value) => value.toFixed(1)}
+          unit="ms"
         />
       </ComparisonTable>
 
@@ -604,14 +716,20 @@ function measuredStage(
   metrics: SessionMetrics,
 ): Measurement<number> {
   switch (stageId) {
+    case "capture":
+      return metrics.captureFrameMs;
+    case "encode":
+      return metrics.encodeCallbackMs;
     case "network":
       return metrics.transportRttMs.exposed
         ? measured(metrics.transportRttMs.value)
         : notExposed(note);
     case "jitter":
-      return metrics.worstBufferMs;
+      return metrics.receiverHoldMs.exposed ? metrics.receiverHoldMs : metrics.jitterTargetMs;
     case "decode":
-      return metrics.outputLatencyMs;
+      return metrics.decodeCallbackMs.exposed && metrics.outputLatencyMs.exposed
+        ? measured(metrics.decodeCallbackMs.value + metrics.outputLatencyMs.value)
+        : metrics.outputLatencyMs;
     default:
       return notExposed(note);
   }

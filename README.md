@@ -6,7 +6,7 @@ Real Fabric is a conference-stage demonstration of humans and AI agents speaking
 
 ## Status
 
-The room service, presenter simulation, client media pipeline, protocol inspector, provisioned relay-credential handling, network probe and Milestone 2 audio resilience are implemented. The Objects and Latency inspector tabs compare exposed session measurements with the specification's budgets or targets, while diagnostic-only values are labelled `Reported · no gate`. The production Worker is configured with the isolated `real-fabric-production` relay and a short-lived publish/subscribe token. The demo is **not transport-accepted**: Gate 1, a live AI pipeline, measured capacity, acoustic loopback, the audible ten-minute run and two clean venue-network runs remain open.
+The room service, presenter simulation, client media pipeline, protocol inspector, provisioned relay-credential handling, network probe and Milestone 2 audio resilience are implemented. The Objects and Latency inspector tabs expose session-local object counts, rates, sizes, IDs and ages plus capture, codec callback, MOQT request, receiver-hold, output and optional WebTransport `getStats()` timings. Complete measurements are compared with the specification's budgets or targets; diagnostic-only and partial values are labelled `Reported · no gate`. The production Worker is configured with the isolated `real-fabric-production` relay and a short-lived publish/subscribe token. The demo is **not transport-accepted**: Gate 1, a live AI pipeline, measured capacity, acoustic loopback, the audible ten-minute run and two clean venue-network runs remain open.
 
 ### Known security issue — shared relay credential disclosure (P1)
 
@@ -124,7 +124,7 @@ The production relay is `real-fabric-production` (`5266d64d9209fb9a8961f00974580
 - `src/client/components`, `src/client/pages` — entry, pre-flight, room, inspector and presenter surfaces.
 - `public/audio/mixer-worklet.js` — the single mixing point, served same-origin so it satisfies the existing `script-src 'self'` policy.
 - `src/worker` — API routing, security headers, redacted structured logs, provisioned relay credential handling and the SQLite Durable Object room service.
-- `test` — 278 automated tests across twenty files covering the requirements above.
+- `test` — 286 automated tests across twenty files covering the requirements above.
 
 ## Local setup
 
