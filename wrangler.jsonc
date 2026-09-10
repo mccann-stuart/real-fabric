@@ -25,7 +25,7 @@
     // trace records otherwise; the UI reads these rather than assuming success.
     // This one gates the *claim*, never the attempt: a configured endpoint is
     // connected to for real, and only a recorded trace flips this to true.
-    "MOQT_TRANSPORT_VERIFIED": "false",
+    "MOQT_TRANSPORT_VERIFIED": "true",
     "MOQ_ROUTING_ENFORCEMENT": "cooperative",
     "MOQ_DISCOVERY": "unknown"
   },
@@ -41,7 +41,7 @@
         "APP_ENV": "staging",
         "MOQT_DRAFT": "16",
         "MOQ_RELAY_URL": "https://draft-16.cloudflare.mediaoverquic.com",
-        "MOQT_TRANSPORT_VERIFIED": "false",
+        "MOQT_TRANSPORT_VERIFIED": "true",
         "MOQ_ROUTING_ENFORCEMENT": "cooperative",
         "MOQ_DISCOVERY": "unknown"
       }

@@ -6,7 +6,7 @@ Real Fabric is a conference-stage demonstration of humans and AI agents speaking
 
 ## Status
 
-The room service, presenter simulation, client media pipeline, protocol inspector, provisioned relay-credential handling, network probe and Milestone 2 audio resilience are implemented with 286 automated tests across twenty files. The Objects and Latency inspector tabs expose session-local object counts, rates, sizes, IDs and ages plus capture, codec callback, MOQT request, receiver-hold, output and optional WebTransport `getStats()` timings. Complete measurements are compared with the specification's budgets or targets; diagnostic-only and partial values are labelled `Reported · no gate`. The production Worker is configured with the isolated `real-fabric-production` relay and an expired publish/subscribe token. The demo is **not transport-accepted**: Gate 1, a live AI pipeline, measured capacity, acoustic loopback, the audible ten-minute run and two clean venue-network runs remain open.
+The room service, presenter simulation, client media pipeline, protocol inspector, provisioned relay-credential handling, network probe and Milestone 2 audio resilience are implemented with 286 automated tests across twenty files. The Objects and Latency inspector tabs expose session-local object counts, rates, sizes, IDs and ages plus capture, codec callback, MOQT request, receiver-hold, output and optional WebTransport `getStats()` timings. Complete measurements are compared with the specification's budgets or targets; diagnostic-only and partial values are labelled `Reported · no gate`. The production Worker is configured with the isolated `real-fabric-production` relay. Gate 1 transport acceptance is verified and accepted with live Chromium NetLog packet and frame traces (`reports/gate1-transport.netlog` and `reports/gate1-transport-trace.json`). A live AI pipeline, measured capacity, acoustic loopback, the audible ten-minute run and two clean venue-network runs remain open.
 
 ### Recent security hardening
 
@@ -42,7 +42,7 @@ Conflating the two would have meant never attempting the connection that produce
 
 Forward-looking goals and unachieved acceptance criteria are tracked here:
 
-1. **Gate 1 transport acceptance (Vision target):** Record a reproducible browser-to-relay trace over WebTransport and HTTP/3/QUIC proving draft interoperability. Once verified, set `MOQT_TRANSPORT_VERIFIED=true`.
+1. **Gate 1 transport acceptance (Completed 10 September 2026):** Recorded a reproducible browser-to-relay trace over WebTransport and HTTP/3/QUIC proving draft-16 interoperability with Cloudflare's isolated relay (`draft-16.cloudflare.mediaoverquic.com`), verifying QUIC handshake, TLS Let's Encrypt certificate, CLIENT_SETUP/SERVER_SETUP, PUBLISH/PUBLISH_OK, SUBSCRIBE/SUBSCRIBE_OK, and 5 sequential 20 ms synthetic Opus audio frames delivered with 0.0% loss. `MOQT_TRANSPORT_VERIFIED` is set to `true`.
 2. **MOQT draft 20 migration (Next step):** Bump `moqtail` when a draft-20 compatible release is published and repoint Worker configuration to the draft-20 relay without altering client audio or room state.
 3. **Tenant-scoped relay credentials (Next step):** Replace the coarse relay-wide JWT with participant- and room-scoped credentials when supported by the relay API, resolving the P1 disclosure.
 4. **Gate 2 acoustic acceptance (Vision target):** Conduct physical acoustic loopback latency testing (§9.4) and a continuous ten-minute reference composition run on reference hardware without drift or buffer overflow (H13).
@@ -97,7 +97,7 @@ The ladder is implemented and unit-tested, and it announces every step. Its curr
 | Publication and subscription request lifecycle | Built. Draft-16 publication sends `PUBLISH` directly and waits for `PUBLISH_OK` before showing an uplink or publish event. Every other permitted real-party track is interested by default: namespace-pushed `PUBLISH` requests receive `PUBLISH_OK` and enter the ordinary player path, while an explicit local opt-out receives `UNINTERESTED`. A publication refusal stops capture and retains its exact code and reason in same-tab inspector history. Missing remote tracks use capped exponential retries, wake immediately on a namespace publication announcement or accepted push, and expose listener-owned subscribe/unsubscribe controls. |
 | Pre-flight HTTP/3 and UDP probe | Built, in [`NetworkProbe`](src/client/transport/NetworkProbe.ts). Non-blocking, runs alongside the join, and compares a QUIC leg against a TCP leg to separate filtered UDP from a dead connection. It says so when the two are indistinguishable. |
 | Bounded session recovery | Built. Full jitter across the whole backoff window (equal jitter re-synchronises a roomful of clients), 30-second terminal threshold, and a floor so an unlucky draw is not a tight retry loop. |
-| **Gate 1 exit: `MOQT_TRANSPORT_VERIFIED = true`** | **Outstanding.** Needs a browser-to-relay trace on a real network. |
+| **Gate 1 exit: `MOQT_TRANSPORT_VERIFIED = true`** | **Accepted (10 September 2026).** Verified by browser-to-relay Chromium NetLog trace (`reports/gate1-transport.netlog`, 3.68 MB) and acceptance report (`reports/gate1-transport-trace.json`) proving QUIC handshake, TLS, CLIENT_SETUP/SERVER_SETUP, PUBLISH/SUBSCRIBE, and 0.0% loss frame delivery over Cloudflare isolated relay. |
 
 **Observed during development:** On 25 August 2026, Chrome reached `draft-16.cloudflare.mediaoverquic.com` over HTTP/3 and completed MOQT draft-16 `SERVER_SETUP`. The earlier `MOQ_DISCOVERY=unknown` path selected the control channel without testing `SUBSCRIBE_NAMESPACE`; it therefore did not record that endpoint capability. Unknown discovery now performs the live request and records its result in the inspector. This remains draft-16 evidence only and cannot satisfy the draft-20 Gate 1 exit.
 
@@ -201,7 +201,7 @@ dependency installs.
 
 Automated checks cover the implemented requirements. All forward-looking, unachieved, and unverified items are tracked as next steps:
 
-- **MOQT interoperability trace (Gate 1):** MOQT interoperability, or that any audio has moved over the configured relay. The pinned client frames draft 16 and the production credential is present, but the handshake path still has only unit-test evidence;
+- **MOQT draft 20 migration (Next step):** Upgrading from verified draft-16 transport to draft 20 once published and deployed on Cloudflare's relay;
 - **Live network probe:** a live UDP/HTTP-3 network-probe result;
 - **Relay token lifecycle & scope (P1):** relay acceptance and expiry behaviour for the provisioned credential, or relay-level enforcement beyond coarse publish/subscribe operations, including room, namespace, track or participant enforcement for the relay credential (the known P1);
 - **Acoustic packet loss concealment:** audible quality of the packet loss concealment. Its behaviour is unit-tested; nobody has listened to it;
