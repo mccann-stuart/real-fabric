@@ -57,23 +57,44 @@ export function DemoScriptPanel({
           </p>
           <div className="demo-script__actions">
             {currentStep.verification === "automatic" ? (
-              <button type="button" onClick={() => onRecord("passed")}>
+              <button
+                type="button"
+                aria-label={`Evaluate cue at ${formatCue(currentStep.atSeconds)}`}
+                onClick={() => onRecord("passed")}
+              >
                 Evaluate cue
               </button>
             ) : (
               <>
-                <button type="button" onClick={() => onRecord("passed")}>
+                <button
+                  type="button"
+                  aria-label={`Mark cue at ${formatCue(currentStep.atSeconds)} as seen`}
+                  onClick={() => onRecord("passed")}
+                >
                   Seen
                 </button>
-                <button type="button" onClick={() => onRecord("failed")}>
+                <button
+                  type="button"
+                  aria-label={`Mark cue at ${formatCue(currentStep.atSeconds)} as not seen`}
+                  onClick={() => onRecord("failed")}
+                >
                   Not seen
                 </button>
-                <button type="button" onClick={() => onRecord("skipped")}>
+                <button
+                  type="button"
+                  aria-label={`Skip cue at ${formatCue(currentStep.atSeconds)}`}
+                  onClick={() => onRecord("skipped")}
+                >
                   Skip
                 </button>
               </>
             )}
-            <button type="button" className="button--danger" onClick={onAbandon}>
+            <button
+              type="button"
+              className="button--danger"
+              aria-label="Abandon current demo run"
+              onClick={onAbandon}
+            >
               Abandon run
             </button>
           </div>

@@ -2,6 +2,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { CapturePath } from "../src/client/audio/UniversalAudioCaptureAdapter";
+import { DemoScriptPanel } from "../src/client/components/DemoScriptPanel";
 import { Inspector } from "../src/client/components/Inspector";
 import { LeaveRoomDialog } from "../src/client/components/LeaveRoomDialog";
 import { ParticipantCard } from "../src/client/components/ParticipantCard";
@@ -297,5 +298,31 @@ describe("Micro-UX & Accessibility Improvements", () => {
     );
 
     expect(html).toContain("Test microphone permission");
+  });
+
+  it("renders DemoScriptPanel action buttons with descriptive aria labels when running", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(DemoScriptPanel, {
+        currentStep: {
+          id: "step-1",
+          atSeconds: 0,
+          action: "Start speech",
+          mustBeVisible: "Waveform visible",
+          verification: "presenter",
+        },
+        runs: [],
+        cleanRuns: 0,
+        releaseGateMet: false,
+        running: true,
+        onBegin: () => {},
+        onRecord: () => {},
+        onAbandon: () => {},
+      }),
+    );
+
+    expect(html).toContain('aria-label="Mark cue at 0:00 as seen"');
+    expect(html).toContain('aria-label="Mark cue at 0:00 as not seen"');
+    expect(html).toContain('aria-label="Skip cue at 0:00"');
+    expect(html).toContain('aria-label="Abandon current demo run"');
   });
 });
