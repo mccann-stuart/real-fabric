@@ -199,6 +199,7 @@ interface DiagnosticWebTransport {
   reliability?: MoqSessionStats["transportReliability"];
   congestionControl?: MoqSessionStats["congestionControl"];
   getStats?: () => Promise<WebTransportConnectionDiagnostics>;
+  datagrams?: { maxDatagramSize?: number };
 }
 
 const TRANSPORT_STATS_REFRESH_MS = 1_000;
@@ -793,8 +794,12 @@ function transportDiagnostics(client: MOQtailClient | null): {
   // adapter rather than leaking browser-version checks into room or UI code.
   const transport = (client as unknown as { webTransport?: DiagnosticWebTransport } | null)
     ?.webTransport;
+  const explicit = transport?.reliability;
+  const datagramCapable =
+    typeof transport?.datagrams?.maxDatagramSize === "number" &&
+    transport.datagrams.maxDatagramSize > 0;
   return {
-    reliability: transport?.reliability ?? "Not exposed",
+    reliability: explicit ?? (datagramCapable ? "supports-unreliable" : "Not exposed"),
     congestionControl: transport?.congestionControl ?? "Not exposed",
   };
 }

@@ -228,7 +228,14 @@ function defaultOpenWebTransport(url: string): ProbeTransport {
     // These values change from pending/default during connection setup. Read
     // them only after `ready` rather than copying the constructor-time value.
     get reliability() {
-      return diagnostics.reliability;
+      if (diagnostics.reliability) return diagnostics.reliability;
+      if (
+        typeof transport.datagrams?.maxDatagramSize === "number" &&
+        transport.datagrams.maxDatagramSize > 0
+      ) {
+        return "supports-unreliable";
+      }
+      return undefined;
     },
     get congestionControl() {
       return diagnostics.congestionControl;

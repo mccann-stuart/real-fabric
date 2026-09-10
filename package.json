@@ -17,6 +17,7 @@
     "postinstall": "node scripts/workers-build.mjs",
     "preview": "vite preview --configLoader runner",
     "test": "vitest run --configLoader runner",
+    "trace:gate1": "node scripts/verify-transport.mjs",
     "typecheck": "tsc -b"
   },
   "dependencies": {

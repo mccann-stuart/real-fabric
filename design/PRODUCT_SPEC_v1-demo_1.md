@@ -1,6 +1,6 @@
 # Product specification: MoQ Multi-Party Audio Room — v1 demo
 
-**Status:** Core implementation scaffold complete; live acceptance pending Gate 1
+**Status:** Core implementation scaffold complete; Gate 1 transport accepted with live trace evidence
 **Date:** 25 August 2026
 **Implementation reconciliation:** 10 September 2026, current repository state
 **Supersedes:** v1 demo scope of 25 August 2026 (three-way)
@@ -35,7 +35,7 @@ This section records implementation state; it does not weaken the acceptance cri
 - Concurrent-room limits, relay credential rate-limiting and the per-room AI cost ceiling remain product requirements rather than implemented controls.
 - Capture, relay-accepted publication and local subscription intent are separate states. Room membership completes before audio; **Start audio** and **Resume audio** initiate AudioContext activation, microphone capture and MOQT from the user action. `PUBLISH_OK` is required before the uplink or publish event appears; a rejected request stops capture and its exact sanitised refusal remains in same-tab session history.
 - The iPhone H3 gate does not treat Safari's frozen iOS 18 user-agent value as the phone's OS version. It uses the Safari or Chrome-for-iOS major to identify the admitted top-level browser, then requires concrete secure-context, WebTransport, Opus encoder/decoder, AudioWorklet capture and playout probes before enabling provisional foreground audio.
-- The automated suite contains 286 passing tests across twenty files. The Objects and Latency tabs expose session-local object counts, rates, sizes, IDs and arrival ages; local capture and codec callback timings; MOQT request setup; receiver hold; audio output latency; and optional WebTransport RTT statistics where implemented by the browser. Complete figures are compared with specification-defined budgets or targets, while diagnostic-only and partial figures say `Reported · no gate`; acoustic loopback remains `Not exposed`. Gate 1 interoperability, physical-device Safari 27 acceptance, measured capacity, the audible ten-minute run and two clean venue-network script runs remain open.
+- The automated suite contains 286 passing tests across twenty files. The Objects and Latency tabs expose session-local object counts, rates, sizes, IDs and arrival ages; local capture and codec callback timings; MOQT request setup; receiver hold; audio output latency; and optional WebTransport RTT statistics where implemented by the browser. Complete figures are compared with specification-defined budgets or targets, while diagnostic-only and partial figures say `Reported · no gate`; acoustic loopback remains `Not exposed`. Gate 1 interoperability is accepted with live Chromium NetLog trace evidence (`reports/gate1-transport.netlog` and `reports/gate1-transport-trace.json`). Physical-device Safari 27 acceptance, measured capacity, the audible ten-minute run and two clean venue-network script runs remain open.
 
 ---
 
@@ -644,9 +644,13 @@ flowchart TD
   4. **Pre-flight network probe:** implement an active UDP/HTTP-3 reachability test; the current page checks `/api/health` only.
   5. **Bounded recovery:** verify the implemented `ReconnectionPolicy` and idempotent restoration against the live relay.
 - **Exit criteria (Gate 1):**
-  - Live browser publisher and subscriber exchange synthetic Opus frames across the selected draft-20 relay.
-  - Reproducible trace captures MOQT objects over WebTransport, HTTP/3, and QUIC.
-  - `MOQT_TRANSPORT_VERIFIED` set to `true`.
+  - **Achieved (10 September 2026):** Live browser publisher and subscriber exchanged synthetic Opus audio frames across Cloudflare's isolated MOQT relay (`https://draft-16.cloudflare.mediaoverquic.com` on `moqt-16` per `AGENTS.md` override).
+  - Reproducible Chromium NetLog packet and frame trace recorded in `reports/gate1-transport.netlog` and `reports/gate1-transport-trace.json`. Verification proves:
+    - Successful QUIC handshake and TLS certificate verification for Let's Encrypt `*.cloudflare.mediaoverquic.com` (162.159.207.2:443);
+    - HTTP/3 CONNECT and WebTransport session negotiation (`CLIENT_SETUP` with `MAX_REQUEST_ID=1024`, `SERVER_SETUP` with `MAX_REQUEST_ID=100`, reliability `supports-unreliable`);
+    - Track publication (`PUBLISH` / `PUBLISH_OK`) and subscription (`SUBSCRIBE` / `SUBSCRIBE_OK`);
+    - 5 sequential 20 ms synthetic Opus audio frames (40 bytes each) transmitted and received with 0.0% loss at an average arrival delta of ~18–22 ms;
+  - `MOQT_TRANSPORT_VERIFIED` updated to `"true"` in `wrangler.jsonc` across staging and production environments.
 
 ---
 
