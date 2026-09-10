@@ -1,4 +1,5 @@
 import { MAX_SIMULATED_PARTICIPANTS, PINNED_MOQT_DRAFT } from "../../shared/contracts";
+import type { ConfigurationMatch } from "../../shared/pinnedConfiguration";
 import { Brand } from "../components/Brand";
 import { FailureBanner } from "../components/FailureBanner";
 import { PinnedConfigBanner } from "../components/PinnedConfigBanner";
@@ -10,9 +11,11 @@ import { useEntryForm } from "../hooks/useEntryForm";
 const MIC_BARS = Array.from({ length: 18 }, (_, value) => ({ id: `mic-${value}`, value }));
 
 export function EntryPage({
+  configuration,
   navigate,
   initialCode = "",
 }: {
+  configuration: ConfigurationMatch;
   navigate: (path: string) => void;
   initialCode?: string;
 }) {
@@ -181,7 +184,7 @@ export function EntryPage({
           </p>
         ) : null}
         {report.failure ? <FailureBanner code={report.failure} /> : null}
-        <PinnedConfigBanner />
+        <PinnedConfigBanner match={configuration} />
       </section>
     </main>
   );

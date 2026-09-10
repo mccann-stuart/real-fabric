@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HealthReport } from "../src/client/api";
-import { evaluateCapabilities } from "../src/client/hooks/useCapabilities";
+import {
+  evaluateCapabilities,
+  evaluateRequiredBrowserCapabilities,
+} from "../src/client/hooks/useCapabilities";
 
 const healthyRelay: HealthReport = {
   ok: true,
@@ -40,6 +43,20 @@ describe("Capabilities Evaluation", () => {
     const result = await evaluateCapabilities(vi.fn().mockResolvedValue(healthyRelay));
     expect(result.opusEncoder).toBe("unavailable");
     expect(result.failure).toBe("transport_unsupported");
+  });
+
+  it("returns concrete H3 evidence from the required local browser probes", async () => {
+    await expect(evaluateRequiredBrowserCapabilities()).resolves.toEqual({
+      state: "ready",
+      missing: [],
+    });
+
+    vi.stubGlobal("WebTransport", undefined);
+    vi.stubGlobal("AudioEncoder", undefined);
+    await expect(evaluateRequiredBrowserCapabilities()).resolves.toEqual({
+      state: "unavailable",
+      missing: expect.arrayContaining(["WebTransport", "WebCodecs Opus encoding"]),
+    });
   });
 
   it("evaluates capabilities correctly when health report indicates configured and frameable relay", async () => {

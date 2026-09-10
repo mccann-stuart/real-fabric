@@ -1,10 +1,12 @@
 import type { FailureCode } from "../../shared/failures";
+import type { ConfigurationMatch } from "../../shared/pinnedConfiguration";
 import { punctuateReason } from "../room/roomPresentation";
 import type { SessionState } from "../session/RoomSession";
 import { FailureList } from "./FailureBanner";
 import { PinnedConfigBanner } from "./PinnedConfigBanner";
 
 interface RoomStatusStackProps {
+  configuration: ConfigurationMatch;
   state: SessionState | null;
   reclaimed: boolean;
   error: string | null;
@@ -15,6 +17,7 @@ interface RoomStatusStackProps {
 }
 
 export function RoomStatusStack({
+  configuration,
   state,
   reclaimed,
   error,
@@ -29,16 +32,21 @@ export function RoomStatusStack({
     <div className="room-status-stack">
       <h2 className="sr-only">Room status</h2>
       {/* H3 */}
-      <PinnedConfigBanner />
+      <PinnedConfigBanner match={configuration} />
       <div className="mobile-warning" role="status">
-        {iphoneAudioCandidate ? (
+        {configuration.status === "checking" ? (
           <>
-            <b>!</b> iPhone Safari 27+ audio candidate · foreground only · physical acceptance
-            pending
+            <b>!</b> Testing required iPhone audio capabilities
+          </>
+        ) : iphoneAudioCandidate ? (
+          <>
+            <b>!</b> iPhone Safari 27+ or Chrome 141+ audio candidate · foreground only · physical
+            acceptance pending
           </>
         ) : (
           <>
-            <b>!</b> Desktop Chrome or iPhone Safari 27+ required for live audio
+            <b>!</b> Desktop Chrome, desktop Safari, or a qualifying iPhone browser required for
+            live audio
           </>
         )}
       </div>

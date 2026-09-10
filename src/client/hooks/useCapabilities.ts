@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FailureCode } from "../../shared/failures";
+import type { BrowserCapabilityEvidence } from "../../shared/pinnedConfiguration";
 import { fetchHealth } from "../api";
 import { probeOpusEncoderSupport } from "../audio/CaptureController";
 import { inspectAudioWorkletCaptureSupport } from "../audio/UniversalAudioCaptureAdapter";
@@ -82,17 +83,78 @@ const INITIAL: CapabilityReport = {
   failure: null,
 };
 
-export async function evaluateCapabilities(
-  fetchHealthImpl = fetchHealth,
-): Promise<EvaluatedCapabilities> {
+interface RequiredLocalCapabilityEvaluation {
+  evidence: BrowserCapabilityEvidence;
+  secureContext: CheckState;
+  webTransport: CheckState;
+  opusEncoder: CheckState;
+  opusDecoder: CheckState;
+  capture: CheckState;
+  captureReason: string;
+  playout: CheckState;
+  playoutReason: string;
+  encoder: Awaited<ReturnType<typeof probeOpusEncoderSupport>>;
+}
+
+async function evaluateRequiredLocalBrowserCapabilities(): Promise<RequiredLocalCapabilityEvaluation> {
   const [encoder, opusDecoder] = await Promise.all([probeOpusEncoderSupport(), checkOpusDecoder()]);
   const secureContext: CheckState = globalThis.isSecureContext ? "ready" : "unavailable";
-  const webTransport: CheckState = "WebTransport" in globalThis ? "ready" : "unavailable";
+  const webTransport: CheckState =
+    typeof globalThis.WebTransport === "function" ? "ready" : "unavailable";
   const captureSupport = inspectAudioWorkletCaptureSupport();
   const capture: CheckState = captureSupport.available ? "ready" : "unavailable";
   const playoutSupport = inspectPlayoutSupport();
   const playout: CheckState = playoutSupport.available ? "ready" : "unavailable";
   const opusEncoder: CheckState = encoder.supported ? "ready" : "unavailable";
+  const missing: string[] = [];
+  if (secureContext === "unavailable") missing.push("secure context");
+  if (webTransport === "unavailable") missing.push("WebTransport");
+  if (opusEncoder === "unavailable") missing.push("WebCodecs Opus encoding");
+  if (opusDecoder === "unavailable") missing.push("WebCodecs Opus decoding");
+  if (capture === "unavailable") missing.push("AudioWorklet microphone capture");
+  if (playout === "unavailable") missing.push("AudioWorklet playout");
+
+  return {
+    evidence: {
+      state: missing.length === 0 ? "ready" : "unavailable",
+      missing,
+    },
+    secureContext,
+    webTransport,
+    opusEncoder,
+    opusDecoder,
+    capture,
+    captureReason: captureSupport.reason,
+    playout,
+    playoutReason: playoutSupport.reason,
+    encoder,
+  };
+}
+
+/**
+ * H3 local gate for the current browser. This runs the concrete Opus config
+ * checks as well as API-surface checks; it does not infer support from a user
+ * agent and it does not claim live relay or acoustic acceptance.
+ */
+export async function evaluateRequiredBrowserCapabilities(): Promise<BrowserCapabilityEvidence> {
+  return (await evaluateRequiredLocalBrowserCapabilities()).evidence;
+}
+
+export async function evaluateCapabilities(
+  fetchHealthImpl = fetchHealth,
+): Promise<EvaluatedCapabilities> {
+  const local = await evaluateRequiredLocalBrowserCapabilities();
+  const {
+    encoder,
+    secureContext,
+    webTransport,
+    opusEncoder,
+    opusDecoder,
+    capture,
+    captureReason,
+    playout,
+    playoutReason,
+  } = local;
   const browserNavigator = globalThis.navigator;
   const audioSession: CheckState =
     browserNavigator && "audioSession" in browserNavigator ? "ready" : "not_tested";
@@ -164,9 +226,9 @@ export async function evaluateCapabilities(
     opusEncoder,
     opusDecoder,
     capture,
-    captureReason: captureSupport.reason,
+    captureReason,
     playout,
-    playoutReason: playoutSupport.reason,
+    playoutReason,
     audioSession,
     wakeLock,
     dtx,

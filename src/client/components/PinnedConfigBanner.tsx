@@ -1,8 +1,4 @@
-import {
-  currentUserAgentFacts,
-  describeTargets,
-  matchConfiguration,
-} from "../../shared/pinnedConfiguration";
+import { type ConfigurationMatch, describeTargets } from "../../shared/pinnedConfiguration";
 
 /**
  * H3: anything outside the named browser, operating-system and major-version
@@ -11,13 +7,19 @@ import {
  * Each candidate remains provisional until its applicable acceptance gates
  * pass, and the banner says so rather than implying support.
  */
-export function PinnedConfigBanner() {
-  const match = matchConfiguration(currentUserAgentFacts());
+export function PinnedConfigBanner({ match }: { match: ConfigurationMatch }) {
   if (match.status === "supported") return null;
   const provisional = match.status === "provisional";
+  const checking = match.status === "checking";
   return (
     <section className={`pin-banner${provisional ? " pin-banner--provisional" : ""}`} role="status">
-      <b>{provisional ? "Provisional audio configuration." : "Live audio unavailable here."}</b>{" "}
+      <b>
+        {checking
+          ? "Testing live-audio capabilities."
+          : provisional
+            ? "Provisional audio configuration."
+            : "Live audio unavailable here."}
+      </b>{" "}
       <span>
         {match.reasons.join(" ")} The configured targets are {describeTargets()}.
       </span>
@@ -26,8 +28,7 @@ export function PinnedConfigBanner() {
 }
 
 /** The same fact, stated positively, for the pre-flight page. */
-export function PinnedConfigSummary() {
-  const match = matchConfiguration(currentUserAgentFacts());
+export function PinnedConfigSummary({ match }: { match: ConfigurationMatch }) {
   return (
     <div className={`pin-summary pin-summary--${match.liveAudioEligible ? "tested" : "untested"}`}>
       <dl>
@@ -52,8 +53,10 @@ export function PinnedConfigSummary() {
   );
 }
 
-function configurationStatusLabel(status: ReturnType<typeof matchConfiguration>["status"]): string {
+function configurationStatusLabel(status: ConfigurationMatch["status"]): string {
   switch (status) {
+    case "checking":
+      return "Checking required browser capabilities";
     case "supported":
       return "Supported";
     case "provisional":

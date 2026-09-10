@@ -19,6 +19,7 @@ import { RoomSession, type SessionPhase } from "../src/client/session/RoomSessio
 import { requiredTransportReliabilityError } from "../src/client/transport/MoqTransportAdapter";
 import { probeRelayReachability } from "../src/client/transport/NetworkProbe";
 import {
+  type BrowserCapabilityEvidence,
   IOS_CHROME_CONFIGURATION,
   IOS_SAFARI_CONFIGURATION,
   matchConfiguration,
@@ -26,6 +27,11 @@ import {
 
 const SAFARI_27 =
   "Mozilla/5.0 (iPhone; CPU iPhone OS 27_0 like Mac OS X) AppleWebKit/619.1.12 (KHTML, like Gecko) Version/27.0 Mobile/15E148 Safari/604.1";
+const FROZEN_OS_SAFARI_27 = SAFARI_27.replace("CPU iPhone OS 27_0", "CPU iPhone OS 18_7");
+const READY_CAPABILITIES = {
+  state: "ready",
+  missing: [],
+} satisfies BrowserCapabilityEvidence;
 
 describe("iOS 27 Safari configuration floor", () => {
   it("recognises top-level iPhone Safari 27 before Macintosh compatibility tokens", () => {
@@ -42,25 +48,61 @@ describe("iOS 27 Safari configuration floor", () => {
     });
   });
 
-  it("keeps Safari 26 below the audio floor and later majors explicitly provisional", () => {
-    const belowFloor = [
-      SAFARI_27.replace("CPU iPhone OS 27_0", "CPU iPhone OS 26_0"),
-      SAFARI_27.replace("Version/27.0", "Version/26.0"),
-    ];
-    for (const userAgent of belowFloor) {
-      const match = matchConfiguration({ userAgent, platform: "iPhone" });
-      expect(match.status).toBe("readOnly");
-      expect(match.liveAudioEligible).toBe(false);
-      expect(match.reasons.join(" ")).toMatch(/floor is iOS 27 and Safari 27/i);
-    }
-
-    const safari28 = matchConfiguration({
-      userAgent: SAFARI_27.replace("Version/27.0", "Version/28.0"),
-      platform: "iPhone",
+  it("uses real browser capabilities instead of Safari's frozen iOS 18 token", () => {
+    const match = matchConfiguration(
+      { userAgent: FROZEN_OS_SAFARI_27, platform: "iPhone" },
+      READY_CAPABILITIES,
+    );
+    expect(match).toMatchObject({
+      status: "provisional",
+      liveAudioEligible: true,
+      browser: "Safari 27",
+      osMajorVersion: 18,
+      target: IOS_SAFARI_CONFIGURATION,
     });
+    expect(match.reasons.join(" ")).toMatch(/frozen compatibility token/i);
+    expect(match.reasons.join(" ")).toMatch(/passed every required local browser capability/i);
+  });
+
+  it("keeps Safari below the browser floor read-only and later majors explicitly provisional", () => {
+    const belowFloor = matchConfiguration(
+      {
+        userAgent: FROZEN_OS_SAFARI_27.replace("Version/27.0", "Version/26.0"),
+        platform: "iPhone",
+      },
+      READY_CAPABILITIES,
+    );
+    expect(belowFloor.status).toBe("readOnly");
+    expect(belowFloor.liveAudioEligible).toBe(false);
+    expect(belowFloor.reasons.join(" ")).toMatch(/browser floor is Safari 27/i);
+
+    const safari28 = matchConfiguration(
+      {
+        userAgent: FROZEN_OS_SAFARI_27.replace("Version/27.0", "Version/28.0"),
+        platform: "iPhone",
+      },
+      READY_CAPABILITIES,
+    );
     expect(safari28.status).toBe("provisional");
     expect(safari28.liveAudioEligible).toBe(true);
-    expect(safari28.reasons.join(" ")).toMatch(/not been added.*acceptance matrix/i);
+    expect(safari28.reasons.join(" ")).toMatch(/frozen compatibility token/i);
+  });
+
+  it("waits for the required probes and names missing capabilities", () => {
+    const checking = matchConfiguration(
+      { userAgent: FROZEN_OS_SAFARI_27, platform: "iPhone" },
+      { state: "checking", missing: [] },
+    );
+    expect(checking.status).toBe("checking");
+    expect(checking.liveAudioEligible).toBe(false);
+
+    const unavailable = matchConfiguration(
+      { userAgent: FROZEN_OS_SAFARI_27, platform: "iPhone" },
+      { state: "unavailable", missing: ["WebTransport", "WebCodecs Opus encoding"] },
+    );
+    expect(unavailable.status).toBe("readOnly");
+    expect(unavailable.liveAudioEligible).toBe(false);
+    expect(unavailable.reasons.join(" ")).toMatch(/WebTransport.*Opus encoding/i);
   });
 
   it("leaves alternative iOS browsers, web views and Home Screen mode read-only", () => {
@@ -114,32 +156,51 @@ describe("Chrome for iOS configuration floor", () => {
     expect(match.reasons.join(" ")).not.toMatch(/verified|supported browser/i);
   });
 
-  it("keeps Chrome for iOS below either floor read-only and names the floor it missed", () => {
-    const belowOs = matchConfiguration({
-      userAgent: CHROME_IOS_141.replace("CPU iPhone OS 27_0", "CPU iPhone OS 26_0"),
-      platform: "iPhone",
-    });
-    expect(belowOs.status).toBe("readOnly");
-    expect(belowOs.liveAudioEligible).toBe(false);
-    expect(belowOs.reasons.join(" ")).toMatch(/floor is iOS 27 and Chrome 141/i);
+  it("uses capabilities for an old OS token but retains the Chrome shell floor", () => {
+    const frozenOs = matchConfiguration(
+      {
+        userAgent: CHROME_IOS_141.replace("CPU iPhone OS 27_0", "CPU iPhone OS 18_7"),
+        platform: "iPhone",
+      },
+      READY_CAPABILITIES,
+    );
+    expect(frozenOs.status).toBe("provisional");
+    expect(frozenOs.liveAudioEligible).toBe(true);
+    expect(frozenOs.reasons.join(" ")).toMatch(/passed every required local browser capability/i);
 
-    const belowChrome = matchConfiguration({
-      userAgent: CHROME_IOS_141.replace("CriOS/141", "CriOS/140"),
-      platform: "iPhone",
-    });
+    const belowChrome = matchConfiguration(
+      {
+        userAgent: CHROME_IOS_141.replace("CriOS/141", "CriOS/140"),
+        platform: "iPhone",
+      },
+      READY_CAPABILITIES,
+    );
     expect(belowChrome.status).toBe("readOnly");
     expect(belowChrome.liveAudioEligible).toBe(false);
-    expect(belowChrome.reasons.join(" ")).toMatch(/reports iOS 27 and Chrome 140/i);
+    expect(belowChrome.reasons.join(" ")).toMatch(/browser floor is Chrome 141/i);
   });
 
-  it("fails closed when the iOS major cannot be read from a Chrome for iOS agent", () => {
+  it("fails closed without capability evidence when the iOS token is unavailable", () => {
     const match = matchConfiguration({
       userAgent: CHROME_IOS_141.replace("CPU iPhone OS 27_0 like Mac OS X", "like Mac OS X"),
       platform: "iPhone",
     });
     expect(match.status).toBe("readOnly");
     expect(match.liveAudioEligible).toBe(false);
-    expect(match.reasons.join(" ")).toMatch(/iOS version could not be identified/i);
+    expect(match.reasons.join(" ")).toMatch(/capability evidence was not supplied/i);
+  });
+
+  it("admits Chrome for iOS with no readable OS token after capability tests pass", () => {
+    const match = matchConfiguration(
+      {
+        userAgent: CHROME_IOS_141.replace("CPU iPhone OS 27_0 like Mac OS X", "like Mac OS X"),
+        platform: "iPhone",
+      },
+      READY_CAPABILITIES,
+    );
+    expect(match.status).toBe("provisional");
+    expect(match.liveAudioEligible).toBe(true);
+    expect(match.osMajorVersion).toBeNull();
   });
 
   it("does not admit Chrome for iOS installed to the Home Screen", () => {

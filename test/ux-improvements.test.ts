@@ -11,11 +11,19 @@ import { EntryPage } from "../src/client/pages/EntryPage";
 import { PreflightPage } from "../src/client/pages/PreflightPage";
 import type { Participant, RoomSnapshot, RoutingPreference } from "../src/shared/contracts";
 import { notExposed } from "../src/shared/measurement";
+import { matchConfiguration } from "../src/shared/pinnedConfiguration";
+
+const TEST_CONFIGURATION = matchConfiguration({
+  userAgent: "Mozilla/5.0 (Macintosh) Chrome/141.0.0.0 Safari/537.36",
+  brands: [{ brand: "Google Chrome", version: "141" }],
+  platform: "macOS",
+});
 
 describe("Micro-UX & Accessibility Improvements", () => {
   it("renders EntryPage action buttons with accessible labels and attributes", () => {
     const html = renderToStaticMarkup(
       React.createElement(EntryPage, {
+        configuration: TEST_CONFIGURATION,
         navigate: () => {},
       }),
     );
@@ -214,6 +222,7 @@ describe("Micro-UX & Accessibility Improvements", () => {
   it("renders styled retry button in RoomStatusStack terminal phase", () => {
     const html = renderToStaticMarkup(
       React.createElement(RoomStatusStack, {
+        configuration: TEST_CONFIGURATION,
         state: {
           phase: { name: "terminal", failure: "udp_blocked" },
           room: null,
@@ -292,6 +301,7 @@ describe("Micro-UX & Accessibility Improvements", () => {
   it("renders PreflightPage test microphone button with default text", () => {
     const html = renderToStaticMarkup(
       React.createElement(PreflightPage, {
+        configuration: TEST_CONFIGURATION,
         navigate: () => {},
       }),
     );
