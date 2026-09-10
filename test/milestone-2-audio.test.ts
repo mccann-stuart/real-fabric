@@ -14,6 +14,7 @@ import {
   FRAME_SAMPLES,
   PacketLossConcealer,
 } from "../src/client/audio/PacketLossConcealer";
+import { PlaybackDeduplicator } from "../src/client/audio/PlaybackDeduplicator";
 import {
   MAXIMUM_REBUILD_DEFERRAL_MS,
   SILENCE_REBUILD_GAP_MS,
@@ -183,6 +184,29 @@ describe("M2 — the drift rebuild waits for a pause", () => {
     // Drained at the moment of the final arrival: not silent by any measure.
     player.drain(arrival);
     expect(player.rebuildPending).toBe(false);
+  });
+});
+
+describe("M2 — playback deduplication memory bounds (SEC-09)", () => {
+  it("accepts unique objects and deduplicates duplicates within a group", () => {
+    const dedupe = new PlaybackDeduplicator();
+    expect(dedupe.accept("p1", 1, 10)).toBe(true);
+    expect(dedupe.accept("p1", 1, 10)).toBe(false);
+    expect(dedupe.accept("p1", 1, 11)).toBe(true);
+  });
+
+  it("caps objects per group at 100 to prevent unbounded memory allocation", () => {
+    const dedupe = new PlaybackDeduplicator();
+    const participantId = "p1";
+    const groupId = 1;
+
+    for (let objectId = 0; objectId < 100; objectId += 1) {
+      expect(dedupe.accept(participantId, groupId, objectId)).toBe(true);
+    }
+
+    // 101st object in the same group should be rejected
+    expect(dedupe.accept(participantId, groupId, 100)).toBe(false);
+    expect(dedupe.accept(participantId, groupId, 101)).toBe(false);
   });
 });
 
