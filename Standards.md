@@ -1,13 +1,13 @@
 # Real Fabric platform standards and compatibility matrix
 
 **Status:** Living implementation reference
-**Last reconciled with code:** 26 August 2026
+**Last reconciled with code:** 10 September 2026
 
 This document records the standards used by the current build, the exact browser and operating-system floors, and the evidence required before a configuration can be called supported. It does not authorise a transport downgrade, a production deploy or a claim that live MOQT interoperability has passed.
 
 ## 1. Current platform contract
 
-Room membership and the control-plane WebSocket can start when the room opens. Live audio starts only from an in-room **Start audio** or **Resume audio** action:
+Room membership and the control-plane WebSocket can start when the room opens. The WebSocket connection handshake transmits no query-string secrets; authentication is validated via an initial in-message `{ type: "auth" }` exchange, enforcing a maximum of one active control socket per participant (SEC-05, SEC-06). Request bodies are bounded to 32 KiB by a streaming reader (SEC-08), and room joins are rate-limited per client IP (SEC-07). Live audio starts only from an in-room **Start audio** or **Resume audio** action:
 
 ```text
 user activation
@@ -28,7 +28,7 @@ user activation
 
 The required local capabilities are a secure context, WebTransport, `AudioEncoder` and `AudioDecoder` support for Opus, an exact-frame capture path, AudioWorklet playout and a microphone when the participant wants to publish. Optional Audio Session, Screen Wake Lock, DTX and low-latency congestion-control results are reported separately and never represented as required support.
 
-The configured Cloudflare isolated relay, provisioned credential and draft-16 client path are present. `MOQT_TRANSPORT_VERIFIED=false` remains authoritative: no physical Safari 27 run or reproducible browser-to-relay trace has passed, and the shared relay credential retains the documented P1 scope problem.
+The configured Cloudflare isolated relay, provisioned credential and draft-16 client path are present. `MOQT_TRANSPORT_VERIFIED=false` remains authoritative: no physical Safari 27 run or reproducible browser-to-relay trace has passed, and the shared relay credential retains the documented P1 scope problem. Expired relay credentials are rejected fail-closed at the Worker boundary.
 
 ## 2. Standards catalogue
 
@@ -88,7 +88,7 @@ Apple currently publishes [Safari 27](https://developer.apple.com/documentation/
 
 ## 5. Evidence and acceptance
 
-The automated suite has **278 tests across twenty files**. It covers the macOS Safari, iOS Safari and Chrome for iOS identity floors, frozen-OS-token capability admission and exclusions, HTTP/3-only constructor options, reliable-only refusal at both probe and MOQT adapter boundaries, low-latency reporting, Opus option negotiation and rejection, Audio Session and wake-lock state, explicit activation, interruption teardown, playback deduplication across resume, plus the existing Worker, room, transport, routing, audio and telemetry contracts.
+The automated suite has **281 tests across twenty files**. It covers the macOS Safari, iOS Safari and Chrome for iOS identity floors, frozen-OS-token capability admission and exclusions, HTTP/3-only constructor options, reliable-only refusal at both probe and MOQT adapter boundaries, low-latency reporting, Opus option negotiation and rejection, Audio Session and wake-lock state, explicit activation, interruption teardown, playback deduplication across resume (capped at 100 objects per group), streaming body limits, IP-based join throttling, plus the existing Worker, room, transport, routing, audio and telemetry contracts.
 
 Automated tests do not prove:
 
@@ -99,13 +99,20 @@ Automated tests do not prove:
 - behaviour beyond the 16 MB received-data or 7,600-stream deadlock thresholds reported in [WebKit bug 319818](https://bugs.webkit.org/show_bug.cgi?id=319818);
 - relay credential enforcement or expiry.
 
-Safari 27 becomes supported only after a physical iPhone over an authorised HTTPS endpoint completes:
+## 6. Next steps and vision statements
 
-1. required pre-flight with `supports-unreliable` WebTransport reliability;
-2. independent MOQT publication and subscriptions through the configured draft;
-3. routing-control and inspector reconciliation;
-4. background/lock interruption followed by explicit successful resume;
-5. browser-to-relay evidence proving WebTransport over HTTP/3/QUIC and no forbidden fallback;
-6. two ten-minute reference runs and a stream/byte soak that runs beyond 16 MB received and 7,600 streams without deadlock.
+Unachieved acceptance gates and forward-looking platform roadmap items are maintained here:
 
-If any of those fail, the UI must retain the precise failure and Safari 27 remains provisional.
+1. **Physical iPhone Safari 27 qualification criteria (Next step):** Safari 27 becomes supported only after a physical iPhone over an authorised HTTPS endpoint completes:
+   - required pre-flight with `supports-unreliable` WebTransport reliability;
+   - independent MOQT publication and subscriptions through the configured draft;
+   - routing-control and inspector reconciliation;
+   - background/lock interruption followed by explicit successful resume;
+   - browser-to-relay evidence proving WebTransport over HTTP/3/QUIC and no forbidden fallback;
+   - two ten-minute reference runs and a stream/byte soak that runs beyond 16 MB received and 7,600 streams without deadlock.
+   If any of those fail, the UI must retain the precise failure and Safari 27 remains provisional.
+2. **Physical Chrome for iOS qualification (Next step):** Verify that WKWebView within Chrome for iOS reliably exposes the required WebTransport and WebCodecs surface on physical hardware under iOS 27 without WebKit deadlock.
+3. **MOQT draft 20 migration (Vision statement):** Update `MoqTransportAdapter` to negotiate MOQT draft 20 when both the client library and deployed relay support draft 20 framing, preserving identical audio and UI state.
+4. **Live transport trace acceptance (Gate 1 exit):** Capture an end-to-end browser-to-relay packet and frame trace to authorise setting `MOQT_TRANSPORT_VERIFIED=true`.
+5. **Acoustic loopback & endurance acceptance (Gate 2 exit):** Complete acoustic loopback latency validation (§9.4) and a 10-minute continuous run on reference hardware without drift or buffer overflow.
+6. **Relay tenant-scoped authorization (Vision statement):** Implement room- and participant-scoped token validation at the relay boundary to enforce track namespaces and close the P1 credential disclosure.

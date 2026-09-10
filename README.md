@@ -6,7 +6,18 @@ Real Fabric is a conference-stage demonstration of humans and AI agents speaking
 
 ## Status
 
-The room service, presenter simulation, client media pipeline, protocol inspector, provisioned relay-credential handling, network probe and Milestone 2 audio resilience are implemented. The Objects and Latency inspector tabs compare exposed session measurements with the specification's budgets or targets, while diagnostic-only values are labelled `Reported · no gate`. The production Worker is configured with the isolated `real-fabric-production` relay and a short-lived publish/subscribe token. The demo is **not transport-accepted**: Gate 1, a live AI pipeline, measured capacity, acoustic loopback, the audible ten-minute run and two clean venue-network runs remain open.
+The room service, presenter simulation, client media pipeline, protocol inspector, provisioned relay-credential handling, network probe and Milestone 2 audio resilience are implemented with 281 automated tests across twenty files. The Objects and Latency inspector tabs compare exposed session measurements with the specification's budgets or targets, while diagnostic-only values are labelled `Reported · no gate`. The production Worker is configured with the isolated `real-fabric-production` relay and an expired publish/subscribe token. The demo is **not transport-accepted**: Gate 1, a live AI pipeline, measured capacity, acoustic loopback, the audible ten-minute run and two clean venue-network runs remain open.
+
+### Recent security hardening
+
+Recent security review findings have been remediated in code and validated with automated tests:
+
+- **SEC-05 (Credential exposure):** Reusable participant credentials removed from the control-plane WebSocket query string; authentication is performed via an initial in-socket message.
+- **SEC-06 (Resource exhaustion):** Enforced at most one active control socket per participant in the Durable Object, terminating superseded connections cleanly.
+- **SEC-07 (Resource exhaustion):** Client IP-based rate limiting (`enforceJoinRateLimit`) throttles rapid room join bursts before participant allocation.
+- **SEC-08 (Resource exhaustion):** Bounded streaming JSON body reader enforces a 32 KiB payload ceiling (`MAX_BODY_BYTES`) before parsing.
+- **SEC-09 (Resource exhaustion):** Playback deduplication retains at most 100 object identifiers per second group (`MAXIMUM_OBJECTS_PER_GROUP`).
+- **Relay credential validation:** Expired or malformed relay JWTs are rejected fail-closed at the Worker boundary before delivery to clients.
 
 ### Known security issue — shared relay credential disclosure (P1)
 
@@ -16,7 +27,7 @@ Cloudflare's current [MoQ token API](https://developers.cloudflare.com/api/resou
 
 This P1 is therefore a known unresolved issue, not an accepted production risk or a completed Gate 1 control. The code is intentionally unchanged pending a relay credential model that can enforce room and participant scope without imposing a participant cap. Do not use the current shared-relay path for sensitive audio, claim tenant isolation or label cooperative routing as relay-enforced.
 
-Milestones 1 and 2 of the §11 release plan are built. Milestones 3 and 4 are not.
+Milestones 1 and 2 of the §11 release plan are built in code. Milestones 3 and 4 are not.
 
 **The build attempts a real MOQT session when the relay and its provisioned credential are configured, and still claims nothing it has not traced.** Those are separate facts, and the code keeps them separate:
 
@@ -26,6 +37,19 @@ Milestones 1 and 2 of the §11 release plan are built. Milestones 3 and 4 are no
 Conflating the two would have meant never attempting the connection that produces the trace. There is still no second transport to fall back to, and presenter simulation never stands in for a working relay or AI pipeline.
 
 **Draft configuration change, not a rewrite.** `DRAFT_REGISTRY` in [`MoqTransportAdapter`](src/client/transport/MoqTransportAdapter.ts) already carries `moqt-14`, `moqt-16`, `moqt-18` and `moqt-20`, each with the reason it is or is not currently usable. For draft 20 the remaining steps are therefore only to bump `moqtail` to a version that frames it and to repoint `MOQT_DRAFT` and `MOQ_RELAY_URL`; a draft outside that registry needs one entry added first. No room, UI or audio-pipeline code changes.
+
+### Next steps and vision statements
+
+Forward-looking goals and unachieved acceptance criteria are tracked here:
+
+1. **Gate 1 transport acceptance (Vision target):** Record a reproducible browser-to-relay trace over WebTransport and HTTP/3/QUIC proving draft interoperability. Once verified, set `MOQT_TRANSPORT_VERIFIED=true`.
+2. **MOQT draft 20 migration (Next step):** Bump `moqtail` when a draft-20 compatible release is published and repoint Worker configuration to the draft-20 relay without altering client audio or room state.
+3. **Tenant-scoped relay credentials (Next step):** Replace the coarse relay-wide JWT with participant- and room-scoped credentials when supported by the relay API, resolving the P1 disclosure.
+4. **Gate 2 acoustic acceptance (Vision target):** Conduct physical acoustic loopback latency testing (§9.4) and a continuous ten-minute reference composition run on reference hardware without drift or buffer overflow (H13).
+5. **Measured capacity benchmark (Next step):** Benchmark degradation ladder triggers on target reference hardware to establish empirical participant capacity (§9.2, H7).
+6. **Milestone 3 — AI orchestration and floor authority (Next step):** Implement authoritative Durable Object floor control, publishable AI audio tracks carrying labelled synthetic voice, publisher-side barge-in cancellation markers, and live speech pipeline interfaces (§11.4).
+7. **Milestone 4 — Venue network validation (Vision target):** Complete two full clean runs of the §12 demonstration script on a venue network or mobile hotspot (H16).
+8. **Physical mobile acceptance (Next step):** Execute the full browser acceptance suite on physical iPhone hardware for top-level Safari 27+ and Chrome for iOS 141+ under iOS 27.
 
 ### H1–H16
 
@@ -124,7 +148,7 @@ The production relay is `real-fabric-production` (`5266d64d9209fb9a8961f00974580
 - `src/client/components`, `src/client/pages` — entry, pre-flight, room, inspector and presenter surfaces.
 - `public/audio/mixer-worklet.js` — the single mixing point, served same-origin so it satisfies the existing `script-src 'self'` policy.
 - `src/worker` — API routing, security headers, redacted structured logs, provisioned relay credential handling and the SQLite Durable Object room service.
-- `test` — 278 automated tests across twenty files covering the requirements above.
+- `test` — 281 automated tests across twenty files covering the requirements above.
 
 ## Local setup
 
@@ -173,23 +197,21 @@ Builds does not run Wrangler custom-build configuration before its default
 `npx wrangler deploy` command. The hook exits without building during local
 dependency installs.
 
-## What is not verified
+## Next steps and unverified vision statements
 
-Automated checks cover the requirements marked above. They do not cover, and this repository does not claim:
+Automated checks cover the implemented requirements. All forward-looking, unachieved, and unverified items are tracked as next steps:
 
-- MOQT interoperability, or that any audio has moved over the configured relay. The pinned client frames draft 16 and the production credential is present, but the handshake path still has only unit-test evidence;
-- a live UDP/HTTP-3 network-probe result;
-- relay acceptance and expiry behaviour for the provisioned credential, or relay-level enforcement beyond coarse publish/subscribe operations;
-- room, namespace, track or participant enforcement for the relay credential; the current shared-token disclosure is the known P1 described above;
-- audible quality of the packet loss concealment. Its behaviour is unit-tested; nobody has listened to it;
-- a live recognition, model or speech-synthesis pipeline;
-- publication of the barge-in cancellation marker over MOQT;
-- the §9.3 latency budget, which needs the §9.4 acoustic loopback method;
-- measured capacity;
-- the ten-minute reference-composition run (H13);
-- milestones 3 and 4 of the §11 release plan, which are not built;
-- the §12 script on a venue network (H16);
-- physical-device Safari 27 and Chrome for iOS behaviour, including whether WKWebView exposes the required WebTransport and WebCodecs surface, and browser behaviour beyond the four provisional configurations, including the complete supported-browser acceptance matrix required by H3;
-- real-browser and acoustic parity of the AudioWorklet capture path against `MediaStreamTrackProcessor`.
+- **MOQT interoperability trace (Gate 1):** MOQT interoperability, or that any audio has moved over the configured relay. The pinned client frames draft 16 and the production credential is present, but the handshake path still has only unit-test evidence;
+- **Live network probe:** a live UDP/HTTP-3 network-probe result;
+- **Relay token lifecycle & scope (P1):** relay acceptance and expiry behaviour for the provisioned credential, or relay-level enforcement beyond coarse publish/subscribe operations, including room, namespace, track or participant enforcement for the relay credential (the known P1);
+- **Acoustic packet loss concealment:** audible quality of the packet loss concealment. Its behaviour is unit-tested; nobody has listened to it;
+- **Live AI pipeline & voice:** a live recognition, model or speech-synthesis pipeline, or publication of the barge-in cancellation marker over MOQT;
+- **Acoustic latency budget (Gate 2):** the §9.3 latency budget, which needs the §9.4 acoustic loopback method;
+- **Empirical capacity limits:** measured capacity on reference hardware;
+- **Endurance run (Gate 2):** the ten-minute reference-composition run (H13);
+- **Milestones 3 and 4:** multi-agent AI audio orchestration, floor authority, and conference stage hardening;
+- **Venue network validation (Gate 4 / H16):** the §12 script on a venue network;
+- **Physical mobile acceptance (H3 matrix):** physical-device Safari 27 and Chrome for iOS behaviour, including whether WKWebView exposes the required WebTransport and WebCodecs surface, and browser behaviour beyond the four provisional configurations, including the complete supported-browser acceptance matrix required by H3;
+- **Audio capture parity:** real-browser and acoustic parity of the AudioWorklet capture path against `MediaStreamTrackProcessor`.
 
 Production deployment requires separate, explicit authorisation. A successful local build or GitHub push is not a production deployment.
