@@ -1,3 +1,4 @@
+import type { ConfigurationMatch } from "../../shared/pinnedConfiguration";
 import { Brand } from "../components/Brand";
 import { FailureBanner } from "../components/FailureBanner";
 import { PinnedConfigSummary } from "../components/PinnedConfigBanner";
@@ -9,7 +10,13 @@ import { useCapabilities } from "../hooks/useCapabilities";
  * §4.1: a separate shareable URL runs the same checks plus a relay reachability
  * probe, without joining. Run it on the venue network before the talk.
  */
-export function PreflightPage({ navigate }: { navigate: (path: string) => void }) {
+export function PreflightPage({
+  configuration,
+  navigate,
+}: {
+  configuration: ConfigurationMatch;
+  navigate: (path: string) => void;
+}) {
   const { report, testMicrophone } = useCapabilities();
   return (
     <main className="preflight-page">
@@ -46,7 +53,7 @@ export function PreflightPage({ navigate }: { navigate: (path: string) => void }
       {/* H3 */}
       <section className="advice-rail">
         <h2>Tested configuration</h2>
-        <PinnedConfigSummary />
+        <PinnedConfigSummary match={configuration} />
       </section>
 
       <section className="advice-rail">

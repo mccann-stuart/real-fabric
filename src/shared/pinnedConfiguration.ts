@@ -1,11 +1,23 @@
 /**
- * H3: live audio is admitted only for a named browser, operating system and
- * major-version floor. Capability checks still run afterwards; identifying as
- * a target never turns an unverified transport into a support claim.
+ * H3: live audio is admitted only for a named browser target with the required
+ * local capabilities. On iPhone the reported OS token is frozen, so observed
+ * capabilities are part of admission. Neither identity nor local probes turn
+ * an unverified transport into a support claim.
  */
 
 export type PinStatus = "provisional" | "signed_off";
-export type ConfigurationStatus = "supported" | "provisional" | "readOnly" | "unsupported";
+export type ConfigurationStatus =
+  | "checking"
+  | "supported"
+  | "provisional"
+  | "readOnly"
+  | "unsupported";
+
+export interface BrowserCapabilityEvidence {
+  state: "checking" | "ready" | "unavailable";
+  /** Required local browser features that failed their concrete probes. */
+  missing: string[];
+}
 
 export interface PinnedConfiguration {
   browser: "Google Chrome" | "Safari";
@@ -53,8 +65,9 @@ export const IOS_SAFARI_CONFIGURATION: PinnedConfiguration = {
 
 /**
  * Chrome for iOS renders in WebKit, not Blink, and its user agent carries no
- * `Version/` token. The iOS major therefore carries the capability floor and
- * the `CriOS` major names only the shell around the same engine Safari uses.
+ * `Version/` token. `CriOS` identifies only the shell; concrete browser probes
+ * carry the local capability gate. The platform major remains the declared
+ * physical-device acceptance target, not a value inferred from the OS token.
  */
 export const IOS_CHROME_CONFIGURATION: PinnedConfiguration = {
   browser: "Google Chrome",
@@ -115,11 +128,14 @@ export interface UserAgentFacts {
  * a Macintosh user agent reporting touch points is iPadOS in desktop mode
  * rather than an admitted Mac.
  */
-export function matchConfiguration(facts: UserAgentFacts): ConfigurationMatch {
+export function matchConfiguration(
+  facts: UserAgentFacts,
+  capabilityEvidence?: BrowserCapabilityEvidence,
+): ConfigurationMatch {
   const platform = detectPlatform(facts);
   const device = detectDevice(facts);
 
-  if (device === "iPhone") return matchIphone(facts, platform);
+  if (device === "iPhone") return matchIphone(facts, platform, capabilityEvidence);
 
   const chrome = detectChrome(facts);
   if (chrome && platform === PINNED_CONFIGURATION.platform) {
@@ -216,7 +232,11 @@ export function matchConfiguration(facts: UserAgentFacts): ConfigurationMatch {
   });
 }
 
-function matchIphone(facts: UserAgentFacts, platform: string): ConfigurationMatch {
+function matchIphone(
+  facts: UserAgentFacts,
+  platform: string,
+  capabilityEvidence?: BrowserCapabilityEvidence,
+): ConfigurationMatch {
   const safari = detectSafari(facts);
   const osMajorVersion = detectIphoneOsMajor(facts.userAgent);
 
@@ -234,7 +254,9 @@ function matchIphone(facts: UserAgentFacts, platform: string): ConfigurationMatc
   }
 
   const chrome = detectIphoneChrome(facts);
-  if (chrome) return matchIphoneChrome(chrome, platform, osMajorVersion);
+  if (chrome) {
+    return matchIphoneChrome(chrome, platform, osMajorVersion, capabilityEvidence);
+  }
 
   if (!safari) {
     return result({
@@ -252,11 +274,7 @@ function matchIphone(facts: UserAgentFacts, platform: string): ConfigurationMatc
   }
 
   const minimumOs = IOS_SAFARI_CONFIGURATION.minimumPlatformMajorVersion ?? 27;
-  const belowFloor =
-    osMajorVersion === null ||
-    osMajorVersion < minimumOs ||
-    safari.majorVersion < IOS_SAFARI_CONFIGURATION.minimumMajorVersion;
-  if (belowFloor) {
+  if (safari.majorVersion < IOS_SAFARI_CONFIGURATION.minimumMajorVersion) {
     return result({
       status: "readOnly",
       browser: `Safari ${safari.majorVersion}`,
@@ -266,16 +284,46 @@ function matchIphone(facts: UserAgentFacts, platform: string): ConfigurationMatc
       device: "iPhone",
       target: IOS_SAFARI_CONFIGURATION,
       reasons: [
-        osMajorVersion === null
-          ? "The iOS version could not be identified, so the iOS 27 floor cannot be verified."
-          : `The working-audio floor is iOS ${minimumOs} and Safari ${IOS_SAFARI_CONFIGURATION.minimumMajorVersion}; this session reports iOS ${osMajorVersion} and Safari ${safari.majorVersion}.`,
+        `The working-audio browser floor is Safari ${IOS_SAFARI_CONFIGURATION.minimumMajorVersion}; this session reports Safari ${safari.majorVersion}.`,
       ],
     });
   }
 
-  const initiallyTestedMajor =
-    osMajorVersion === minimumOs &&
-    safari.majorVersion === IOS_SAFARI_CONFIGURATION.minimumMajorVersion;
+  const capabilityResult = matchIphoneCapabilityEvidence({
+    evidence: capabilityEvidence,
+    browser: `Safari ${safari.majorVersion}`,
+    browserMajorVersion: safari.majorVersion,
+    platform,
+    osMajorVersion,
+    minimumOs,
+    target: IOS_SAFARI_CONFIGURATION,
+  });
+  if (capabilityResult) return capabilityResult;
+
+  // Safari deliberately freezes the iPhone OS token at an iOS 18 value. When
+  // the real local capability probes ran, that compatibility token is not an
+  // operating-system version gate. Calls without capability evidence retain
+  // the conservative legacy behaviour for non-browser consumers.
+  if (capabilityEvidence === undefined && (osMajorVersion === null || osMajorVersion < minimumOs)) {
+    return result({
+      status: "readOnly",
+      browser: `Safari ${safari.majorVersion}`,
+      browserMajorVersion: safari.majorVersion,
+      platform,
+      osMajorVersion,
+      device: "iPhone",
+      target: IOS_SAFARI_CONFIGURATION,
+      reasons: [
+        "Required browser capability evidence was not supplied, so the frozen iPhone OS user-agent token cannot admit live audio by itself.",
+      ],
+    });
+  }
+
+  const frozenOsToken = osMajorVersion === null || osMajorVersion < minimumOs;
+  const initiallyTestedMajor = safari.majorVersion === IOS_SAFARI_CONFIGURATION.minimumMajorVersion;
+  const acceptanceReason = initiallyTestedMajor
+    ? IOS_SAFARI_CONFIGURATION.note
+    : `Safari ${safari.majorVersion} meets the browser floor but has not been added to the physical-device acceptance matrix.`;
   return result({
     status: "provisional",
     browser: `Safari ${safari.majorVersion}`,
@@ -285,30 +333,27 @@ function matchIphone(facts: UserAgentFacts, platform: string): ConfigurationMatc
     device: "iPhone",
     target: IOS_SAFARI_CONFIGURATION,
     reasons: [
-      initiallyTestedMajor
-        ? IOS_SAFARI_CONFIGURATION.note
-        : `This configuration meets the iOS 27/Safari 27 floor, but iOS ${osMajorVersion}/Safari ${safari.majorVersion} has not been added to the physical-device acceptance matrix.`,
+      frozenOsToken
+        ? `${describeIphoneOsCompatibilityToken(osMajorVersion)} Safari ${safari.majorVersion} passed every required local browser capability probe. ${acceptanceReason}`
+        : acceptanceReason,
     ],
   });
 }
 
 /**
- * The iOS major is the binding floor here: Chrome for iOS is a shell around the
- * same WebKit build Safari uses, so the `CriOS` major cannot imply a Blink
- * capability set. Both floors are still named so a refusal says which it missed.
+ * Chrome for iOS is a shell around WebKit, so the `CriOS` major cannot imply a
+ * Blink capability set. The browser major identifies the admitted shell; real
+ * WebTransport, Opus, capture and playout probes decide local eligibility.
  */
 function matchIphoneChrome(
   chrome: { majorVersion: number },
   platform: string,
   osMajorVersion: number | null,
+  capabilityEvidence?: BrowserCapabilityEvidence,
 ): ConfigurationMatch {
   const minimumOs = IOS_CHROME_CONFIGURATION.minimumPlatformMajorVersion ?? 27;
   const browser = `Google Chrome ${chrome.majorVersion}`;
-  const belowFloor =
-    osMajorVersion === null ||
-    osMajorVersion < minimumOs ||
-    chrome.majorVersion < IOS_CHROME_CONFIGURATION.minimumMajorVersion;
-  if (belowFloor) {
+  if (chrome.majorVersion < IOS_CHROME_CONFIGURATION.minimumMajorVersion) {
     return result({
       status: "readOnly",
       browser,
@@ -318,12 +363,38 @@ function matchIphoneChrome(
       device: "iPhone",
       target: IOS_CHROME_CONFIGURATION,
       reasons: [
-        osMajorVersion === null
-          ? `The iOS version could not be identified, so the iOS ${minimumOs} floor cannot be verified.`
-          : `The working-audio floor is iOS ${minimumOs} and Chrome ${IOS_CHROME_CONFIGURATION.minimumMajorVersion}; this session reports iOS ${osMajorVersion} and Chrome ${chrome.majorVersion}.`,
+        `The working-audio browser floor is Chrome ${IOS_CHROME_CONFIGURATION.minimumMajorVersion}; this session reports Chrome ${chrome.majorVersion}.`,
       ],
     });
   }
+
+  const capabilityResult = matchIphoneCapabilityEvidence({
+    evidence: capabilityEvidence,
+    browser,
+    browserMajorVersion: chrome.majorVersion,
+    platform,
+    osMajorVersion,
+    minimumOs,
+    target: IOS_CHROME_CONFIGURATION,
+  });
+  if (capabilityResult) return capabilityResult;
+
+  if (capabilityEvidence === undefined && (osMajorVersion === null || osMajorVersion < minimumOs)) {
+    return result({
+      status: "readOnly",
+      browser,
+      browserMajorVersion: chrome.majorVersion,
+      platform,
+      osMajorVersion,
+      device: "iPhone",
+      target: IOS_CHROME_CONFIGURATION,
+      reasons: [
+        "Required browser capability evidence was not supplied, so the iPhone OS user-agent token cannot admit live audio by itself.",
+      ],
+    });
+  }
+
+  const frozenOsToken = osMajorVersion === null || osMajorVersion < minimumOs;
 
   return result({
     status: "provisional",
@@ -333,8 +404,62 @@ function matchIphoneChrome(
     osMajorVersion,
     device: "iPhone",
     target: IOS_CHROME_CONFIGURATION,
-    reasons: [IOS_CHROME_CONFIGURATION.note],
+    reasons: [
+      frozenOsToken
+        ? `${describeIphoneOsCompatibilityToken(osMajorVersion)} Chrome for iOS ${chrome.majorVersion} passed every required local browser capability probe. ${IOS_CHROME_CONFIGURATION.note}`
+        : IOS_CHROME_CONFIGURATION.note,
+    ],
   });
+}
+
+function matchIphoneCapabilityEvidence(input: {
+  evidence: BrowserCapabilityEvidence | undefined;
+  browser: string;
+  browserMajorVersion: number;
+  platform: string;
+  osMajorVersion: number | null;
+  minimumOs: number;
+  target: PinnedConfiguration;
+}): ConfigurationMatch | null {
+  if (!input.evidence || input.evidence.state === "ready") return null;
+
+  const frozenTokenReason =
+    input.osMajorVersion === null || input.osMajorVersion < input.minimumOs
+      ? `${describeIphoneOsCompatibilityToken(input.osMajorVersion)} `
+      : "";
+  if (input.evidence.state === "checking") {
+    return result({
+      status: "checking",
+      browser: input.browser,
+      browserMajorVersion: input.browserMajorVersion,
+      platform: input.platform,
+      osMajorVersion: input.osMajorVersion,
+      device: "iPhone",
+      target: input.target,
+      reasons: [
+        `${frozenTokenReason}Testing the required WebTransport, Opus, capture and playout capabilities before enabling audio.`,
+      ],
+    });
+  }
+
+  return result({
+    status: "readOnly",
+    browser: input.browser,
+    browserMajorVersion: input.browserMajorVersion,
+    platform: input.platform,
+    osMajorVersion: input.osMajorVersion,
+    device: "iPhone",
+    target: input.target,
+    reasons: [
+      `${frozenTokenReason}Required local browser capabilities are unavailable: ${input.evidence.missing.join(", ") || "an unidentified capability"}.`,
+    ],
+  });
+}
+
+function describeIphoneOsCompatibilityToken(osMajorVersion: number | null): string {
+  return osMajorVersion === null
+    ? "This browser does not expose the current iOS version in its user-agent string."
+    : `The reported iOS ${osMajorVersion} user-agent value is a frozen compatibility token, not reliable evidence of the phone's current operating-system version.`;
 }
 
 function result(

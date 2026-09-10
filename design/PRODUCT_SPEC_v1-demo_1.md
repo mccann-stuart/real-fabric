@@ -31,7 +31,8 @@ This section records implementation state; it does not weaken the acceptance cri
 - A bounded capture adapter retains `MediaStreamTrackProcessor` as the preferred Chrome path and adds an exact-frame AudioWorklet path for future desktop evaluation. Selection and framing are unit-tested; real-browser and acoustic parity remain open.
 - Concurrent-room limits, relay credential rate-limiting and the per-room AI cost ceiling remain product requirements rather than implemented controls.
 - Capture, relay-accepted publication and local subscription intent are separate states. Room membership completes before audio; **Start audio** and **Resume audio** initiate AudioContext activation, microphone capture and MOQT from the user action. `PUBLISH_OK` is required before the uplink or publish event appears; a rejected request stops capture and its exact sanitised refusal remains in same-tab session history.
-- The automated suite contains 152 passing tests across ten files. The Objects and Latency tabs compare exposed session figures with specification-defined budgets or targets and identify diagnostic-only figures as `Reported · no gate`; acoustic loopback remains `Not exposed`. Gate 1 interoperability, physical-device Safari 27 acceptance, measured capacity, the audible ten-minute run and two clean venue-network script runs remain open.
+- The iPhone H3 gate does not treat Safari's frozen iOS 18 user-agent value as the phone's OS version. It uses the Safari or Chrome-for-iOS major to identify the admitted top-level browser, then requires concrete secure-context, WebTransport, Opus encoder/decoder, AudioWorklet capture and playout probes before enabling provisional foreground audio.
+- The automated suite contains 278 passing tests across twenty files. The Objects and Latency tabs compare exposed session figures with specification-defined budgets or targets and identify diagnostic-only figures as `Reported · no gate`; acoustic loopback remains `Not exposed`. Gate 1 interoperability, physical-device Safari 27 acceptance, measured capacity, the audible ten-minute run and two clean venue-network script runs remain open.
 
 ---
 
@@ -743,7 +744,7 @@ The real acceptance test. Three and a half minutes, in order.
 | AI worker transport: raw QUIC or WebTransport | AI Lead | Gate 1 | Open; no live AI worker exists |
 | Recognition, model and synthesis providers; retention terms; per-room cost ceiling | Product Owner | Gate 2 start | Not implemented |
 | Addressing mechanism: hold-to-ask or wake name | UX Lead | Gate 2 exit | Hold-to-ask is wired; wake names are stored but not detected |
-| Supported browser, OS and major-version matrix | QA Lead | Gate 2 exit | Open; current implementation recognises provisional Chrome 141+ on macOS and top-level Safari 27+ on iPhone with iOS 27+, both pending applicable real-browser acceptance |
+| Supported browser, OS and major-version matrix | QA Lead | Gate 2 exit | Open; current implementation recognises the named desktop candidates and capability-qualified top-level Safari 27+ / Chrome for iOS 141+ browsers for the iOS 27 iPhone target without mistaking Safari's frozen iOS 18 compatibility token for the current OS; all remain pending applicable real-browser acceptance |
 | Grid layout threshold and ordering rule | UX Lead | Gate 2 exit | Compact threshold = 8 |
 | Reference network definition | QA Lead | Gate 2 exit | Open; wired or good Wi-Fi remains the provisional test condition |
 

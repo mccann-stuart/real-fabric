@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Participant } from "../../shared/contracts";
 import { notExposed } from "../../shared/measurement";
-import { currentUserAgentFacts, matchConfiguration } from "../../shared/pinnedConfiguration";
+import type { ConfigurationMatch } from "../../shared/pinnedConfiguration";
 import { clearSession, configurePresenter, loadSession, setAiToAi } from "../api";
 import { Brand } from "../components/Brand";
 import { DemoScriptPanel } from "../components/DemoScriptPanel";
@@ -19,15 +19,24 @@ import type { TrackSubscriptionState } from "../session/RoomSession";
 
 const COPY_FEEDBACK_DURATION_MS = 2_500;
 
-export function RoomPage({ code, navigate }: { code: string; navigate: (path: string) => void }) {
+export function RoomPage({
+  code,
+  configuration,
+  navigate,
+}: {
+  code: string;
+  configuration: ConfigurationMatch;
+  navigate: (path: string) => void;
+}) {
   const [stored] = useState(() => loadSession(code));
   const presenterMode = sessionStorage.getItem(`real-fabric:presenter:${code}`) === "true";
   const { state, session, reclaimed, error, startAudio, setMuted, retry, leave } = useRoomSession(
     stored,
     presenterMode,
   );
-  const [configuration] = useState(() => matchConfiguration(currentUserAgentFacts()));
   const iphoneAudioCandidate = configuration.device === "iPhone" && configuration.liveAudioEligible;
+  const iphoneCapabilitiesChecking =
+    configuration.device === "iPhone" && configuration.status === "checking";
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const copyAttempt = useRef(0);
@@ -280,7 +289,9 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
           aria-label="Room participants"
         >
           <h2 className="sr-only">Room participants</h2>
-          {!iphoneAudioCandidate ? <p className="mobile-readonly">▣ Read-only room view</p> : null}
+          {!iphoneAudioCandidate && !iphoneCapabilitiesChecking ? (
+            <p className="mobile-readonly">▣ Read-only room view</p>
+          ) : null}
           <div className="participant-grid participant-grid--prominent">
             {layout.prominent.map(renderCard)}
           </div>
@@ -371,6 +382,7 @@ export function RoomPage({ code, navigate }: { code: string; navigate: (path: st
       ) : null}
 
       <RoomStatusStack
+        configuration={configuration}
         state={state}
         reclaimed={reclaimed}
         error={error}
