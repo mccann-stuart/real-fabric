@@ -20,6 +20,7 @@ import {
   SILENCE_REBUILD_GAP_MS,
   TrackPlayer,
 } from "../src/client/audio/TrackPlayer";
+import { measured } from "../src/shared/measurement";
 
 /**
  * §11.3 milestone 2: hardware resilience and audio pipeline hardening.
@@ -220,6 +221,52 @@ describe("M2 — truthful browser latency reporting", () => {
 
     internal.context = { outputLatency: 0.008 };
     expect(mixer.outputLatencyMs()).toEqual({ exposed: true, value: 8 });
+  });
+
+  it("exposes zero counters and receiver hold once those values are observable", () => {
+    const mixer = {
+      addTrack: () => undefined,
+      removeTrack: () => undefined,
+      pushSamples: () => undefined,
+      setRatio: () => undefined,
+      flush: () => undefined,
+    } as unknown as MixerGraph;
+    let now = 0;
+    const player = new TrackPlayer(
+      "participant",
+      "track",
+      mixer,
+      {},
+      new PlaybackDeduplicator(),
+      () => now,
+    );
+
+    expect(player.objectStats()).toMatchObject({
+      objects: measured(0),
+      lateDrops: measured(0),
+      cancelledDrops: measured(0),
+      depthMs: measured(0),
+      targetMs: measured(60),
+    });
+    expect(player.objectStats().meanBytes.exposed).toBe(false);
+
+    player.accept(
+      1,
+      7,
+      encodeAudioObject(
+        { participantHash: 1, mediaTimestamp: 0, sequence: 7 },
+        new Uint8Array([1, 2, 3]),
+      ),
+      now,
+    );
+    now = 80;
+    player.drain(now);
+
+    expect(player.objectStats()).toMatchObject({
+      lastSequence: measured(7),
+      lastObjectAgeMs: measured(80),
+      receiverHoldMs: measured(80),
+    });
   });
 });
 

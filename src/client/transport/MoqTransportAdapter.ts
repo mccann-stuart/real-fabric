@@ -120,7 +120,17 @@ export interface MoqSessionStats {
   connectedAt: number | null;
   publishedObjects: number;
   subscribedObjects: number;
+  publishedBytes: number;
+  subscribedBytes: number;
+  lastPublishedObjectId: number | null;
+  lastSubscribedObjectId: number | null;
+  lastPublishedObjectAt: number | null;
+  lastSubscribedObjectAt: number | null;
+  publishSetupMs: number | "Not exposed";
+  subscribeSetupMs: number | "Not exposed";
   transportRttMs: number | "Not exposed";
+  transportMinRttMs: number | "Not exposed";
+  transportRttVariationMs: number | "Not exposed";
   transportReliability: "supports-unreliable" | "reliable-only" | "pending" | "Not exposed";
   congestionControl: "low-latency" | "throughput" | "default" | "Not exposed";
   /** Null until CLIENT_SETUP and SERVER_SETUP have both been validated. */
@@ -175,7 +185,23 @@ export interface MoqTransportCallbacks {
   shouldAcceptPublishedTrack?: (track: TrackAddress) => boolean;
   /** A PUBLISH was accepted and is ready for the ordinary subscribe path. */
   onTrackPublished?: (track: TrackAddress) => void;
+  /** Optional WebTransport diagnostics changed and should be re-rendered. */
+  onStatsUpdated?: () => void;
 }
+
+interface WebTransportConnectionDiagnostics {
+  smoothedRtt?: unknown;
+  minRtt?: unknown;
+  rttVariation?: unknown;
+}
+
+interface DiagnosticWebTransport {
+  reliability?: MoqSessionStats["transportReliability"];
+  congestionControl?: MoqSessionStats["congestionControl"];
+  getStats?: () => Promise<WebTransportConnectionDiagnostics>;
+}
+
+const TRANSPORT_STATS_REFRESH_MS = 1_000;
 
 interface Publication {
   address: TrackAddress;
@@ -197,6 +223,8 @@ export class MoqTransportAdapter {
   private namespaceCancels = new Map<string, () => Promise<void>>();
   private nextAlias = 1n;
   private connectionGeneration = 0;
+  private statsRefresh: Promise<void> | null = null;
+  private lastStatsRefreshAt = 0;
   private stats: MoqSessionStats = {
     state: "idle",
     draft: "Not exposed",
@@ -204,7 +232,17 @@ export class MoqTransportAdapter {
     connectedAt: null,
     publishedObjects: 0,
     subscribedObjects: 0,
+    publishedBytes: 0,
+    subscribedBytes: 0,
+    lastPublishedObjectId: null,
+    lastSubscribedObjectId: null,
+    lastPublishedObjectAt: null,
+    lastSubscribedObjectAt: null,
+    publishSetupMs: "Not exposed",
+    subscribeSetupMs: "Not exposed",
     transportRttMs: "Not exposed",
+    transportMinRttMs: "Not exposed",
+    transportRttVariationMs: "Not exposed",
     transportReliability: "Not exposed",
     congestionControl: "Not exposed",
     negotiation: null,
@@ -258,8 +296,14 @@ export class MoqTransportAdapter {
       state: "connecting",
       draft,
       endpoint: redactEndpoint(endpoint),
+      connectedAt: null,
+      transportRttMs: "Not exposed",
+      transportMinRttMs: "Not exposed",
+      transportRttVariationMs: "Not exposed",
       negotiation: null,
     };
+    this.statsRefresh = null;
+    this.lastStatsRefreshAt = 0;
 
     // Captured during `MOQtailClient.new`, which performs the handshake before
     // it resolves, so these must be in scope before the call.
@@ -377,6 +421,7 @@ export class MoqTransportAdapter {
           credential,
         }),
       };
+      void this.refreshTransportStats(true);
     } catch (error) {
       // A relay that completes WebTransport but fails MOQT setup is a protocol
       // failure, not a working session. Close it rather than publish into it.
@@ -469,7 +514,13 @@ export class MoqTransportAdapter {
         object.payload,
       ),
     );
-    this.stats = { ...this.stats, publishedObjects: this.stats.publishedObjects + 1 };
+    this.stats = {
+      ...this.stats,
+      publishedObjects: this.stats.publishedObjects + 1,
+      publishedBytes: this.stats.publishedBytes + object.payload.byteLength,
+      lastPublishedObjectId: object.objectId,
+      lastPublishedObjectAt: Date.now(),
+    };
   }
 
   private async openPublication(track: TrackAddress): Promise<Publication> {
@@ -497,7 +548,9 @@ export class MoqTransportAdapter {
     // PUBLISH, so sending the unsupported namespace request first can prevent
     // a credential that is otherwise allowed to publish from ever reaching
     // the supported request.
+    const requestedAt = monotonicNow();
     const result = await client.publish(fullName, true, trackAlias);
+    this.stats = { ...this.stats, publishSetupMs: monotonicNow() - requestedAt };
     if (result instanceof RequestError) {
       throw requestRefusal("track_publication", "track publication", result);
     }
@@ -526,6 +579,7 @@ export class MoqTransportAdapter {
       return this.mediaStream(pushed.stream);
     }
     const fullName = FullTrackName.tryNew(track.namespace, track.name);
+    const requestedAt = monotonicNow();
     const result = await client.subscribe({
       fullTrackName: fullName,
       priority: 0,
@@ -536,6 +590,7 @@ export class MoqTransportAdapter {
         ? { startLocation: new Location(startPosition.groupId, startPosition.objectId) }
         : {}),
     });
+    this.stats = { ...this.stats, subscribeSetupMs: monotonicNow() - requestedAt };
     if (result instanceof RequestError) {
       // A namespace-pushed PUBLISH can cross this explicit SUBSCRIBE on the
       // wire. If it was accepted while this request was pending, use that
@@ -561,6 +616,9 @@ export class MoqTransportAdapter {
           adapter.stats = {
             ...adapter.stats,
             subscribedObjects: adapter.stats.subscribedObjects + 1,
+            subscribedBytes: adapter.stats.subscribedBytes + object.payload.byteLength,
+            lastSubscribedObjectId: Number(object.objectId),
+            lastSubscribedObjectAt: Date.now(),
           };
           controller.enqueue({
             groupId: Number(object.groupId),
@@ -641,6 +699,7 @@ export class MoqTransportAdapter {
   }
 
   sessionStats(): MoqSessionStats {
+    void this.refreshTransportStats();
     return { ...this.stats };
   }
 
@@ -649,6 +708,8 @@ export class MoqTransportAdapter {
     // termination callback during disconnect, and that must not start recovery.
     this.connectionGeneration += 1;
     this.stats = { ...this.stats, state: "closed" };
+    this.statsRefresh = null;
+    this.lastStatsRefreshAt = 0;
     for (const cancel of this.namespaceCancels.values()) await cancel();
     this.namespaceCancels.clear();
     for (const publication of this.publications.values()) publication.controller.close();
@@ -669,27 +730,87 @@ export class MoqTransportAdapter {
     }
     return this.client;
   }
+
+  /**
+   * Samples the optional 2026 WebTransport connection statistics API. Older
+   * browsers simply keep the RTT fields as Not exposed.
+   */
+  private async refreshTransportStats(force = false): Promise<void> {
+    if (!this.client || this.stats.state !== "connected") return;
+    if (this.statsRefresh) return this.statsRefresh;
+    const transport = this.client.webTransport as unknown as DiagnosticWebTransport | undefined;
+    if (!transport || typeof transport.getStats !== "function") return;
+
+    const requestedAt = monotonicNow();
+    if (!force && requestedAt - this.lastStatsRefreshAt < TRANSPORT_STATS_REFRESH_MS) return;
+    this.lastStatsRefreshAt = requestedAt;
+    const generation = this.connectionGeneration;
+    const client = this.client;
+    const getStats = transport.getStats.bind(transport);
+    const refresh = Promise.resolve()
+      .then(() => getStats())
+      .then((result) => {
+        if (
+          generation !== this.connectionGeneration ||
+          client !== this.client ||
+          this.stats.state !== "connected"
+        ) {
+          return;
+        }
+        const transportRttMs = positiveFiniteNumber(result.smoothedRtt);
+        const transportMinRttMs = positiveFiniteNumber(result.minRtt);
+        const transportRttVariationMs = nonNegativeFiniteNumber(result.rttVariation);
+        const next = {
+          ...this.stats,
+          ...(transportRttMs === null ? {} : { transportRttMs }),
+          ...(transportMinRttMs === null ? {} : { transportMinRttMs }),
+          ...(transportRttVariationMs === null ? {} : { transportRttVariationMs }),
+        };
+        const changed =
+          next.transportRttMs !== this.stats.transportRttMs ||
+          next.transportMinRttMs !== this.stats.transportMinRttMs ||
+          next.transportRttVariationMs !== this.stats.transportRttVariationMs;
+        this.stats = next;
+        if (changed) this.callbacks.onStatsUpdated?.();
+      })
+      .catch(() => {
+        // The API is optional and can reject for privacy or implementation
+        // reasons. Its absence never changes transport state.
+      })
+      .finally(() => {
+        if (this.statsRefresh === refresh) this.statsRefresh = null;
+      });
+    this.statsRefresh = refresh;
+    await refresh;
+  }
 }
 
 function transportDiagnostics(client: MOQtailClient | null): {
   reliability: MoqSessionStats["transportReliability"];
   congestionControl: MoqSessionStats["congestionControl"];
 } {
-  // MOQtail 0.12.1 owns the WebTransport instance but does not expose a public
-  // diagnostic accessor. Keep this narrow compatibility shim inside the one
-  // draft-sensitive adapter rather than leaking it into room or UI code.
-  const transport = (
-    client as unknown as {
-      webTransport?: {
-        reliability?: MoqSessionStats["transportReliability"];
-        congestionControl?: MoqSessionStats["congestionControl"];
-      };
-    } | null
-  )?.webTransport;
+  // Keep access to MOQtail's raw WebTransport inside the one draft-sensitive
+  // adapter rather than leaking browser-version checks into room or UI code.
+  const transport = (client as unknown as { webTransport?: DiagnosticWebTransport } | null)
+    ?.webTransport;
   return {
     reliability: transport?.reliability ?? "Not exposed",
     congestionControl: transport?.congestionControl ?? "Not exposed",
   };
+}
+
+function monotonicNow(): number {
+  return globalThis.performance?.now?.() ?? Date.now();
+}
+
+function positiveFiniteNumber(value: unknown): number | null {
+  const number = typeof value === "number" ? value : Number.NaN;
+  return Number.isFinite(number) && number > 0 ? number : null;
+}
+
+function nonNegativeFiniteNumber(value: unknown): number | null {
+  const number = typeof value === "number" ? value : Number.NaN;
+  return Number.isFinite(number) && number >= 0 ? number : null;
 }
 
 export function requiredTransportReliabilityError(

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { MeanMetric } from "../src/client/telemetry/MeanMetric";
 import {
   formatCount,
   formatMeasurement,
@@ -148,5 +149,24 @@ describe("measurement formatting and utilities", () => {
     it("returns the fallback value when not exposed", () => {
       expect(valueOr(notExposed<number>("no data"), 100)).toBe(100);
     });
+  });
+});
+
+describe("session mean metrics", () => {
+  it("stays unexposed until a valid sample arrives and resets cleanly", () => {
+    const metric = new MeanMetric();
+    expect(metric.measurement("No sample yet")).toEqual({
+      exposed: false,
+      reason: "No sample yet",
+    });
+
+    metric.observe(Number.NaN);
+    metric.observe(-1);
+    metric.observe(10);
+    metric.observe(20);
+    expect(metric.measurement("No sample yet")).toEqual(measured(15));
+
+    metric.reset();
+    expect(metric.measurement("Reset")).toEqual({ exposed: false, reason: "Reset" });
   });
 });

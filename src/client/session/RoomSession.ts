@@ -81,8 +81,17 @@ export interface SessionMetrics {
   publishedTracks: Measurement<number>;
   subscribedTracks: Measurement<number>;
   worstBufferMs: Measurement<number>;
+  jitterTargetMs: Measurement<number>;
+  captureFrameMs: Measurement<number>;
+  encodeCallbackMs: Measurement<number>;
+  receiverHoldMs: Measurement<number>;
+  decodeCallbackMs: Measurement<number>;
   outputLatencyMs: Measurement<number>;
   transportRttMs: Measurement<number>;
+  transportMinRttMs: Measurement<number>;
+  transportRttVariationMs: Measurement<number>;
+  publishSetupMs: Measurement<number>;
+  subscribeSetupMs: Measurement<number>;
   lateDrops: Measurement<number>;
   cancelledDrops: Measurement<number>;
   /** §10.5: frames synthesised by packet loss concealment. */
@@ -96,9 +105,15 @@ export interface SessionMetrics {
   /** MOQT object totals observed by the adapter in this browser session. */
   publishedObjects: Measurement<number>;
   subscribedObjects: Measurement<number>;
+  publishedObjectsPerSecond: Measurement<number>;
   objectsPerSecond: Measurement<number>;
+  meanPublishedObjectBytes: Measurement<number>;
   /** Mean complete demo audio object size, including the application header. */
   meanObjectBytes: Measurement<number>;
+  lastPublishedObjectId: Measurement<number>;
+  lastSubscribedObjectId: Measurement<number>;
+  lastPublishedObjectAgeMs: Measurement<number>;
+  lastSubscribedObjectAgeMs: Measurement<number>;
   lateDropRate: Measurement<number>;
   aggregateBufferMs: Measurement<number>;
   worstDriftPpm: Measurement<number>;
@@ -209,6 +224,7 @@ export class RoomSession {
       // immediately so the retained stream enters the ordinary player path.
       this.retryWaitingSubscriptionsNow();
     },
+    onStatsUpdated: () => this.emit(),
   });
   private mixer: MixerGraph;
   private readonly capture = new CaptureController();
@@ -1027,6 +1043,7 @@ export class RoomSession {
           },
         },
         this.playbackDeduplicator,
+        this.now,
       );
       this.subscriptionsOpening.add(participantId);
       this.log.record("subscribe", `audio/${participantId}`, { subject: participantId });
@@ -1567,24 +1584,26 @@ export class RoomSession {
       (sum, entry) => sum + (entry.comfortNoiseFrames.exposed ? entry.comfortNoiseFrames.value : 0),
       0,
     );
-    const objects = objectStats.reduce(
+    const playableObjects = objectStats.reduce(
       (sum, entry) => sum + (entry.objects.exposed ? entry.objects.value : 0),
-      0,
-    );
-    const objectBytes = objectStats.reduce(
-      (sum, entry) =>
-        sum +
-        (entry.objects.exposed && entry.meanBytes.exposed
-          ? entry.objects.value * entry.meanBytes.value
-          : 0),
       0,
     );
     const bufferDepths = objectStats.flatMap((entry) =>
       entry.depthMs.exposed ? [entry.depthMs.value] : [],
     );
+    const bufferTargets = objectStats.flatMap((entry) =>
+      entry.targetMs.exposed ? [entry.targetMs.value] : [],
+    );
+    const receiverHolds = objectStats.flatMap((entry) =>
+      entry.receiverHoldMs.exposed ? [entry.receiverHoldMs.value] : [],
+    );
+    const decodeCallbacks = objectStats.flatMap((entry) =>
+      entry.decodeCallbackMs.exposed ? [entry.decodeCallbackMs.value] : [],
+    );
     const driftEstimates = objectStats.flatMap((entry) =>
       entry.skewPpm.exposed ? [Math.abs(entry.skewPpm.value)] : [],
     );
+    const captureLatency = this.capture.latencyStats();
     const liveFor =
       this.transportReadyAt === null ? 0 : (this.now() - this.transportReadyAt) / 1000;
 
@@ -1607,15 +1626,45 @@ export class RoomSession {
         this.phase.name === "live" ? measured(counts.subscribedTracks) : notExposed(unavailable),
       worstBufferMs:
         bufferDepths.length === 0 ? notExposed(noObjects) : measured(Math.max(...bufferDepths)),
+      jitterTargetMs:
+        bufferTargets.length === 0
+          ? notExposed("No subscribed jitter buffer is active.")
+          : measured(Math.max(...bufferTargets)),
+      captureFrameMs: captureLatency.frameFillMs,
+      encodeCallbackMs: captureLatency.encodeCallbackMs,
+      receiverHoldMs:
+        receiverHolds.length === 0
+          ? notExposed("No received object has reached a decoder yet.")
+          : measured(Math.max(...receiverHolds)),
+      decodeCallbackMs:
+        decodeCallbacks.length === 0
+          ? notExposed("No Opus decoder output callback has completed yet.")
+          : measured(Math.max(...decodeCallbacks)),
       outputLatencyMs: this.mixer.outputLatencyMs(),
       transportRttMs:
         typeof stats.transportRttMs === "number"
           ? measured(stats.transportRttMs)
           : notExposed("The browser does not expose a WebTransport round-trip time."),
-      lateDrops: players.length === 0 ? notExposed(unavailable) : measured(lateDrops),
-      cancelledDrops: players.length === 0 ? notExposed(unavailable) : measured(cancelled),
-      concealedFrames: players.length === 0 ? notExposed(unavailable) : measured(concealed),
-      comfortNoiseFrames: players.length === 0 ? notExposed(unavailable) : measured(comfortNoise),
+      transportMinRttMs:
+        typeof stats.transportMinRttMs === "number"
+          ? measured(stats.transportMinRttMs)
+          : notExposed("The browser does not expose a minimum WebTransport round-trip time."),
+      transportRttVariationMs:
+        typeof stats.transportRttVariationMs === "number"
+          ? measured(stats.transportRttVariationMs)
+          : notExposed("The browser does not expose WebTransport RTT variation."),
+      publishSetupMs:
+        typeof stats.publishSetupMs === "number"
+          ? measured(stats.publishSetupMs)
+          : notExposed("No track publication request has completed yet."),
+      subscribeSetupMs:
+        typeof stats.subscribeSetupMs === "number"
+          ? measured(stats.subscribeSetupMs)
+          : notExposed("No explicit track subscription request has completed yet."),
+      lateDrops: transportEstablished ? measured(lateDrops) : notExposed(unavailable),
+      cancelledDrops: transportEstablished ? measured(cancelled) : notExposed(unavailable),
+      concealedFrames: transportEstablished ? measured(concealed) : notExposed(unavailable),
+      comfortNoiseFrames: transportEstablished ? measured(comfortNoise) : notExposed(unavailable),
       lastBargeInMs:
         this.lastBargeIn === null
           ? notExposed("No barge-in has occurred in this session.")
@@ -1637,16 +1686,43 @@ export class RoomSession {
       subscribedObjects: transportEstablished
         ? measured(stats.subscribedObjects)
         : notExposed(unavailable),
+      publishedObjectsPerSecond:
+        liveFor < 1
+          ? notExposed("Too little live time to compute an outbound object rate.")
+          : measured(stats.publishedObjects / liveFor),
       objectsPerSecond:
         liveFor < 1
-          ? notExposed("Too little live time to compute an object rate.")
-          : measured(objects / liveFor),
-      meanObjectBytes: objects === 0 ? notExposed(noObjects) : measured(objectBytes / objects),
-      lateDropRate: objects === 0 ? notExposed(noObjects) : measured(lateDrops / objects),
-      aggregateBufferMs:
-        bufferDepths.length === 0
+          ? notExposed("Too little live time to compute an inbound object rate.")
+          : measured(stats.subscribedObjects / liveFor),
+      meanPublishedObjectBytes:
+        stats.publishedObjects === 0
+          ? notExposed("No audio object has been published yet.")
+          : measured(stats.publishedBytes / stats.publishedObjects),
+      meanObjectBytes:
+        stats.subscribedObjects === 0
           ? notExposed(noObjects)
-          : measured(bufferDepths.reduce((sum, depth) => sum + depth, 0)),
+          : measured(stats.subscribedBytes / stats.subscribedObjects),
+      lastPublishedObjectId:
+        stats.lastPublishedObjectId === null
+          ? notExposed("No audio object has been published yet.")
+          : measured(stats.lastPublishedObjectId),
+      lastSubscribedObjectId:
+        stats.lastSubscribedObjectId === null
+          ? notExposed(noObjects)
+          : measured(stats.lastSubscribedObjectId),
+      lastPublishedObjectAgeMs:
+        stats.lastPublishedObjectAt === null
+          ? notExposed("No audio object has been published yet.")
+          : measured(Math.max(0, this.now() - stats.lastPublishedObjectAt)),
+      lastSubscribedObjectAgeMs:
+        stats.lastSubscribedObjectAt === null
+          ? notExposed(noObjects)
+          : measured(Math.max(0, this.now() - stats.lastSubscribedObjectAt)),
+      lateDropRate:
+        playableObjects === 0 ? notExposed(noObjects) : measured(lateDrops / playableObjects),
+      aggregateBufferMs: transportEstablished
+        ? measured(bufferDepths.reduce((sum, depth) => sum + depth, 0))
+        : notExposed(unavailable),
       worstDriftPpm:
         driftEstimates.length === 0
           ? notExposed("No subscribed track has enough arrivals for a drift estimate.")

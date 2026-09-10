@@ -186,6 +186,32 @@ describe("M1 — draft registry and relay interoperability", () => {
     expect(new MoqTransportAdapter().sessionStats().transportRttMs).toBe("Not exposed");
   });
 
+  it("samples optional WebTransport connection latency without making it a transport gate", async () => {
+    const onStatsUpdated = vi.fn();
+    const adapter = new MoqTransportAdapter({ onStatsUpdated });
+    const getStats = vi.fn().mockResolvedValue({
+      smoothedRtt: 24.5,
+      minRtt: 18,
+      rttVariation: 2.25,
+    });
+    const internal = adapter as unknown as {
+      client: { webTransport: { getStats: typeof getStats } };
+      stats: ReturnType<MoqTransportAdapter["sessionStats"]>;
+      refreshTransportStats: (force: boolean) => Promise<void>;
+    };
+    internal.client = { webTransport: { getStats } };
+    internal.stats = { ...adapter.sessionStats(), state: "connected" };
+
+    await internal.refreshTransportStats(true);
+
+    expect(adapter.sessionStats()).toMatchObject({
+      transportRttMs: 24.5,
+      transportMinRttMs: 18,
+      transportRttVariationMs: 2.25,
+    });
+    expect(onStatsUpdated).toHaveBeenCalledOnce();
+  });
+
   it("classifies use of a dead session separately from failed negotiation", async () => {
     const adapter = new MoqTransportAdapter();
 
@@ -285,7 +311,12 @@ describe("M1 — bounded session recovery", () => {
             concealedFrames: Measurement<number>;
             comfortNoiseFrames: Measurement<number>;
             depthMs: Measurement<number>;
+            targetMs: Measurement<number>;
             skewPpm: Measurement<number>;
+            lastSequence: Measurement<number>;
+            lastObjectAgeMs: Measurement<number>;
+            receiverHoldMs: Measurement<number>;
+            decodeCallbackMs: Measurement<number>;
           };
         }
       >;
@@ -293,7 +324,23 @@ describe("M1 — bounded session recovery", () => {
         sessionStats: () => {
           publishedObjects: number;
           subscribedObjects: number;
+          publishedBytes: number;
+          subscribedBytes: number;
+          lastPublishedObjectId: number;
+          lastSubscribedObjectId: number;
+          lastPublishedObjectAt: number;
+          lastSubscribedObjectAt: number;
+          publishSetupMs: number;
+          subscribeSetupMs: number;
           transportRttMs: number;
+          transportMinRttMs: number;
+          transportRttVariationMs: number;
+        };
+      };
+      capture: {
+        latencyStats: () => {
+          frameFillMs: Measurement<number>;
+          encodeCallbackMs: Measurement<number>;
         };
       };
       mixer: { outputLatencyMs: () => Measurement<number> };
@@ -321,7 +368,12 @@ describe("M1 — bounded session recovery", () => {
             concealedFrames: measured(3),
             comfortNoiseFrames: measured(1),
             depthMs: measured(80),
+            targetMs: measured(90),
             skewPpm: measured(-400),
+            lastSequence: measured(99),
+            lastObjectAgeMs: measured(20),
+            receiverHoldMs: measured(72),
+            decodeCallbackMs: measured(3),
           }),
         },
       ],
@@ -330,8 +382,21 @@ describe("M1 — bounded session recovery", () => {
       sessionStats: () => ({
         publishedObjects: 40,
         subscribedObjects: 100,
+        publishedBytes: 4_000,
+        subscribedBytes: 10_200,
+        lastPublishedObjectId: 40,
+        lastSubscribedObjectId: 100,
+        lastPublishedObjectAt: 2_980,
+        lastSubscribedObjectAt: 2_970,
+        publishSetupMs: 12,
+        subscribeSetupMs: 15,
         transportRttMs: 30,
+        transportMinRttMs: 22,
+        transportRttVariationMs: 4,
       }),
+    };
+    internal.capture = {
+      latencyStats: () => ({ frameFillMs: measured(20), encodeCallbackMs: measured(2) }),
     };
     internal.mixer = { outputLatencyMs: () => measured(8) };
     internal.devices = {
@@ -342,13 +407,62 @@ describe("M1 — bounded session recovery", () => {
     const metrics = internal.metrics();
     expect(metrics.publishedObjects).toEqual(measured(40));
     expect(metrics.subscribedObjects).toEqual(measured(100));
+    expect(metrics.publishedObjectsPerSecond).toEqual(measured(20));
     expect(metrics.objectsPerSecond).toEqual(measured(50));
+    expect(metrics.meanPublishedObjectBytes).toEqual(measured(100));
     expect(metrics.meanObjectBytes).toEqual(measured(102));
+    expect(metrics.lastPublishedObjectId).toEqual(measured(40));
+    expect(metrics.lastSubscribedObjectId).toEqual(measured(100));
+    expect(metrics.lastPublishedObjectAgeMs).toEqual(measured(20));
+    expect(metrics.lastSubscribedObjectAgeMs).toEqual(measured(30));
     expect(metrics.lateDropRate).toEqual(measured(0.05));
     expect(metrics.worstBufferMs).toEqual(measured(80));
+    expect(metrics.jitterTargetMs).toEqual(measured(90));
+    expect(metrics.captureFrameMs).toEqual(measured(20));
+    expect(metrics.encodeCallbackMs).toEqual(measured(2));
+    expect(metrics.receiverHoldMs).toEqual(measured(72));
+    expect(metrics.decodeCallbackMs).toEqual(measured(3));
+    expect(metrics.transportMinRttMs).toEqual(measured(22));
+    expect(metrics.transportRttVariationMs).toEqual(measured(4));
+    expect(metrics.publishSetupMs).toEqual(measured(12));
+    expect(metrics.subscribeSetupMs).toEqual(measured(15));
     expect(metrics.aggregateBufferMs).toEqual(measured(80));
     expect(metrics.worstDriftPpm).toEqual(measured(400));
     expect(metrics.activeDecoders).toEqual(measured(1));
+  });
+
+  it("reports observable zero object counters after transport setup", () => {
+    const session = new RoomSession({
+      session: {
+        code: "AAAAAAAAAAAAAAAAAAAA",
+        participantId: "participant-1",
+        rejoinToken: "rejoin-token",
+        displayName: "Test participant",
+        storedAt: 0,
+      },
+      presenterMode: false,
+      now: () => 3_000,
+    });
+    const internal = session as unknown as {
+      phase: SessionPhase;
+      startedAt: number;
+      transportReadyAt: number;
+      metrics: () => import("../src/client/session/RoomSession").SessionMetrics;
+    };
+    internal.phase = { name: "live" };
+    internal.startedAt = 0;
+    internal.transportReadyAt = 1_000;
+
+    const metrics = internal.metrics();
+    expect(metrics.publishedObjects).toEqual(measured(0));
+    expect(metrics.subscribedObjects).toEqual(measured(0));
+    expect(metrics.publishedObjectsPerSecond).toEqual(measured(0));
+    expect(metrics.objectsPerSecond).toEqual(measured(0));
+    expect(metrics.lateDrops).toEqual(measured(0));
+    expect(metrics.cancelledDrops).toEqual(measured(0));
+    expect(metrics.concealedFrames).toEqual(measured(0));
+    expect(metrics.aggregateBufferMs).toEqual(measured(0));
+    expect(metrics.meanObjectBytes.exposed).toBe(false);
   });
 
   it("waits for an explicit audio action before microphone or transport", async () => {
@@ -922,7 +1036,47 @@ describe("M1 — bounded session recovery", () => {
     await Promise.all([first, second]);
 
     expect(calls).toEqual({ addTrack: 1, publish: 1 });
-    expect(adapter.sessionStats().publishedObjects).toBe(2);
+    expect(adapter.sessionStats()).toMatchObject({
+      publishedObjects: 2,
+      publishedBytes: 2,
+      lastPublishedObjectId: 2,
+    });
+    expect(adapter.sessionStats().lastPublishedObjectAt).toEqual(expect.any(Number));
+  });
+
+  it("counts inbound object bytes and retains the most recent object identity", async () => {
+    const adapter = new MoqTransportAdapter();
+    const source = new ReadableStream<{
+      groupId: bigint;
+      objectId: bigint;
+      payload: Uint8Array;
+    }>({
+      start(controller) {
+        controller.enqueue({ groupId: 2n, objectId: 17n, payload: new Uint8Array([1, 2, 3]) });
+        controller.close();
+      },
+    });
+    const internal = adapter as unknown as {
+      mediaStream: (
+        stream: ReadableStream<{
+          groupId: bigint;
+          objectId: bigint;
+          payload: Uint8Array;
+        }>,
+      ) => ReadableStream<{ groupId: number; objectId: number; payload: Uint8Array }>;
+    };
+
+    const reader = internal.mediaStream(source).getReader();
+    await expect(reader.read()).resolves.toMatchObject({
+      done: false,
+      value: { groupId: 2, objectId: 17, payload: new Uint8Array([1, 2, 3]) },
+    });
+    expect(adapter.sessionStats()).toMatchObject({
+      subscribedObjects: 1,
+      subscribedBytes: 3,
+      lastSubscribedObjectId: 17,
+    });
+    expect(adapter.sessionStats().lastSubscribedObjectAt).toEqual(expect.any(Number));
   });
 
   it("preserves the exact PUBLISH refusal operation, code and reason", async () => {

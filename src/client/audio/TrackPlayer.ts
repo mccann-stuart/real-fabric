@@ -1,4 +1,5 @@
 import { type Measurement, measured, notExposed } from "../../shared/measurement";
+import { MeanMetric } from "../telemetry/MeanMetric";
 import { AdaptiveJitterBuffer } from "./AdaptiveJitterBuffer";
 import { type DriftCorrection, DriftEstimator } from "./DriftEstimator";
 import { AUDIO_FRAME_DURATION_MS, type AudioFrameMetadata, decodeAudioObject } from "./frame";
@@ -31,6 +32,7 @@ export const SILENCE_REBUILD_GAP_MS = 250;
  * rebuild happens anyway; a brief artefact beats unbounded skew.
  */
 export const MAXIMUM_REBUILD_DEFERRAL_MS = 10_000;
+const MAXIMUM_PENDING_DECODE_TIMINGS = 256;
 
 export interface TrackPlayerCallbacks {
   onFirstObject?: (trackId: string) => void;
@@ -42,7 +44,11 @@ export interface TrackPlayerCallbacks {
 }
 
 export class TrackPlayer {
-  readonly buffer = new AdaptiveJitterBuffer<{ metadata: AudioFrameMetadata; frame: Uint8Array }>();
+  readonly buffer = new AdaptiveJitterBuffer<{
+    metadata: AudioFrameMetadata;
+    frame: Uint8Array;
+    receivedAt: number;
+  }>();
   private readonly drift: DriftEstimator;
   private readonly concealer = new PacketLossConcealer();
   private decoder: AudioDecoder | null = null;
@@ -50,6 +56,10 @@ export class TrackPlayer {
   private lastObjectAt: number | null = null;
   private objects = 0;
   private bytes = 0;
+  private lastSequence: number | null = null;
+  private readonly receiverHold = new MeanMetric();
+  private readonly decodeCallback = new MeanMetric();
+  private readonly pendingDecodeStartedAt = new Map<number, number>();
   private decoderReleased = false;
   private lastPlayedSequence: number | null = null;
   private concealedFrames = 0;
@@ -65,6 +75,7 @@ export class TrackPlayer {
     private readonly mixer: MixerGraph,
     private readonly callbacks: TrackPlayerCallbacks = {},
     private readonly dedupe: PlaybackDeduplicator = new PlaybackDeduplicator(),
+    private readonly now: () => number = Date.now,
   ) {
     this.drift = new DriftEstimator(trackId);
   }
@@ -96,6 +107,7 @@ export class TrackPlayer {
 
     this.objects += 1;
     this.bytes += payload.byteLength;
+    this.lastSequence = decoded.metadata.sequence;
     this.lastObjectAt = now;
     if (this.firstObjectAt === null) {
       this.firstObjectAt = now;
@@ -121,7 +133,7 @@ export class TrackPlayer {
       sequence: decoded.metadata.sequence,
       groupId,
       receivedAt: now,
-      value: { metadata: decoded.metadata, frame: decoded.opusFrame },
+      value: { metadata: decoded.metadata, frame: decoded.opusFrame, receivedAt: now },
     });
   }
 
@@ -130,9 +142,10 @@ export class TrackPlayer {
     for (;;) {
       const next = this.buffer.pull(now);
       if (!next) break;
+      this.receiverHold.observe(Math.max(0, now - next.receivedAt));
       this.concealGapBefore(next.metadata.sequence);
       this.lastPlayedSequence = next.metadata.sequence;
-      this.decodeFrame(next.metadata, next.frame);
+      this.decodeFrame(next.metadata, next.frame, now);
     }
     this.rebuildIfSettled(now);
   }
@@ -234,30 +247,35 @@ export class TrackPlayer {
     concealedFrames: Measurement<number>;
     comfortNoiseFrames: Measurement<number>;
     depthMs: Measurement<number>;
+    targetMs: Measurement<number>;
     skewPpm: Measurement<number>;
+    lastSequence: Measurement<number>;
+    lastObjectAgeMs: Measurement<number>;
+    receiverHoldMs: Measurement<number>;
+    decodeCallbackMs: Measurement<number>;
   } {
-    if (this.objects === 0) {
-      const reason = "No object has arrived on this track yet.";
-      return {
-        objects: notExposed(reason),
-        meanBytes: notExposed(reason),
-        lateDrops: notExposed(reason),
-        cancelledDrops: notExposed(reason),
-        concealedFrames: notExposed(reason),
-        comfortNoiseFrames: notExposed(reason),
-        depthMs: notExposed(reason),
-        skewPpm: notExposed(reason),
-      };
-    }
+    const noObject = "No object has arrived on this track yet.";
     return {
       objects: measured(this.objects),
-      meanBytes: measured(this.bytes / this.objects),
+      meanBytes: this.objects === 0 ? notExposed(noObject) : measured(this.bytes / this.objects),
       lateDrops: measured(this.buffer.lateDrops),
       cancelledDrops: measured(this.buffer.cancelledDrops),
       concealedFrames: measured(this.concealedFrames),
       comfortNoiseFrames: measured(this.comfortNoiseFrames),
       depthMs: measured(this.buffer.depthMs),
+      targetMs: measured(this.buffer.targetMs),
       skewPpm: this.drift.skewPpm(),
+      lastSequence: this.lastSequence === null ? notExposed(noObject) : measured(this.lastSequence),
+      lastObjectAgeMs:
+        this.lastObjectAt === null
+          ? notExposed(noObject)
+          : measured(Math.max(0, this.now() - this.lastObjectAt)),
+      receiverHoldMs: this.receiverHold.measurement(
+        "No received object has reached the decoder yet.",
+      ),
+      decodeCallbackMs: this.decodeCallback.measurement(
+        "No Opus decoder output callback has completed yet.",
+      ),
     };
   }
 
@@ -268,19 +286,26 @@ export class TrackPlayer {
     this.mixer.removeTrack(this.trackId);
   }
 
-  private decodeFrame(metadata: AudioFrameMetadata, frame: Uint8Array): void {
+  private decodeFrame(metadata: AudioFrameMetadata, frame: Uint8Array, now: number): void {
     const decoder = this.ensureDecoder();
     if (!decoder) return;
+    const timestamp = metadata.mediaTimestamp * 1_000;
     try {
+      this.pendingDecodeStartedAt.set(timestamp, now);
+      if (this.pendingDecodeStartedAt.size > MAXIMUM_PENDING_DECODE_TIMINGS) {
+        const oldest = this.pendingDecodeStartedAt.keys().next().value;
+        if (oldest !== undefined) this.pendingDecodeStartedAt.delete(oldest);
+      }
       decoder.decode(
         new EncodedAudioChunk({
           type: "key",
-          timestamp: metadata.mediaTimestamp * 1_000,
+          timestamp,
           duration: AUDIO_FRAME_DURATION_MS * 1_000,
           data: frame,
         }),
       );
     } catch (error) {
+      this.pendingDecodeStartedAt.delete(timestamp);
       this.callbacks.onError?.(
         this.trackId,
         error instanceof Error ? error : new Error("Opus decode failed."),
@@ -314,6 +339,11 @@ export class TrackPlayer {
 
   private emit(data: AudioData): void {
     try {
+      const decodeStartedAt = this.pendingDecodeStartedAt.get(data.timestamp);
+      if (decodeStartedAt !== undefined) {
+        this.pendingDecodeStartedAt.delete(data.timestamp);
+        this.decodeCallback.observe(Math.max(0, this.now() - decodeStartedAt));
+      }
       const samples = new Float32Array(data.numberOfFrames);
       data.copyTo(samples, { planeIndex: 0 });
       // The concealer keeps its own copy; the original is transferred away.
@@ -327,5 +357,6 @@ export class TrackPlayer {
   private closeDecoder(): void {
     if (this.decoder && this.decoder.state !== "closed") this.decoder.close();
     this.decoder = null;
+    this.pendingDecodeStartedAt.clear();
   }
 }
