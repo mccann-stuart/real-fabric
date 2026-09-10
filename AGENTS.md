@@ -32,6 +32,7 @@ If this file and the product specification otherwise conflict, preserve the hard
 As reconciled on 10 September 2026 with the current repository state:
 
 - The React/Vite client, SQLite Durable Object room service, control-plane WebSocket, presenter simulation, browser media components, inspector, telemetry and failure registry are implemented with 286 automated tests across twenty files.
+- Recent security review hardening is implemented and verified: control-plane WebSocket credentials moved from query string to in-message authentication (SEC-05), one active control socket per participant enforced in the Durable Object (SEC-06), client-IP room join rate limiting enforced (SEC-07), streaming request body size capped at 32 KiB (SEC-08), and playback deduplication bounded at 100 objects per group (SEC-09).
 - The inspector's Objects and Latency tabs expose session-local object counts, rates, sizes, IDs and arrival ages; capture, codec callback, MOQT request, receiver-hold and output timings; and optional WebTransport RTT statistics where the browser implements `getStats()`. They compare complete exposed measurements with specification-defined budgets or targets, identify diagnostic-only or partial figures as `Reported · no gate`, and keep acoustic loopback acceptance `Not exposed` until it actually runs.
 - `wrangler.jsonc` pins MOQT draft 16, configures the Cloudflare isolated relay URL, and deliberately keeps `MOQT_TRANSPORT_VERIFIED=false`, `MOQ_ROUTING_ENFORCEMENT=cooperative` and `MOQ_DISCOVERY=unknown`.
 - `moqtail@0.12.1` frames draft 16. `MoqTransportAdapter` attempts draft-16 transport with provisioned token in URL path, uses the relay-supported `PUBLISH` request directly, and answers permitted room-namespace pushes with `PUBLISH_OK` before routing their object streams through the ordinary subscription path. A narrow pnpm patch preserves the caught MOQtail control-stream termination cause. Live transport is not yet trace-verified (`MOQT_TRANSPORT_VERIFIED=false`).
@@ -49,6 +50,19 @@ As reconciled on 10 September 2026 with the current repository state:
 - Unit tests do not satisfy the live trace, acoustic latency, measured-capacity, audible ten-minute or two-clean-run acceptance gates.
 
 Keep this snapshot current when implementation status changes. Never convert an implemented component or a passing unit test into a claim that a live acceptance boundary has passed.
+
+## Next steps and vision statements
+
+Unachieved gates, deferred capabilities and forward-looking protocol milestones are tracked here:
+
+1. **Gate 1 transport acceptance (Vision target):** Produce a reproducible browser-to-relay packet and frame trace over WebTransport and HTTP/3/QUIC proving live MOQT negotiation and publication before setting `MOQT_TRANSPORT_VERIFIED=true`.
+2. **MOQT draft 20 migration (Next step):** Update `moqtail` dependency and Worker endpoint configuration when draft 20 becomes available, without changing room semantics, client state or audio pipeline abstractions.
+3. **Tenant- and participant-scoped relay authorization (Vision statement):** Remediate the P1 shared credential disclosure by adopting a least-privilege token model that enforces room and participant namespaces at the relay boundary without participant count caps.
+4. **Gate 2 acoustic acceptance (Vision target):** Run acoustic loopback latency validation (§9.4) and a continuous ten-minute reference composition run on reference hardware without drift or buffer overflow (H13).
+5. **Measured capacity benchmark (Next step):** Benchmark degradation ladder triggers on target reference hardware to establish empirical participant capacity (§9.2, H7).
+6. **Milestone 3 — AI orchestration and floor authority (Next step):** Implement authoritative Durable Object floor control, publishable AI audio tracks carrying labelled synthetic voice, publisher-side barge-in cancellation markers, and live speech pipeline interfaces (§11.4).
+7. **Milestone 4 — Venue network validation (Vision target):** Complete two full clean runs of the §12 demonstration script on a venue network or mobile hotspot (H16).
+8. **Physical mobile acceptance (Next step):** Execute the full browser acceptance suite on physical iPhone hardware for top-level Safari 27+ and Chrome for iOS 141+ under iOS 27.
 
 ## Product invariants
 

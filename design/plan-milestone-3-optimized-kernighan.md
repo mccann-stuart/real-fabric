@@ -1,8 +1,12 @@
 # Milestone 3 — §11.4 Gate 3: multi-agent AI orchestration, floor control and fault isolation
 
-## Context
+> **Status:** Forward-looking architectural roadmap (unbuilt). Milestones 1 and 2 are built in the current codebase (281 tests passing); Milestone 3 represents proposed next steps and vision targets.
 
-`README.md:19` says "Milestones 1 and 2 of the §11 release plan are built. Milestones 3 and 4 are not." This plan builds Milestone 3 in code.
+## Next steps and vision statements: Milestone 3 Implementation Blueprint
+
+### Context
+
+`README.md` records: "Milestones 1 and 2 of the §11 release plan are built in code. Milestones 3 and 4 are not." This document specifies the next steps and vision architecture required to build Milestone 3 in code.
 
 Gate 3's subject is autonomous AI participants: deterministic addressing, floor control, barge-in cancellation and loop protection. Much of the *logic* already exists and is unit-tested — `AiDirector` is a complete H5/H6/H10/FR4 state machine, `TrackPlayer` already honours a `cancelled` flag, `AdaptiveJitterBuffer.cancelGroup` already purges a group, and the routing matrix already lives in SQLite. What is missing is the half that makes any of it real:
 
