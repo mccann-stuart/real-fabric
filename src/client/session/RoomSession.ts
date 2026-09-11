@@ -1211,11 +1211,21 @@ export class RoomSession {
     if (!room) return;
     const sender = room.participants.find((participant) => participant.id === fromParticipantId);
     if (sender?.role !== "human") return;
-    for (const ai of room.participants.filter((participant) => participant.role === "ai")) {
-      const row = room.routing.find(
-        (candidate) => candidate.aiId === ai.id && candidate.humanId === fromParticipantId,
-      );
-      if (row?.hearsMe) this.scripted.noteHeardUtterance(ai.id, fromParticipantId);
+
+    const activeAiIds = new Set(
+      room.participants
+        .filter((participant) => participant.role === "ai" && participant.state !== "left")
+        .map((participant) => participant.id),
+    );
+
+    const routing = room.routing ?? [];
+    // Performance optimization (⚡ Bolt): Direct linear iteration over room.routing replaces
+    // N_ai * N_routing find/filter calls on the 50 Hz real-time audio chunk processing path.
+    for (let index = 0; index < routing.length; index += 1) {
+      const row = routing[index];
+      if (row && row.humanId === fromParticipantId && row.hearsMe && activeAiIds.has(row.aiId)) {
+        this.scripted.noteHeardUtterance(row.aiId, fromParticipantId);
+      }
     }
   }
 
@@ -1224,18 +1234,25 @@ export class RoomSession {
     const room = this.room;
     if (!room) return [];
     const paused = new Set(this.degradation.unsubscribed);
+    // Performance optimization (⚡ Bolt): Pre-index viewer routing preferences into a Map
+    // for O(1) lookups during participant filtering.
+    const viewerRoutingMap = new Map<string, boolean>();
+    const viewerId = this.options.session.participantId;
+    const routing = room.routing ?? [];
+    for (let index = 0; index < routing.length; index += 1) {
+      const row = routing[index];
+      if (row && row.humanId === viewerId) {
+        viewerRoutingMap.set(row.aiId, row.iHearIt);
+      }
+    }
+
     return room.participants.filter((participant) => {
-      if (participant.id === this.options.session.participantId) return false;
+      if (participant.id === viewerId) return false;
       if (participant.state === "left") return false;
       if (participant.simulated) return false;
       if (paused.has(trackKey(audioTrack(room.code, participant.id)))) return false;
       if (participant.role !== "ai") return this.subscriptionIntent.get(participant.id) ?? true;
-      const row = room.routing.find(
-        (candidate) =>
-          candidate.aiId === participant.id &&
-          candidate.humanId === this.options.session.participantId,
-      );
-      return row?.iHearIt ?? true;
+      return viewerRoutingMap.get(participant.id) ?? true;
     });
   }
 
@@ -1266,15 +1283,24 @@ export class RoomSession {
   private subscriptionStates(): TrackSubscriptionState[] {
     const room = this.room;
     if (!room) return [];
+    // Performance optimization (⚡ Bolt): Pre-index viewer routing preferences into a Map
+    const viewerRoutingMap = new Map<string, boolean>();
+    const viewerId = this.options.session.participantId;
+    const routing = room.routing ?? [];
+    for (let index = 0; index < routing.length; index += 1) {
+      const row = routing[index];
+      if (row && row.humanId === viewerId) {
+        viewerRoutingMap.set(row.aiId, row.iHearIt);
+      }
+    }
+
     return (room.participants ?? [])
       .filter(
         (participant) =>
-          participant.id !== this.options.session.participantId &&
-          participant.state !== "left" &&
-          !participant.simulated,
+          participant.id !== viewerId && participant.state !== "left" && !participant.simulated,
       )
       .map((participant) => {
-        const intent = this.subscriptionIntentFor(participant);
+        const intent = this.subscriptionIntentFor(participant, viewerRoutingMap);
         if (!intent) {
           return {
             participantId: participant.id,
@@ -1320,8 +1346,14 @@ export class RoomSession {
       });
   }
 
-  private subscriptionIntentFor(participant: Participant): boolean {
+  private subscriptionIntentFor(
+    participant: Participant,
+    viewerRoutingMap?: Map<string, boolean>,
+  ): boolean {
     if (participant.role !== "ai") return this.subscriptionIntent.get(participant.id) ?? true;
+    if (viewerRoutingMap) {
+      return viewerRoutingMap.get(participant.id) ?? true;
+    }
     const row = this.room?.routing?.find(
       (candidate) =>
         candidate.aiId === participant.id &&

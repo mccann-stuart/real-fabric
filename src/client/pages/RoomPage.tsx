@@ -185,19 +185,26 @@ export function RoomPage({
 
   const demoContext = useCallback(() => {
     const metrics = state?.metrics;
-    const speaking = (room?.participants ?? []).filter(
+    const participants = room?.participants ?? [];
+    const routing = room?.routing ?? [];
+
+    const speaking = participants.filter(
       (participant) => participant.role === "ai" && participant.pipeline === "speaking",
     ).length;
-    const partialContext = (room?.participants ?? [])
+
+    // Performance optimization (⚡ Bolt): Index (aiId, humanId) pairs where hearsMe is true into a Set
+    // to evaluate partial context in O(N) rather than nested array methods O(N_ai * N_human * N_routing).
+    const hearingPairs = new Set<string>();
+    for (let i = 0; i < routing.length; i += 1) {
+      const row = routing[i];
+      if (row?.hearsMe) {
+        hearingPairs.add(`${row.aiId}:${row.humanId}`);
+      }
+    }
+
+    const partialContext = participants
       .filter((participant) => participant.role === "ai")
-      .filter((ai) =>
-        connectedHumanIds.some(
-          (humanId) =>
-            !(room?.routing ?? []).some(
-              (row) => row.aiId === ai.id && row.humanId === humanId && row.hearsMe,
-            ),
-        ),
-      )
+      .filter((ai) => connectedHumanIds.some((humanId) => !hearingPairs.has(`${ai.id}:${humanId}`)))
       .map((ai) => ai.id);
 
     return {
