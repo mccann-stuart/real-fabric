@@ -43,12 +43,12 @@ export interface InspectorProps {
 type Tab = "signal" | "graph" | "objects" | "latency" | "events";
 
 const INSPECTOR_TABS = [
-  ["signal", "Signal", "Signal path"],
-  ["graph", "Graph", "Subscription graph"],
-  ["objects", "Objects", "Objects"],
-  ["latency", "Latency", "Latency"],
-  ["events", "Events", "Events"],
-] as const satisfies ReadonlyArray<readonly [Tab, string, string]>;
+  ["signal", "Signal", "Signal path", "1"],
+  ["graph", "Graph", "Subscription graph", "2"],
+  ["objects", "Objects", "Objects", "3"],
+  ["latency", "Latency", "Latency", "4"],
+  ["events", "Events", "Events", "5"],
+] as const satisfies ReadonlyArray<readonly [Tab, string, string, string]>;
 
 const OBJECTS_PER_SECOND_PER_ACTIVE_SPEAKER = 1_000 / AUDIO_FRAME_DURATION_MS;
 const DEFAULT_OBJECT_BYTES =
@@ -77,6 +77,31 @@ export function Inspector({
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape") {
         onClose();
+        return;
+      }
+
+      if (event.ctrlKey || event.metaKey) return;
+
+      const target = event.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+
+      const numKey = Number.parseInt(event.key, 10);
+      if (numKey >= 1 && numKey <= INSPECTOR_TABS.length) {
+        const nextTab = INSPECTOR_TABS[numKey - 1];
+        if (nextTab) {
+          event.preventDefault();
+          setTab(nextTab[0]);
+          const tabElement = document.getElementById(`inspector-tab-${nextTab[0]}`);
+          tabElement?.focus();
+        }
       }
     };
     globalThis.addEventListener?.("keydown", handleKeyDown);
@@ -118,13 +143,15 @@ export function Inspector({
         aria-label="Inspector sections"
         aria-orientation="horizontal"
       >
-        {INSPECTOR_TABS.map(([id, label, accessibleLabel], index) => (
+        {INSPECTOR_TABS.map(([id, label, accessibleLabel, shortcut], index) => (
           <button
             key={id}
             id={`inspector-tab-${id}`}
             type="button"
             role="tab"
-            aria-label={accessibleLabel}
+            aria-label={`${accessibleLabel} (Shortcut: ${shortcut})`}
+            aria-keyshortcuts={shortcut}
+            title={`${accessibleLabel} (Shortcut: ${shortcut})`}
             aria-controls="inspector-panel"
             aria-selected={tab === id}
             tabIndex={tab === id ? 0 : -1}
