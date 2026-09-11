@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { AdaptiveJitterBuffer } from "../src/client/audio/AdaptiveJitterBuffer";
+import {
+  AdaptiveJitterBuffer,
+  MAXIMUM_BUFFERED_FRAMES,
+} from "../src/client/audio/AdaptiveJitterBuffer";
 
 describe("AdaptiveJitterBuffer", () => {
   it("orders frames and releases them only after the target delay", () => {
@@ -34,5 +37,16 @@ describe("AdaptiveJitterBuffer", () => {
     expect(buffer.pull(1_120)).toBe("one");
     expect(buffer.pull(1_120)).toBe("two");
     expect(buffer.pull(1_120)).toBe("three");
+  });
+
+  it("enforces hard capacity bound on buffered frames to prevent DoS (SEC-10)", () => {
+    const buffer = new AdaptiveJitterBuffer<string>();
+    const now = 1_000;
+    for (let i = 1; i <= MAXIMUM_BUFFERED_FRAMES + 10; i += 1) {
+      buffer.push({ sequence: i, groupId: 1, receivedAt: now, value: `frame-${i}` });
+    }
+
+    expect(buffer.depth).toBe(MAXIMUM_BUFFERED_FRAMES);
+    expect(buffer.lateDrops).toBe(10);
   });
 });
