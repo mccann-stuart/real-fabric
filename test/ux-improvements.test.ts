@@ -200,6 +200,10 @@ describe("Micro-UX & Accessibility Improvements", () => {
     );
 
     expect(html).toContain('role="tabpanel" tabindex="0"');
+    expect(html).toContain('aria-keyshortcuts="1"');
+    expect(html).toContain('aria-label="Signal path (Shortcut: 1)"');
+    expect(html).toContain('title="Signal path (Shortcut: 1)"');
+    expect(html).toContain('aria-keyshortcuts="5"');
   });
 
   it("announces the pending leave action", () => {
