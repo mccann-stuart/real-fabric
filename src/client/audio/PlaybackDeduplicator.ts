@@ -55,11 +55,19 @@ export class PlaybackDeduplicator {
     return this.seen.get(participantId)?.size ?? 0;
   }
 
+  // Performance optimization (⚡ Bolt): Find and delete the oldest group(s) without
+  // allocating key arrays or performing Array.prototype.sort on group transitions.
   private prune(groups: Map<number, Set<number>>): void {
-    if (groups.size <= RETAINED_GROUPS_PER_PARTICIPANT) return;
-    const ordered = [...groups.keys()].sort((left, right) => left - right);
-    for (const groupId of ordered.slice(0, groups.size - RETAINED_GROUPS_PER_PARTICIPANT)) {
-      groups.delete(groupId);
+    while (groups.size > RETAINED_GROUPS_PER_PARTICIPANT) {
+      let oldestGroup = Infinity;
+      for (const groupId of groups.keys()) {
+        if (groupId < oldestGroup) oldestGroup = groupId;
+      }
+      if (oldestGroup !== Infinity) {
+        groups.delete(oldestGroup);
+      } else {
+        break;
+      }
     }
   }
 }
