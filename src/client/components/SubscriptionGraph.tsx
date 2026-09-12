@@ -95,9 +95,24 @@ export const SubscriptionGraph = memo(function SubscriptionGraph({
     return { active: activeParticipants, edges: computedEdges, positions: posMap };
   }, [participants, routing, viewerId, publishing, subscribedIds, centre, radius]);
 
+  const liveEdgeCount = edges.filter((e) => e.live).length;
+  const graphSummary = `Live subscription graph: ${active.length} active participant${
+    active.length === 1 ? "" : "s"
+  }, ${liveEdgeCount} active connection${liveEdgeCount === 1 ? "" : "s"}. ${
+    publishing ? "You are publishing to relay." : "You are not publishing."
+  }`;
+
   return (
     <div className="graph-view">
-      <svg viewBox={`0 0 ${size} ${size}`} role="img" aria-label="Live subscription graph">
+      <div id="subscription-graph-desc" className="sr-only">
+        {graphSummary}
+      </div>
+      <svg
+        viewBox={`0 0 ${size} ${size}`}
+        role="img"
+        aria-label="Live subscription graph"
+        aria-describedby="subscription-graph-desc"
+      >
         {edges.map((edge) => {
           const from = positions.get(edge.from);
           const to = positions.get(edge.to);
