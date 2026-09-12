@@ -14,6 +14,8 @@ import { AUDIO_FRAME_DURATION_MS } from "./frame";
 export const NOMINAL_BUFFER_MS = 60;
 export const MINIMUM_BUFFER_MS = 40;
 export const MAXIMUM_BUFFER_MS = 200;
+/** Security (SEC-10 / CWE-407): Upper bound on buffered frame count to prevent media burst floods. */
+export const MAXIMUM_BUFFER_FRAMES = 50;
 
 export interface BufferedFrame<T> {
   sequence: number;
@@ -43,6 +45,13 @@ export class AdaptiveJitterBuffer<T> {
     // though it arrived. This is what makes barge-in include objects in flight.
     if (this.cancelledGroups.has(frame.groupId)) {
       this.cancelledDrops += 1;
+      return;
+    }
+
+    // Security (SEC-10): Enforce a hard cap on buffered frames to prevent CPU/memory exhaustion
+    // (CWE-407/CWE-400) from adversarial packet floods.
+    if (this.frames.length >= MAXIMUM_BUFFER_FRAMES) {
+      this.lateDrops += 1;
       return;
     }
 
