@@ -77,6 +77,23 @@ export function Inspector({
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape") {
         onClose();
+        return;
+      }
+
+      const target = event.target as HTMLElement | null;
+      const isInput =
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable);
+
+      if (!isInput && event.key >= "1" && event.key <= "5") {
+        const tabIndex = Number.parseInt(event.key, 10) - 1;
+        const targetTab = INSPECTOR_TABS[tabIndex];
+        if (targetTab) {
+          setTab(targetTab[0]);
+        }
       }
     };
     globalThis.addEventListener?.("keydown", handleKeyDown);
