@@ -35,4 +35,15 @@ describe("AdaptiveJitterBuffer", () => {
     expect(buffer.pull(1_120)).toBe("two");
     expect(buffer.pull(1_120)).toBe("three");
   });
+
+  it("bounds maximum buffered frames under media frame burst (SEC-10)", () => {
+    const buffer = new AdaptiveJitterBuffer<string>();
+    // Push 70 frames in a burst (capacity cap is 50)
+    for (let i = 1; i <= 70; i += 1) {
+      buffer.push({ sequence: i, groupId: 1, receivedAt: 1_000 + i, value: `frame-${i}` });
+    }
+
+    expect(buffer.depth).toBe(50);
+    expect(buffer.lateDrops).toBe(20);
+  });
 });
