@@ -14,10 +14,13 @@
 **Learning:** Audio level visual meters and microphone test controls must convey dynamic level changes and active/inactive state to assistive technology without flooding screen reader speech queues.
 **Action:** Use `role="meter"` with bounded `aria-valuenow` / `aria-valuetext` and explicit `aria-pressed` states on microphone calibration buttons.
 
+## 2026-09-10 - Rapid Tab Shortcuts with ARIA Keyshortcuts
+**Learning:** Adding direct numeric shortcut key handlers (`1`..`5`) to modal tablists provides rapid keyboard navigation, but must pair with `aria-keyshortcuts` attributes and explicit focus movement onto the activated tab button so assistive technologies announce both the tab switch and shortcut availability.
+**Action:** Pair numeric shortcut listeners with `aria-keyshortcuts` and programmatic `.focus()` calls on target tab buttons while ignoring active text input targets.
+
 ## Next steps and vision statements
 
 Forward-looking user experience and accessibility roadmap targets:
 
-1. **Inspector keyboard shortcuts (Next step):** Implement keyboard navigation for rapid tab switching between Overview, Objects, Latency and Events tabs in the protocol inspector.
-2. **Accessible SVG subscription graph (Vision target):** Provide an accessible hierarchical table or tree view alternative for the live publisher/subscriber canvas graph.
-3. **Real-time captions and transcript display (Vision statement):** Design a WCAG 2.2 AA compliant live captioning container that scales cleanly without obscuring participant cards or inspector telemetry.
+1. **Accessible SVG subscription graph (Vision target):** Provide an accessible hierarchical table or tree view alternative for the live publisher/subscriber canvas graph.
+2. **Real-time captions and transcript display (Vision statement):** Design a WCAG 2.2 AA compliant live captioning container that scales cleanly without obscuring participant cards or inspector telemetry.
