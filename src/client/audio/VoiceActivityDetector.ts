@@ -40,11 +40,13 @@ export class VoiceActivityDetector {
   /** Feed one capture quantum. Returns the transition, if any. */
   observe(samples: Float32Array): VoiceActivityEvent {
     let sum = 0;
-    for (let index = 0; index < samples.length; index += 1) {
-      const sample = samples[index] ?? 0;
+    const sampleCount = samples.length;
+    for (let index = 0; index < sampleCount; index += 1) {
+      // The loop bound makes Float32Array indexing safe under noUncheckedIndexedAccess.
+      const sample = samples[index] as number;
       sum += sample * sample;
     }
-    this.lastRms = samples.length === 0 ? 0 : Math.sqrt(sum / samples.length);
+    this.lastRms = sampleCount === 0 ? 0 : Math.sqrt(sum / sampleCount);
 
     if (this.speaking) {
       if (this.lastRms < this.releaseThreshold) {

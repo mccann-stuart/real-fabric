@@ -32,6 +32,10 @@ export const SILENCE_REBUILD_GAP_MS = 250;
  * rebuild happens anyway; a brief artefact beats unbounded skew.
  */
 export const MAXIMUM_REBUILD_DEFERRAL_MS = 10_000;
+/** SEC-10: maximum frames submitted to a decoder in one drain tick. */
+export const MAXIMUM_DRAIN_FRAMES_PER_CALL = 25;
+/** SEC-10: pause submissions while the browser decoder is already backlogged. */
+export const MAXIMUM_DECODER_QUEUE_SIZE = 16;
 const MAXIMUM_PENDING_DECODE_TIMINGS = 256;
 
 export interface TrackPlayerCallbacks {
@@ -139,13 +143,22 @@ export class TrackPlayer {
 
   /** Releases frames whose buffer delay has elapsed into the decoder. */
   drain(now: number): void {
-    for (;;) {
+    let drainedCount = 0;
+    while (drainedCount < MAXIMUM_DRAIN_FRAMES_PER_CALL) {
+      if (
+        this.decoder &&
+        "decodeQueueSize" in this.decoder &&
+        this.decoder.decodeQueueSize >= MAXIMUM_DECODER_QUEUE_SIZE
+      ) {
+        break;
+      }
       const next = this.buffer.pull(now);
       if (!next) break;
       this.receiverHold.observe(Math.max(0, now - next.receivedAt));
       this.concealGapBefore(next.metadata.sequence);
       this.lastPlayedSequence = next.metadata.sequence;
       this.decodeFrame(next.metadata, next.frame, now);
+      drainedCount += 1;
     }
     this.rebuildIfSettled(now);
   }

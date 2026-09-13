@@ -14,6 +14,8 @@ import { AUDIO_FRAME_DURATION_MS } from "./frame";
 export const NOMINAL_BUFFER_MS = 60;
 export const MINIMUM_BUFFER_MS = 40;
 export const MAXIMUM_BUFFER_MS = 200;
+/** SEC-10: hard frame cap for adversarial or faulty publisher bursts. */
+export const MAXIMUM_BUFFERED_FRAMES = 50;
 
 export interface BufferedFrame<T> {
   sequence: number;
@@ -43,6 +45,12 @@ export class AdaptiveJitterBuffer<T> {
     // though it arrived. This is what makes barge-in include objects in flight.
     if (this.cancelledGroups.has(frame.groupId)) {
       this.cancelledDrops += 1;
+      return;
+    }
+
+    // Bound both insertion work and retained memory before ordering the frame.
+    if (this.frames.length >= MAXIMUM_BUFFERED_FRAMES) {
+      this.lateDrops += 1;
       return;
     }
 

@@ -56,10 +56,13 @@ export class PlaybackDeduplicator {
   }
 
   private prune(groups: Map<number, Set<number>>): void {
-    if (groups.size <= RETAINED_GROUPS_PER_PARTICIPANT) return;
-    const ordered = [...groups.keys()].sort((left, right) => left - right);
-    for (const groupId of ordered.slice(0, groups.size - RETAINED_GROUPS_PER_PARTICIPANT)) {
-      groups.delete(groupId);
+    while (groups.size > RETAINED_GROUPS_PER_PARTICIPANT) {
+      let oldestGroup = Number.POSITIVE_INFINITY;
+      for (const groupId of groups.keys()) {
+        if (groupId < oldestGroup) oldestGroup = groupId;
+      }
+      if (oldestGroup === Number.POSITIVE_INFINITY) return;
+      groups.delete(oldestGroup);
     }
   }
 }
