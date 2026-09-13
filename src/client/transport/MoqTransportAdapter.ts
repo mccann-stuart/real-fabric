@@ -224,6 +224,7 @@ export class MoqTransportAdapter {
   private namespaceCancels = new Map<string, () => Promise<void>>();
   private nextAlias = 1n;
   private connectionGeneration = 0;
+  private closeInFlight: Promise<void> | null = null;
   private statsRefresh: Promise<void> | null = null;
   private lastStatsRefreshAt = 0;
   private stats: MoqSessionStats = {
@@ -252,7 +253,11 @@ export class MoqTransportAdapter {
   constructor(private readonly callbacks: MoqTransportCallbacks = {}) {}
 
   async connect(endpoint: string, credential: string, draft: string): Promise<void> {
-    const connectionGeneration = ++this.connectionGeneration;
+    // A resumed publisher must not race the previous session's shutdown. The
+    // relay owns full track names per live session, so opening the replacement
+    // early can make it refuse the same participant track as uninterested.
+    if (this.closeInFlight) await this.closeInFlight;
+
     const profile = DRAFT_REGISTRY[draft as MoqDraft];
     if (!profile) {
       throw new MoqTransportError(
@@ -290,7 +295,9 @@ export class MoqTransportAdapter {
         `The room service supplied no relay credential for draft ${draft}. No connection was attempted.`,
       );
     }
+    if (this.client) await this.close("replaced by a new MOQT session");
 
+    const connectionGeneration = ++this.connectionGeneration;
     const endpointName = describeEndpoint(endpoint);
     this.stats = {
       ...this.stats,
@@ -705,23 +712,53 @@ export class MoqTransportAdapter {
   }
 
   async close(reason: string): Promise<void> {
+    if (this.closeInFlight) return this.closeInFlight;
+    const attempt = this.closeOnce(reason);
+    this.closeInFlight = attempt;
+    try {
+      await attempt;
+    } finally {
+      if (this.closeInFlight === attempt) this.closeInFlight = null;
+    }
+  }
+
+  private async closeOnce(reason: string): Promise<void> {
     // Mark an intentional close before disconnecting. MOQtail invokes the
     // termination callback during disconnect, and that must not start recovery.
     this.connectionGeneration += 1;
     this.stats = { ...this.stats, state: "closed" };
     this.statsRefresh = null;
     this.lastStatsRefreshAt = 0;
-    for (const cancel of this.namespaceCancels.values()) await cancel();
+    const client = this.client;
+    this.client = null;
+    for (const cancel of this.namespaceCancels.values()) await cancel().catch(() => undefined);
     this.namespaceCancels.clear();
-    for (const publication of this.publications.values()) publication.controller.close();
+    for (const publication of this.publications.values()) {
+      try {
+        publication.controller.close();
+      } catch {
+        // The transport may already have closed the publication stream.
+      }
+    }
     this.publications.clear();
     this.pendingPublications.clear();
     for (const pushed of this.pushedSubscriptions.values()) {
       await pushed.stream.cancel("transport closed").catch(() => undefined);
     }
     this.pushedSubscriptions.clear();
-    if (this.client) await this.client.disconnect(reason);
-    this.client = null;
+    if (client) {
+      await client.disconnect(reason).catch(() => undefined);
+      // MOQtail 0.12.1 checks `!webTransport.closed` before closing, but
+      // `closed` is a Promise and therefore always truthy. Close and await the
+      // underlying session here so the relay releases this publisher's track
+      // before Resume audio is allowed to create its replacement session.
+      try {
+        client.webTransport.close();
+      } catch {
+        // A failed or already-closed WebTransport has nothing left to release.
+      }
+      await client.webTransport.closed.catch(() => undefined);
+    }
     this.subscriptions.clear();
   }
 
