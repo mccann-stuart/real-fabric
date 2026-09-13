@@ -994,6 +994,46 @@ describe("M1 — bounded session recovery", () => {
     }
   });
 
+  it("fully closes the previous WebTransport before a replacement connection proceeds", async () => {
+    let releaseClosed: (() => void) | undefined;
+    const closed = new Promise<void>((resolve) => {
+      releaseClosed = resolve;
+    });
+    const client = {
+      disconnect: vi.fn().mockResolvedValue(undefined),
+      webTransport: {
+        close: vi.fn(),
+        closed,
+      },
+    };
+    const adapter = new MoqTransportAdapter();
+    const internal = adapter as unknown as {
+      client: typeof client | null;
+      stats: ReturnType<MoqTransportAdapter["sessionStats"]>;
+    };
+    internal.client = client;
+    internal.stats = { ...adapter.sessionStats(), state: "connected" };
+
+    const closing = adapter.close("foreground audio interrupted");
+    await vi.waitFor(() => expect(client.webTransport.close).toHaveBeenCalledOnce());
+
+    let replacementSettled = false;
+    const replacement = adapter
+      .connect("https://draft-16.example.invalid", "credential", "unknown")
+      .catch((error: unknown) => {
+        replacementSettled = true;
+        return error;
+      });
+    await Promise.resolve();
+    expect(replacementSettled).toBe(false);
+
+    releaseClosed?.();
+    await closing;
+    await expect(replacement).resolves.toMatchObject({ code: "draft_unavailable" });
+    expect(client.disconnect).toHaveBeenCalledWith("foreground audio interrupted");
+    expect(internal.client).toBeNull();
+  });
+
   it("opens one publication while concurrent audio frames wait", async () => {
     let releasePublish: (() => void) | undefined;
     const publishReady = new Promise<void>((resolve) => {
