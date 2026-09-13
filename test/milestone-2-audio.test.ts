@@ -16,6 +16,8 @@ import {
 } from "../src/client/audio/PacketLossConcealer";
 import { PlaybackDeduplicator } from "../src/client/audio/PlaybackDeduplicator";
 import {
+  MAXIMUM_DECODER_QUEUE_SIZE,
+  MAXIMUM_DRAIN_FRAMES_PER_CALL,
   MAXIMUM_REBUILD_DEFERRAL_MS,
   SILENCE_REBUILD_GAP_MS,
   TrackPlayer,
@@ -208,6 +210,79 @@ describe("M2 — playback deduplication memory bounds (SEC-09)", () => {
     // 101st object in the same group should be rejected
     expect(dedupe.accept(participantId, groupId, 100)).toBe(false);
     expect(dedupe.accept(participantId, groupId, 101)).toBe(false);
+  });
+
+  it("prunes the oldest group without forgetting newer duplicate history", () => {
+    const dedupe = new PlaybackDeduplicator();
+    for (const groupId of [8, 3, 5, 9, 7]) {
+      expect(dedupe.accept("p1", groupId, 1)).toBe(true);
+    }
+
+    expect(dedupe.retainedGroups("p1")).toBe(4);
+    expect(dedupe.accept("p1", 3, 1)).toBe(true);
+    expect(dedupe.accept("p1", 5, 1)).toBe(false);
+  });
+});
+
+describe("M2 — media burst decoder backpressure (SEC-10)", () => {
+  function bufferedPlayer(frameCount: number) {
+    const mixer = {
+      addTrack: () => undefined,
+      removeTrack: () => undefined,
+      pushSamples: () => undefined,
+      setRatio: () => undefined,
+      flush: () => undefined,
+    } as unknown as MixerGraph;
+    const player = new TrackPlayer("participant", "track", mixer);
+    for (let sequence = 0; sequence < frameCount; sequence += 1) {
+      player.buffer.push({
+        sequence,
+        groupId: 1,
+        receivedAt: 0,
+        value: {
+          metadata: { participantHash: 1, mediaTimestamp: sequence * 20, sequence },
+          frame: new Uint8Array([1, 2, 3]),
+          receivedAt: 0,
+        },
+      });
+    }
+    return player;
+  }
+
+  it("limits work performed in one drain tick", () => {
+    const player = bufferedPlayer(MAXIMUM_DRAIN_FRAMES_PER_CALL + 5);
+    let decoded = 0;
+    const internals = player as unknown as {
+      decodeFrame: () => void;
+    };
+    internals.decodeFrame = () => {
+      decoded += 1;
+    };
+
+    player.drain(1_000);
+
+    expect(decoded).toBe(MAXIMUM_DRAIN_FRAMES_PER_CALL);
+    expect(player.buffer.depth).toBe(5);
+  });
+
+  it("retains ready frames while the decoder queue is saturated", () => {
+    const player = bufferedPlayer(3);
+    let decoded = 0;
+    const internals = player as unknown as {
+      decoder: AudioDecoder | null;
+      decodeFrame: () => void;
+    };
+    internals.decoder = {
+      decodeQueueSize: MAXIMUM_DECODER_QUEUE_SIZE,
+    } as AudioDecoder;
+    internals.decodeFrame = () => {
+      decoded += 1;
+    };
+
+    player.drain(1_000);
+
+    expect(decoded).toBe(0);
+    expect(player.buffer.depth).toBe(3);
   });
 });
 

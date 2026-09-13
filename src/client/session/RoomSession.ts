@@ -1211,11 +1211,19 @@ export class RoomSession {
     if (!room) return;
     const sender = room.participants.find((participant) => participant.id === fromParticipantId);
     if (sender?.role !== "human") return;
-    for (const ai of room.participants.filter((participant) => participant.role === "ai")) {
-      const row = room.routing.find(
-        (candidate) => candidate.aiId === ai.id && candidate.humanId === fromParticipantId,
-      );
-      if (row?.hearsMe) this.scripted.noteHeardUtterance(ai.id, fromParticipantId);
+
+    // Preserve the first-row semantics of Array.find while avoiding one routing
+    // scan per AI on every received audio object.
+    const hearsSenderByAi = new Map<string, boolean>();
+    for (const row of room.routing) {
+      if (row.humanId === fromParticipantId && !hearsSenderByAi.has(row.aiId)) {
+        hearsSenderByAi.set(row.aiId, row.hearsMe);
+      }
+    }
+    for (const participant of room.participants) {
+      if (participant.role === "ai" && hearsSenderByAi.get(participant.id)) {
+        this.scripted.noteHeardUtterance(participant.id, fromParticipantId);
+      }
     }
   }
 
@@ -1224,18 +1232,15 @@ export class RoomSession {
     const room = this.room;
     if (!room) return [];
     const paused = new Set(this.degradation.unsubscribed);
+    const viewerId = this.options.session.participantId;
+    const viewerRouting = this.viewerRouting(room.routing ?? [], viewerId);
     return room.participants.filter((participant) => {
-      if (participant.id === this.options.session.participantId) return false;
+      if (participant.id === viewerId) return false;
       if (participant.state === "left") return false;
       if (participant.simulated) return false;
       if (paused.has(trackKey(audioTrack(room.code, participant.id)))) return false;
       if (participant.role !== "ai") return this.subscriptionIntent.get(participant.id) ?? true;
-      const row = room.routing.find(
-        (candidate) =>
-          candidate.aiId === participant.id &&
-          candidate.humanId === this.options.session.participantId,
-      );
-      return row?.iHearIt ?? true;
+      return viewerRouting.get(participant.id) ?? true;
     });
   }
 
@@ -1266,15 +1271,15 @@ export class RoomSession {
   private subscriptionStates(): TrackSubscriptionState[] {
     const room = this.room;
     if (!room) return [];
+    const viewerId = this.options.session.participantId;
+    const viewerRouting = this.viewerRouting(room.routing ?? [], viewerId);
     return (room.participants ?? [])
       .filter(
         (participant) =>
-          participant.id !== this.options.session.participantId &&
-          participant.state !== "left" &&
-          !participant.simulated,
+          participant.id !== viewerId && participant.state !== "left" && !participant.simulated,
       )
       .map((participant) => {
-        const intent = this.subscriptionIntentFor(participant);
+        const intent = this.subscriptionIntentFor(participant, viewerRouting);
         if (!intent) {
           return {
             participantId: participant.id,
@@ -1320,14 +1325,31 @@ export class RoomSession {
       });
   }
 
-  private subscriptionIntentFor(participant: Participant): boolean {
+  private subscriptionIntentFor(
+    participant: Participant,
+    viewerRouting?: ReadonlyMap<string, boolean>,
+  ): boolean {
     if (participant.role !== "ai") return this.subscriptionIntent.get(participant.id) ?? true;
+    if (viewerRouting) return viewerRouting.get(participant.id) ?? true;
     const row = this.room?.routing?.find(
       (candidate) =>
         candidate.aiId === participant.id &&
         candidate.humanId === this.options.session.participantId,
     );
     return row?.iHearIt ?? true;
+  }
+
+  private viewerRouting(
+    routing: ReadonlyArray<RoomSnapshot["routing"][number]>,
+    viewerId: string,
+  ): Map<string, boolean> {
+    const preferences = new Map<string, boolean>();
+    for (const row of routing) {
+      if (row.humanId === viewerId && !preferences.has(row.aiId)) {
+        preferences.set(row.aiId, row.iHearIt);
+      }
+    }
+    return preferences;
   }
 
   private tickLadder(): void {

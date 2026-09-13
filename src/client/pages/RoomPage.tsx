@@ -185,24 +185,32 @@ export function RoomPage({
 
   const demoContext = useCallback(() => {
     const metrics = state?.metrics;
-    const speaking = (room?.participants ?? []).filter(
+    const participants = room?.participants ?? [];
+    const speaking = participants.filter(
       (participant) => participant.role === "ai" && participant.pipeline === "speaking",
     ).length;
-    const partialContext = (room?.participants ?? [])
+
+    const heardHumanIdsByAi = new Map<string, Set<string>>();
+    for (const row of room?.routing ?? []) {
+      if (!row.hearsMe) continue;
+      let heardHumanIds = heardHumanIdsByAi.get(row.aiId);
+      if (!heardHumanIds) {
+        heardHumanIds = new Set<string>();
+        heardHumanIdsByAi.set(row.aiId, heardHumanIds);
+      }
+      heardHumanIds.add(row.humanId);
+    }
+
+    const partialContext = participants
       .filter((participant) => participant.role === "ai")
       .filter((ai) =>
-        connectedHumanIds.some(
-          (humanId) =>
-            !(room?.routing ?? []).some(
-              (row) => row.aiId === ai.id && row.humanId === humanId && row.hearsMe,
-            ),
-        ),
+        connectedHumanIds.some((humanId) => !heardHumanIdsByAi.get(ai.id)?.has(humanId)),
       )
       .map((ai) => ai.id);
 
     return {
       msSinceRoomOpen: room ? Date.now() - room.createdAt : Number.MAX_SAFE_INTEGER,
-      participantCount: (room?.participants ?? []).length,
+      participantCount: participants.length,
       aisSpeaking: speaking,
       publishedTracks: metrics?.publishedTracks ?? notExposed("No session state."),
       subscribedTracks: metrics?.subscribedTracks ?? notExposed("No session state."),

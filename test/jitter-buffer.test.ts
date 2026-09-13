@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { AdaptiveJitterBuffer } from "../src/client/audio/AdaptiveJitterBuffer";
+import {
+  AdaptiveJitterBuffer,
+  MAXIMUM_BUFFERED_FRAMES,
+} from "../src/client/audio/AdaptiveJitterBuffer";
 
 describe("AdaptiveJitterBuffer", () => {
   it("orders frames and releases them only after the target delay", () => {
@@ -34,5 +37,20 @@ describe("AdaptiveJitterBuffer", () => {
     expect(buffer.pull(1_120)).toBe("one");
     expect(buffer.pull(1_120)).toBe("two");
     expect(buffer.pull(1_120)).toBe("three");
+  });
+
+  it("bounds buffered frames during a media burst", () => {
+    const buffer = new AdaptiveJitterBuffer<string>();
+    for (let sequence = 0; sequence < MAXIMUM_BUFFERED_FRAMES + 10; sequence += 1) {
+      buffer.push({
+        sequence,
+        groupId: 1,
+        receivedAt: 1_000,
+        value: `frame-${sequence}`,
+      });
+    }
+
+    expect(buffer.depth).toBe(MAXIMUM_BUFFERED_FRAMES);
+    expect(buffer.lateDrops).toBe(10);
   });
 });
