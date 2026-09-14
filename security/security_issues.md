@@ -27,7 +27,7 @@ The line numbers and excerpts below are pinned to the scanned revision (`a784122
 | P2 | [SEC-08 — Unbounded JSON parsing](#sec-08--worker-parses-unbounded-json-bodies-before-rate-limiting-or-authentication) | Medium | High | **Remediated** | Worker availability |
 | P2 | [SEC-09 — Unbounded playback deduplication](#sec-09--playback-deduplication-retains-unbounded-object-identifiers-per-group) | Medium | High | **Remediated** | Browser memory |
 | P2 | [SEC-10 — Unbounded media burst work](#sec-10--media-bursts-trigger-count-unbounded-sorting-and-decoder-submission) | Medium | High | **Open** | Browser CPU and decoder |
-| P2 | [SEC-11 — Unknown room probes create SQLite state](#sec-11--unknown-room-code-probes-initialise-persistent-sqlite-durable-objects) | Medium | High | **Open** | Cloudflare resource allocation |
+| P2 | [SEC-11 — Unknown room probes create SQLite state](#sec-11--unknown-room-code-probes-initialise-persistent-sqlite-durable-objects) | Medium | High | **Remediated** | Cloudflare resource allocation |
 | P2 | [SEC-12 — Read-only clients start capture](#sec-12--narrow-read-only-clients-still-start-microphone-capture-and-publication) | Medium | Medium | **Open** | Microphone privacy |
 | P3 | [SEC-13 — Cross-participant activity spoofing](#sec-13--any-participant-can-spoof-another-participants-activity) | Low | High | **Open** | Presentation integrity |
 
@@ -874,6 +874,7 @@ Trade-off: produces shared authoritative recency, but depends on a trusted trans
 - **SEC-05 & SEC-06:** Replaced query-string WebSocket credentials with initial in-socket `{ type: "auth" }` authentication, and enforced at most 1 active control socket per participant in Durable Object storage.
 - **SEC-07 & SEC-08:** Enforced IP-based rate limiting on room joins (`enforceJoinRateLimit`) and bounded JSON request bodies to 32 KiB using a streaming reader (`readJsonObject`).
 - **SEC-09:** Bounded playback deduplication to 100 objects per group (`MAXIMUM_OBJECTS_PER_GROUP`) in `PlaybackDeduplicator`.
+- **SEC-11:** Deferred SQLite table migration on unknown room code probes in `Room` Durable Object until explicit room initialisation (`initialise()`), avoiding persistent SQLite allocation on uninitialised probes.
 - **Relay token validation:** Added fail-closed checks in Worker to reject expired or malformed relay JWTs.
 
 ### Next steps and vision statements (Remaining backlog order)
