@@ -283,8 +283,12 @@ export class RoomSession {
   private publicationFailureHandling = false;
   private pendingTransportTermination: MoqTransportError | null = null;
   private closed = false;
+  // Performance optimization (⚡ Bolt): Pre-compute participantHash once on instantiation
+  // to avoid computing FNV-1a hash over participantId on every 20ms audio frame (50Hz).
+  private readonly participantHash: number;
 
   constructor(private readonly options: RoomSessionOptions) {
+    this.participantHash = hashParticipant(options.session.participantId);
     this.now = options.now ?? Date.now;
     this.log = new SessionEventLog(
       `real-fabric:events:${options.session.code}:${options.session.participantId}`,
@@ -825,7 +829,7 @@ export class RoomSession {
     frame.copyTo(payload);
     const object = encodeAudioObject(
       {
-        participantHash: hashParticipant(this.options.session.participantId),
+        participantHash: this.participantHash,
         mediaTimestamp: Math.round(frame.timestamp / 1_000),
         sequence: this.sequence++,
       },
