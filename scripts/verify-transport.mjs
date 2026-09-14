@@ -286,7 +286,17 @@ function parseNetLog(filePath) {
       if (bytesStr) {
         try {
           const decoded = Buffer.from(bytesStr, "base64").toString("utf8");
-          if (decoded.includes("cloudflare.mediaoverquic.com")) certSeen = true;
+          const allowedHosts = new Set(["cloudflare.mediaoverquic.com"]);
+          const urlCandidates = decoded.match(/\bhttps?:\/\/[^\s"'<>]+/gi) || [];
+          for (const candidate of urlCandidates) {
+            try {
+              const host = new URL(candidate).hostname.toLowerCase();
+              if (allowedHosts.has(host)) {
+                certSeen = true;
+                break;
+              }
+            } catch {}
+          }
         } catch {}
       }
     }
