@@ -13,6 +13,7 @@ coverage/
 .cache/
 playwright-report/
 test-results/
+/output/playwright/
 reports/
 /reports/
 *.netlog
