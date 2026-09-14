@@ -107,14 +107,8 @@ export interface ParticipantCredential {
 }
 
 export class Room extends DurableObject<Env> {
-  constructor(ctx: DurableObjectState, env: Env) {
-    super(ctx, env);
-    ctx.blockConcurrencyWhile(async () => {
-      this.migrate();
-    });
-  }
-
   checkCreationRateLimit(now: number): boolean {
+    this.ensureRateTable();
     const cutoff = now - 10 * 60_000;
     this.ctx.storage.sql.exec("DELETE FROM rate_events WHERE created_at < ?", cutoff);
     const row = this.ctx.storage.sql
@@ -126,6 +120,7 @@ export class Room extends DurableObject<Env> {
   }
 
   checkJoinRateLimit(now: number): boolean {
+    this.ensureRateTable();
     const cutoff = now - 10 * 60_000;
     this.ctx.storage.sql.exec("DELETE FROM rate_events WHERE created_at < ?", cutoff);
     const row = this.ctx.storage.sql
@@ -136,7 +131,14 @@ export class Room extends DurableObject<Env> {
     return true;
   }
 
+  private ensureRateTable(): void {
+    this.ctx.storage.sql.exec(
+      "CREATE TABLE IF NOT EXISTS rate_events (created_at INTEGER NOT NULL)",
+    );
+  }
+
   async initialise(code: string, now: number): Promise<RoomSnapshot> {
+    this.migrate();
     if (!this.meta()) {
       this.ctx.storage.sql.exec(
         `INSERT INTO room_meta (
@@ -956,7 +958,17 @@ export class Room extends DurableObject<Env> {
   }
 
   private meta(): MetaRow | undefined {
-    return this.ctx.storage.sql.exec<MetaRow>("SELECT * FROM room_meta LIMIT 1").toArray()[0];
+    try {
+      const version = this.ctx.storage.sql
+        .exec<{ version: number }>("SELECT version FROM schema_meta LIMIT 1")
+        .toArray()[0]?.version;
+      if (version !== SCHEMA_VERSION) {
+        this.migrate();
+      }
+      return this.ctx.storage.sql.exec<MetaRow>("SELECT * FROM room_meta LIMIT 1").toArray()[0];
+    } catch {
+      return undefined;
+    }
   }
 
   private assertActive(): MetaRow {

@@ -137,14 +137,28 @@ describe("Real Fabric Worker", () => {
     expect(serialised).not.toContain("rejoinToken");
   });
 
-  it("returns a specific not-found response for an unknown room", async () => {
-    const response = await SELF.fetch("https://real-fabric.test/api/rooms/AAAAAAAAAAAAAAAAAAAA");
+  it("returns a specific not-found response for an unknown room and does not initialize SQLite state (SEC-11)", async () => {
+    const code = "UNKNOWNROOMCODE12345";
+    const response = await SELF.fetch(`https://real-fabric.test/api/rooms/${code}`);
     expect(response.status).toBe(404);
     expect(await response.json()).toMatchObject({
       error: {
         code: "room_not_found",
         message: "The room does not exist or has expired.",
       },
+    });
+
+    const rooms = env.ROOMS;
+    if (!rooms) throw new Error("The ROOMS binding is required for SEC-11 test.");
+    const stub = rooms.getByName(code);
+
+    await runInDurableObject(stub, async (_instance, state) => {
+      const tables = state.storage.sql
+        .exec<{ name: string }>(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('room_meta', 'participants')",
+        )
+        .toArray();
+      expect(tables).toHaveLength(0);
     });
   });
 
