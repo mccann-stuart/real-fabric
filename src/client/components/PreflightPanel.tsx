@@ -55,7 +55,8 @@ export function PreflightPanel({
         <h2 id="preflight-title">Pre-flight status</h2>
         <span>MOQT draft {PINNED_MOQT_DRAFT} · no fallback</span>
       </div>
-      <div className="preflight-grid">
+      <fieldset className="preflight-grid">
+        <legend className="sr-only">Required capabilities</legend>
         {REQUIRED_CHECKS.map(([key, label]) => (
           <div className="preflight-check" key={key}>
             <strong>{label}</strong>
@@ -67,7 +68,7 @@ export function PreflightPanel({
           <strong>HTTP/3 and QUIC</strong>
           <StatusLight state={probeLight(report.network.state)} />
         </div>
-      </div>
+      </fieldset>
       <fieldset className="preflight-grid preflight-grid--optional">
         <legend className="sr-only">Optional enhancements</legend>
         {OPTIONAL_CHECKS.map(([key, label]) => (

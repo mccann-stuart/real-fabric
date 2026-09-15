@@ -140,7 +140,16 @@ export function EntryPage({
           <button
             className="mic-test"
             type="button"
-            aria-label="Mic level test"
+            disabled={report.microphone === "checking"}
+            aria-busy={report.microphone === "checking"}
+            aria-pressed={report.microphone === "ready"}
+            aria-label={
+              report.microphone === "checking"
+                ? "Testing microphone permission…"
+                : report.microphone === "ready"
+                  ? "Microphone test active; re-test mic level"
+                  : "Mic level test"
+            }
             onClick={() => void testMicrophone()}
           >
             <span>◉ Mic level test</span>
