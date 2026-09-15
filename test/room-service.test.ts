@@ -2,7 +2,9 @@ import { SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import {
   AI_TO_AI_TURN_CAP,
+  type ApiError,
   type CreateRoomResponse,
+  type JoinRoomResponse,
   MAX_SIMULATED_PARTICIPANTS,
   type RoomSnapshot,
 } from "../src/shared/contracts";
@@ -208,6 +210,45 @@ describe("H9 and §8 — consent is per human and AI pair", () => {
       iHearIt: true,
     });
     expect(status).toBe(401);
+  });
+
+  it("refuses presenter and AI lifecycle controls to a second joined human (SEC-02)", async () => {
+    const created = await createRoom();
+    const joined = await call<JoinRoomResponse>(`/api/rooms/${created.room.code}/join`, {
+      displayName: "Attendee",
+    });
+
+    const secondHumanId = joined.value.participant.id;
+    const secondHumanToken = joined.value.rejoinToken;
+
+    // Second human should receive 403 presenter_only when trying presenter actions
+    const addAiRes = await call<ApiError>(`/api/rooms/${created.room.code}/ai`, {
+      participantId: secondHumanId,
+      rejoinToken: secondHumanToken,
+      displayName: "Rogue AI",
+      simulated: false,
+    });
+    expect(addAiRes.status).toBe(403);
+    expect(addAiRes.value.error?.code).toBe("presenter_only");
+
+    const presenterRes = await call<ApiError>(`/api/rooms/${created.room.code}/presenter`, {
+      participantId: secondHumanId,
+      rejoinToken: secondHumanToken,
+      simulatedHumans: 2,
+      simulatedAis: 2,
+      scriptedResponses: true,
+    });
+    expect(presenterRes.status).toBe(403);
+    expect(presenterRes.value.error?.code).toBe("presenter_only");
+
+    // Room owner / presenter can successfully perform presenter actions
+    const ownerAddAiRes = await call(`/api/rooms/${created.room.code}/ai`, {
+      participantId: created.participant.id,
+      rejoinToken: created.rejoinToken,
+      displayName: "Legit AI",
+      simulated: false,
+    });
+    expect(ownerAddAiRes.status).toBe(201);
   });
 });
 
