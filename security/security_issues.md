@@ -18,7 +18,7 @@ The line numbers and excerpts below are pinned to the scanned revision (`a784122
 | Priority | Issue | Severity | Confidence | Status (10 Sep 2026) | Primary boundary |
 | --- | --- | --- | --- | --- | --- |
 | P1 | [SEC-01 — Relay-wide browser bearer](#sec-01--room-creation-and-joining-disclose-a-relay-wide-publishsubscribe-bearer) | High | Medium | **Open (Known P1)** | Relay authorisation |
-| P1 | [SEC-02 — Any human receives presenter authority](#sec-02--any-joined-human-can-execute-presenter-and-ai-lifecycle-controls) | High | High | **Open** | Room authorisation |
+| P1 | [SEC-02 — Any human receives presenter authority](#sec-02--any-joined-human-can-execute-presenter-and-ai-lifecycle-controls) | High | High | **Remediated** | Room authorisation |
 | P2 | [SEC-03 — Unvalidated AI floor target](#sec-03--unvalidated-ai-identifiers-can-wedge-or-pre-empt-the-global-floor) | Medium | High | **Open** | Shared floor integrity |
 | P2 | [SEC-04 — Routing preference disclosure](#sec-04--public-room-snapshots-disclose-every-humans-per-ai-routing-preferences) | Medium | High | **Open** | Participant privacy |
 | P2 | [SEC-05 — Reusable bearer in WebSocket URL](#sec-05--a-reusable-participant-bearer-is-placed-in-the-websocket-query-string) | Medium | Medium | **Remediated** | Credential handling |
@@ -118,7 +118,7 @@ Trade-off: this narrows cross-room blast radius but creates credential lifecycle
 - **Rule:** `authorization.any-human-global-room-control`
 - **Taxonomy:** CWE-862
 - **Severity / confidence:** High / High
-- **Status:** Open.
+- **Status:** Remediated in codebase (10 September 2026). Room creator stored as `owner_id` in `room_meta`; `assertPresenter` in `src/worker/room.ts` enforces that only the room creator/presenter can execute presenter and AI lifecycle controls, returning HTTP 403 `presenter_only` for unauthorized humans. Validated by automated tests.
 
 ### Evidence
 
@@ -871,6 +871,7 @@ Trade-off: produces shared authoritative recency, but depends on a trusted trans
 
 ### Remediated controls (as of 10 September 2026)
 
+- **SEC-02:** Persisted room creator as `owner_id` in `room_meta` and enforced `assertPresenter` in `src/worker/room.ts` to restrict AI lifecycle, floor administration and presenter simulation to the room presenter.
 - **SEC-05 & SEC-06:** Replaced query-string WebSocket credentials with initial in-socket `{ type: "auth" }` authentication, and enforced at most 1 active control socket per participant in Durable Object storage.
 - **SEC-07 & SEC-08:** Enforced IP-based rate limiting on room joins (`enforceJoinRateLimit`) and bounded JSON request bodies to 32 KiB using a streaming reader (`readJsonObject`).
 - **SEC-09:** Bounded playback deduplication to 100 objects per group (`MAXIMUM_OBJECTS_PER_GROUP`) in `PlaybackDeduplicator`.
