@@ -37,11 +37,13 @@ export const MAXIMUM_DRAIN_FRAMES_PER_CALL = 25;
 /** SEC-10: pause submissions while the browser decoder is already backlogged. */
 export const MAXIMUM_DECODER_QUEUE_SIZE = 16;
 const MAXIMUM_PENDING_DECODE_TIMINGS = 256;
+export const DRIFT_RECOVERY_OBSERVATIONS = 50;
 
 export interface TrackPlayerCallbacks {
   onFirstObject?: (trackId: string) => void;
   onDriftCorrection?: (correction: DriftCorrection) => void;
   onDriftBeyondRange?: (trackId: string) => void;
+  onDriftRecovered?: (trackId: string) => void;
   /** §10.5: a concealed gap is a quality warning, never silent. */
   onConcealment?: (trackId: string, frames: number, kind: ConcealmentKind) => void;
   onError?: (trackId: string, error: Error) => void;
@@ -58,6 +60,7 @@ export class TrackPlayer {
   private decoder: AudioDecoder | null = null;
   private firstObjectAt: number | null = null;
   private lastObjectAt: number | null = null;
+  private lastAudibleObjectAt: number | null = null;
   private objects = 0;
   private bytes = 0;
   private lastSequence: number | null = null;
@@ -70,6 +73,8 @@ export class TrackPlayer {
   private comfortNoiseFrames = 0;
   /** Set when drift leaves the correctable range; cleared when the rebuild runs. */
   private rebuildPendingSince: number | null = null;
+  private recoveringFromDrift = false;
+  private recoveryObservations = 0;
   /** H6: set while a cancelled group is still arriving. */
   private cancelledGroups = new Set<number>();
 
@@ -113,6 +118,9 @@ export class TrackPlayer {
     this.bytes += payload.byteLength;
     this.lastSequence = decoded.metadata.sequence;
     this.lastObjectAt = now;
+    const active = decoded.metadata.endOfTurn !== true;
+    if (active) this.lastAudibleObjectAt = now;
+    this.mixer.setTrackActive(this.trackId, active);
     if (this.firstObjectAt === null) {
       this.firstObjectAt = now;
       // §6.2: audio object arrival, not presence, is the source of truth.
@@ -120,17 +128,28 @@ export class TrackPlayer {
     }
     if (this.decoderReleased) this.decoderReleased = false;
 
-    this.drift.observe(decoded.metadata.mediaTimestamp, now);
+    const outputClock = this.mixer.outputClockMs();
+    if (outputClock.exposed) this.drift.observe(decoded.metadata.mediaTimestamp, outputClock.value);
     const correction = this.drift.recordCorrection(now);
     if (correction) {
       this.mixer.setRatio(this.trackId, correction.ratio);
       this.callbacks.onDriftCorrection?.(correction);
     }
-    if (this.drift.health() === "beyond_range" && this.rebuildPendingSince === null) {
+    const driftHealth = this.drift.health();
+    if (driftHealth === "beyond_range" && this.rebuildPendingSince === null) {
       // §11.3: schedule the rebuild, then wait for a pause. Rebuilding mid-word
       // trades one audible artefact for another.
       this.rebuildPendingSince = now;
       this.callbacks.onDriftBeyondRange?.(this.trackId);
+    }
+    if (this.recoveringFromDrift && this.drift.hasEstimate) {
+      if (driftHealth === "beyond_range") this.recoveryObservations = 0;
+      else this.recoveryObservations += 1;
+      if (this.recoveryObservations >= DRIFT_RECOVERY_OBSERVATIONS) {
+        this.recoveringFromDrift = false;
+        this.recoveryObservations = 0;
+        this.callbacks.onDriftRecovered?.(this.trackId);
+      }
     }
 
     this.buffer.push({
@@ -195,7 +214,8 @@ export class TrackPlayer {
     const pendingSince = this.rebuildPendingSince;
     if (pendingSince === null) return;
 
-    const silent = this.lastObjectAt === null || now - this.lastObjectAt >= SILENCE_REBUILD_GAP_MS;
+    const silent =
+      this.lastAudibleObjectAt === null || now - this.lastAudibleObjectAt >= SILENCE_REBUILD_GAP_MS;
     const deferredTooLong = now - pendingSince >= MAXIMUM_REBUILD_DEFERRAL_MS;
     if (!silent && !deferredTooLong) return;
 
@@ -206,6 +226,13 @@ export class TrackPlayer {
     this.concealer.reset();
     this.lastPlayedSequence = null;
     this.rebuildPendingSince = null;
+    this.requireDriftRecovery();
+  }
+
+  /** A rebuilt subscription must converge before its prior warning clears. */
+  requireDriftRecovery(): void {
+    this.recoveringFromDrift = true;
+    this.recoveryObservations = 0;
   }
 
   /** True while a drift rebuild is waiting for a pause. Surfaced in the inspector. */
@@ -222,6 +249,7 @@ export class TrackPlayer {
     const dropped = this.buffer.cancelGroup(groupId);
     // Drop what the worklet already holds too, or the tail still plays.
     this.mixer.flush(this.trackId);
+    this.mixer.setTrackActive(this.trackId, false);
     // A cancelled turn is not a lost frame: resume from whatever comes next
     // rather than concealing the gap the cancellation deliberately created.
     this.lastPlayedSequence = null;
@@ -245,7 +273,7 @@ export class TrackPlayer {
   }
 
   get lastActiveAt(): number {
-    return this.lastObjectAt ?? 0;
+    return this.lastAudibleObjectAt ?? 0;
   }
 
   setNominalBuffer(nominalMs: number): void {

@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 import { AiDirector } from "../src/client/ai/AiDirector";
 import { ScriptedResponder } from "../src/client/ai/ScriptedResponder";
 import { AdaptiveJitterBuffer } from "../src/client/audio/AdaptiveJitterBuffer";
-import { DegradationLadder, describeStep } from "../src/client/audio/DegradationLadder";
+import {
+  DegradationLadder,
+  describeStep,
+  UnderrunWindowCounter,
+} from "../src/client/audio/DegradationLadder";
 import { DriftEstimator, MAXIMUM_CORRECTION_RATIO } from "../src/client/audio/DriftEstimator";
 import { PlaybackDeduplicator } from "../src/client/audio/PlaybackDeduplicator";
 import { prioritiseFailureCodes } from "../src/client/components/FailureBanner";
@@ -544,6 +548,56 @@ describe("H7 — no cap, visible degradation", () => {
   it("says nothing at step zero and never invents a cap", () => {
     expect(describeStep(0, 0)).toBeNull();
   });
+
+  it("counts only new underruns on active tracks", () => {
+    const counter = new UnderrunWindowCounter();
+    expect(counter.next([{ trackId: "remote", underruns: 50, active: true }])).toBe(0);
+    expect(counter.next([{ trackId: "remote", underruns: 100, active: false }])).toBe(0);
+    expect(counter.next([{ trackId: "remote", underruns: 100, active: true }])).toBe(0);
+    expect(counter.next([{ trackId: "remote", underruns: 104, active: true }])).toBe(4);
+  });
+
+  it("does not repeat the one-remote eight-second pause loop after resubscription", () => {
+    const counter = new UnderrunWindowCounter();
+    const ladder = new DegradationLadder();
+    const track = { trackId: "remote", lastActiveAt: 0 };
+    let now = 0;
+    let previousStep = 0;
+    let pauseTransitions = 0;
+    const evaluate = (underruns: number | null, active = true) => {
+      now += 2_000;
+      const snapshots = underruns === null ? [] : [{ trackId: track.trackId, underruns, active }];
+      const state = ladder.evaluate({
+        activeSpeakers: active && underruns !== null ? 1 : 0,
+        worstBufferMs: 60,
+        underrunsInWindow: counter.next(snapshots),
+        tracks: underruns === null ? [] : [{ ...track, lastActiveAt: now }],
+        now,
+      });
+      if (state.step === 3 && previousStep !== 3) pauseTransitions += 1;
+      previousStep = state.step;
+      return state;
+    };
+
+    // The first report is a baseline. Three genuinely strained windows then
+    // reach the last-resort pause exactly once.
+    expect(evaluate(100).step).toBe(0);
+    expect(evaluate(104).step).toBe(1);
+    expect(evaluate(108).step).toBe(2);
+    expect(evaluate(112).step).toBe(3);
+
+    // Three empty windows permit recovery and re-subscription. A fresh high
+    // cumulative counter establishes a new baseline instead of replaying the
+    // previous subscription's underruns into the ladder.
+    evaluate(null);
+    evaluate(null);
+    expect(evaluate(null).step).toBe(2);
+    expect(evaluate(500).step).toBe(2);
+    for (let window = 0; window < 5; window += 1) evaluate(500);
+
+    expect(previousStep).toBe(0);
+    expect(pauseTransitions).toBe(1);
+  });
 });
 
 describe("room status presentation", () => {
@@ -643,9 +697,9 @@ describe("H9 — per-AI routing, honestly labelled", () => {
       routing({ humanId: "h2", aiId: "a1", hearsMe: true }),
     ];
     // The viewer whose consent is off sees that fact specifically.
-    expect(aiDisplayActivity(agent, rows, "h1", ["h1", "h2"])).toBe("Not listening to you");
+    expect(aiDisplayActivity(agent, rows, "h1", true)).toBe("Not listening to you");
     // The other human sees only that the AI has an incomplete picture.
-    expect(aiDisplayActivity(agent, rows, "h2", ["h1", "h2"])).toBe("Partial context");
+    expect(aiDisplayActivity(agent, rows, "h2", true)).toBe("Partial context");
   });
 
   it("reports the pipeline once the AI hears every human", () => {
@@ -653,13 +707,13 @@ describe("H9 — per-AI routing, honestly labelled", () => {
       routing({ humanId: "h1", hearsMe: true }),
       routing({ humanId: "h2", hearsMe: true }),
     ];
-    expect(aiDisplayActivity(ai("a1", { pipeline: "thinking" }), rows, "h1", ["h1", "h2"])).toBe(
+    expect(aiDisplayActivity(ai("a1", { pipeline: "thinking" }), rows, "h1", false)).toBe(
       "Thinking",
     );
-    expect(aiDisplayActivity(ai("a1", { pipeline: "interrupted" }), rows, "h1", ["h1", "h2"])).toBe(
+    expect(aiDisplayActivity(ai("a1", { pipeline: "interrupted" }), rows, "h1", false)).toBe(
       "Interrupted",
     );
-    expect(aiDisplayActivity(ai("a1", { pipeline: "unavailable" }), rows, "h1", ["h1", "h2"])).toBe(
+    expect(aiDisplayActivity(ai("a1", { pipeline: "unavailable" }), rows, "h1", false)).toBe(
       "Unavailable",
     );
   });
@@ -736,17 +790,19 @@ describe("H13 — ten minutes without unbounded growth or uncorrected drift", ()
 
   it("corrects slow drift and reports skew beyond the correction range", () => {
     const gentle = new DriftEstimator("t1");
-    for (let step = 1; step <= 200; step += 1) {
+    for (let step = 1; step <= 1_000; step += 1) {
       // 500 ppm: the local clock runs slightly ahead of the sender's.
       gentle.observe(step * 20, step * 20 * 1.0005);
     }
     const ratio = gentle.correctionRatio();
-    expect(ratio).toBeGreaterThan(1);
-    expect(ratio).toBeLessThanOrEqual(MAXIMUM_CORRECTION_RATIO);
+    expect(ratio).toBeLessThan(1);
+    expect(ratio).toBeGreaterThanOrEqual(1 / MAXIMUM_CORRECTION_RATIO);
     expect(gentle.health()).toBe("correcting");
 
     const severe = new DriftEstimator("t2");
-    for (let step = 1; step <= 200; step += 1) severe.observe(step * 20, step * 20 * 1.08);
+    for (let step = 1; step <= 1_000; step += 1) {
+      severe.observe(step * 20, step * 20 * 1.08);
+    }
     expect(severe.health()).toBe("beyond_range");
     expect(severe.correctionRatio()).toBeLessThanOrEqual(MAXIMUM_CORRECTION_RATIO);
   });

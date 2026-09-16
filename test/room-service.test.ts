@@ -2,7 +2,9 @@ import { SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import {
   AI_TO_AI_TURN_CAP,
+  type ApiError,
   type CreateRoomResponse,
+  type JoinRoomResponse,
   MAX_SIMULATED_PARTICIPANTS,
   type RoomSnapshot,
 } from "../src/shared/contracts";
@@ -210,13 +212,21 @@ describe("H9 and §8 — consent is per human and AI pair", () => {
     expect(status).toBe(401);
   });
 
-  it("does not disclose routing preferences in unauthenticated public snapshots (SEC-04)", async () => {
+  it("keeps detailed routing out of public snapshots while exposing anonymous partial context (SEC-04)", async () => {
     const created = await createRoom();
     const room = await addAi(created, "Atlas");
     const atlas = room.participants.find((participant) => participant.role === "ai");
+    if (!atlas) throw new Error("Expected Atlas to be present.");
+
+    const initialPublicResponse = await SELF.fetch(`${BASE}/api/rooms/${created.room.code}`);
+    expect(initialPublicResponse.status).toBe(200);
+    const initialPublicSnapshot = (await initialPublicResponse.json()) as RoomSnapshot;
+    expect(initialPublicSnapshot.routing).toEqual([]);
+    expect(initialPublicSnapshot.partialContextAiIds).toEqual([atlas.id]);
+
     await call<RoomSnapshot>(`/api/rooms/${created.room.code}/routing`, {
       ...credential(created),
-      aiId: atlas?.id,
+      aiId: atlas.id,
       hearsMe: true,
       iHearIt: true,
     });
@@ -225,33 +235,94 @@ describe("H9 and §8 — consent is per human and AI pair", () => {
     expect(publicResponse.status).toBe(200);
     const publicSnapshot = (await publicResponse.json()) as RoomSnapshot;
     expect(publicSnapshot.routing).toEqual([]);
+    expect(publicSnapshot.partialContextAiIds).toEqual([]);
   });
 
-  it("scopes snapshot routing rows to the viewing human participant (SEC-04)", async () => {
+  it("scopes join and authenticated refresh snapshots to the viewing human (SEC-04)", async () => {
     const created = await createRoom();
     const room = await addAi(created, "Atlas");
     const atlas = room.participants.find((participant) => participant.role === "ai");
+    if (!atlas) throw new Error("Expected Atlas to be present.");
 
     await call<RoomSnapshot>(`/api/rooms/${created.room.code}/routing`, {
       ...credential(created),
-      aiId: atlas?.id,
+      aiId: atlas.id,
       hearsMe: true,
-      iHearIt: true,
+      iHearIt: false,
     });
 
     const joinedGrace = await call<CreateRoomResponse>(`/api/rooms/${created.room.code}/join`, {
       displayName: "Grace",
     });
 
-    // Grace's snapshot contains Grace's routing preferences, not Ada's.
-    expect(
-      joinedGrace.value.room.routing.every(
-        (row) => row.humanId === joinedGrace.value.participant.id,
-      ),
-    ).toBe(true);
-    expect(
-      joinedGrace.value.room.routing.find((row) => row.humanId === created.participant.id),
-    ).toBeUndefined();
+    expect(joinedGrace.value.room.routing).toHaveLength(1);
+    expect(joinedGrace.value.room.routing[0]).toMatchObject({
+      humanId: joinedGrace.value.participant.id,
+      aiId: atlas.id,
+      hearsMe: false,
+      iHearIt: true,
+    });
+    expect(joinedGrace.value.room.partialContextAiIds).toEqual([atlas.id]);
+
+    const ownerSnapshot = await call<RoomSnapshot>(
+      `/api/rooms/${created.room.code}/snapshot`,
+      credential(created),
+    );
+    expect(ownerSnapshot.status).toBe(200);
+    expect(ownerSnapshot.value.routing).toHaveLength(1);
+    expect(ownerSnapshot.value.routing[0]).toMatchObject({
+      humanId: created.participant.id,
+      aiId: atlas.id,
+      hearsMe: true,
+      iHearIt: false,
+    });
+
+    const graceSnapshot = await call<RoomSnapshot>(
+      `/api/rooms/${created.room.code}/snapshot`,
+      credential(joinedGrace.value),
+    );
+    expect(graceSnapshot.status).toBe(200);
+    expect(graceSnapshot.value.routing).toHaveLength(1);
+    expect(graceSnapshot.value.routing[0]?.humanId).toBe(joinedGrace.value.participant.id);
+  });
+
+  it("refuses presenter and AI lifecycle controls to a second joined human (SEC-02)", async () => {
+    const created = await createRoom();
+    const joined = await call<JoinRoomResponse>(`/api/rooms/${created.room.code}/join`, {
+      displayName: "Attendee",
+    });
+
+    const secondHumanId = joined.value.participant.id;
+    const secondHumanToken = joined.value.rejoinToken;
+
+    // Second human should receive 403 presenter_only when trying presenter actions
+    const addAiRes = await call<ApiError>(`/api/rooms/${created.room.code}/ai`, {
+      participantId: secondHumanId,
+      rejoinToken: secondHumanToken,
+      displayName: "Rogue AI",
+      simulated: false,
+    });
+    expect(addAiRes.status).toBe(403);
+    expect(addAiRes.value.error?.code).toBe("presenter_only");
+
+    const presenterRes = await call<ApiError>(`/api/rooms/${created.room.code}/presenter`, {
+      participantId: secondHumanId,
+      rejoinToken: secondHumanToken,
+      simulatedHumans: 2,
+      simulatedAis: 2,
+      scriptedResponses: true,
+    });
+    expect(presenterRes.status).toBe(403);
+    expect(presenterRes.value.error?.code).toBe("presenter_only");
+
+    // Room owner / presenter can successfully perform presenter actions
+    const ownerAddAiRes = await call(`/api/rooms/${created.room.code}/ai`, {
+      participantId: created.participant.id,
+      rejoinToken: created.rejoinToken,
+      displayName: "Legit AI",
+      simulated: false,
+    });
+    expect(ownerAddAiRes.status).toBe(201);
   });
 });
 

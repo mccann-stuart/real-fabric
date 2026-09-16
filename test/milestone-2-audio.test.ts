@@ -5,6 +5,8 @@ import {
   MAXIMUM_CORRECTION_RATIO,
   MAXIMUM_STEP_RATIO,
   MINIMUM_CORRECTION_RATIO,
+  MINIMUM_DRIFT_SPAN_MS,
+  MINIMUM_STEP_RATIO,
 } from "../src/client/audio/DriftEstimator";
 import { AUDIO_FRAME_DURATION_MS, encodeAudioObject } from "../src/client/audio/frame";
 import { MixerGraph } from "../src/client/audio/MixerGraph";
@@ -16,6 +18,7 @@ import {
 } from "../src/client/audio/PacketLossConcealer";
 import { PlaybackDeduplicator } from "../src/client/audio/PlaybackDeduplicator";
 import {
+  DRIFT_RECOVERY_OBSERVATIONS,
   MAXIMUM_DECODER_QUEUE_SIZE,
   MAXIMUM_DRAIN_FRAMES_PER_CALL,
   MAXIMUM_REBUILD_DEFERRAL_MS,
@@ -94,7 +97,7 @@ describe("M2 — packet loss concealment", () => {
 describe("M2 — drift estimation and silence rebuilding", () => {
   function driftBy(ratio: number): DriftEstimator {
     const estimator = new DriftEstimator("track");
-    for (let index = 0; index < 400; index += 1) {
+    for (let index = 0; index < 800; index += 1) {
       const media = index * AUDIO_FRAME_DURATION_MS;
       estimator.observe(media, media * ratio);
     }
@@ -112,9 +115,30 @@ describe("M2 — drift estimation and silence rebuilding", () => {
     // 3% is inside the correctable range even though it exceeds one step.
     const estimator = driftBy(1.03);
     expect(estimator.health()).not.toBe("beyond_range");
-    expect(estimator.correctionRatio()).toBeGreaterThan(1);
+    expect(estimator.correctionRatio()).toBeLessThan(1);
     // Applied slowly: a single step never exceeds the audible bound.
+    expect(estimator.correctionRatio()).toBeGreaterThanOrEqual(MINIMUM_STEP_RATIO);
+  });
+
+  it("reverses the resampling direction when the sender clock is faster", () => {
+    const estimator = driftBy(0.9995);
+    expect(estimator.health()).toBe("correcting");
+    expect(estimator.correctionRatio()).toBeGreaterThan(1);
     expect(estimator.correctionRatio()).toBeLessThanOrEqual(MAXIMUM_STEP_RATIO);
+  });
+
+  it("does not mistake retained-object bursts for clock drift", () => {
+    const estimator = new DriftEstimator("bursty-track");
+    for (let index = 0; index < 1_000; index += 1) {
+      const media = index * AUDIO_FRAME_DURATION_MS;
+      // Twenty-five media frames are delivered together every 500 ms. The
+      // output clock remains monotonic and advances correctly over the window.
+      const output = Math.floor(index / 25) * 500;
+      estimator.observe(media, output);
+    }
+
+    expect(estimator.health()).toBe("converged");
+    expect(estimator.correctionRatio()).toBeCloseTo(1, 5);
   });
 
   it("exposes no skew figure before it has converged", () => {
@@ -126,14 +150,17 @@ describe("M2 — drift estimation and silence rebuilding", () => {
 describe("M2 — the drift rebuild waits for a pause", () => {
   function stubMixer() {
     const calls: string[] = [];
+    let outputClock = 0;
     const mixer = {
       addTrack: () => calls.push("addTrack"),
       removeTrack: () => calls.push("removeTrack"),
       pushSamples: () => calls.push("pushSamples"),
+      setTrackActive: () => calls.push("setTrackActive"),
       setRatio: () => calls.push("setRatio"),
       flush: () => calls.push("flush"),
+      outputClockMs: () => measured(outputClock),
     } as unknown as MixerGraph;
-    return { mixer, calls };
+    return { mixer, calls, setOutputClock: (value: number) => (outputClock = value) };
   }
 
   /**
@@ -141,20 +168,24 @@ describe("M2 — the drift rebuild waits for a pause", () => {
    * estimator leaves the correctable range, and arrivals stay 24 ms apart —
    * comfortably inside the silence threshold, so this is a continuous speaker.
    */
-  function drifted(objects: number) {
-    const { mixer } = stubMixer();
-    const player = new TrackPlayer("participant", "track", mixer);
+  function drifted(
+    objects: number,
+    callbacks: { onDriftRecovered?: (trackId: string) => void } = {},
+  ) {
+    const { mixer, setOutputClock } = stubMixer();
+    const player = new TrackPlayer("participant", "track", mixer, callbacks);
     let arrival = 0;
     for (let index = 0; index < objects; index += 1) {
       const media = index * AUDIO_FRAME_DURATION_MS;
       arrival = media * 1.2;
+      setOutputClock(arrival);
       const payload = encodeAudioObject(
         { participantHash: 1, mediaTimestamp: media, sequence: index },
         new Uint8Array([1, 2, 3]),
       );
       player.accept(Math.floor(index / 50), index, payload, arrival);
     }
-    return { player, arrival };
+    return { player, arrival, setOutputClock };
   }
 
   it("schedules the rebuild instead of tearing the buffer down mid-word", () => {
@@ -179,7 +210,8 @@ describe("M2 — the drift rebuild waits for a pause", () => {
     // qualify. The rebuild must still happen: a brief artefact beats unbounded
     // skew.
     const objects = Math.ceil(
-      (MAXIMUM_REBUILD_DEFERRAL_MS * 1.5) / (AUDIO_FRAME_DURATION_MS * 1.2),
+      (MINIMUM_DRIFT_SPAN_MS + MAXIMUM_REBUILD_DEFERRAL_MS + 1_000) /
+        (AUDIO_FRAME_DURATION_MS * 1.2),
     );
     const { player, arrival } = drifted(objects);
     expect(arrival).toBeGreaterThan(MAXIMUM_REBUILD_DEFERRAL_MS);
@@ -187,6 +219,38 @@ describe("M2 — the drift rebuild waits for a pause", () => {
     // Drained at the moment of the final arrival: not silent by any measure.
     player.drain(arrival);
     expect(player.rebuildPending).toBe(false);
+  });
+
+  it("reports recovery only after a rebuild and sustained clock convergence", () => {
+    let recoveries = 0;
+    const { player, arrival, setOutputClock } = drifted(400, {
+      onDriftRecovered: () => {
+        recoveries += 1;
+      },
+    });
+    player.drain(arrival + SILENCE_REBUILD_GAP_MS);
+    expect(player.rebuildPending).toBe(false);
+    expect(recoveries).toBe(0);
+
+    let outputClock = arrival;
+    const stableFrames = Math.ceil(MINIMUM_DRIFT_SPAN_MS / AUDIO_FRAME_DURATION_MS);
+    for (let offset = 0; offset < stableFrames + DRIFT_RECOVERY_OBSERVATIONS + 5; offset += 1) {
+      const sequence = 400 + offset;
+      const media = sequence * AUDIO_FRAME_DURATION_MS;
+      outputClock += AUDIO_FRAME_DURATION_MS;
+      setOutputClock(outputClock);
+      player.accept(
+        100 + Math.floor(offset / 50),
+        sequence,
+        encodeAudioObject(
+          { participantHash: 1, mediaTimestamp: media, sequence },
+          new Uint8Array([1, 2, 3]),
+        ),
+        outputClock,
+      );
+    }
+
+    expect(recoveries).toBe(1);
   });
 });
 
@@ -230,8 +294,10 @@ describe("M2 — media burst decoder backpressure (SEC-10)", () => {
       addTrack: () => undefined,
       removeTrack: () => undefined,
       pushSamples: () => undefined,
+      setTrackActive: () => undefined,
       setRatio: () => undefined,
       flush: () => undefined,
+      outputClockMs: () => measured(0),
     } as unknown as MixerGraph;
     const player = new TrackPlayer("participant", "track", mixer);
     for (let sequence = 0; sequence < frameCount; sequence += 1) {
@@ -303,8 +369,10 @@ describe("M2 — truthful browser latency reporting", () => {
       addTrack: () => undefined,
       removeTrack: () => undefined,
       pushSamples: () => undefined,
+      setTrackActive: () => undefined,
       setRatio: () => undefined,
       flush: () => undefined,
+      outputClockMs: () => measured(now),
     } as unknown as MixerGraph;
     let now = 0;
     const player = new TrackPlayer(

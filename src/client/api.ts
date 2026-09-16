@@ -63,8 +63,11 @@ export async function joinRoom(
   });
 }
 
-export async function fetchRoom(code: string): Promise<RoomSnapshot> {
-  return request<RoomSnapshot>(`/api/rooms/${normaliseCode(code)}`);
+export async function fetchRoom(session: StoredSession): Promise<RoomSnapshot> {
+  return post<RoomSnapshot>(
+    `/api/rooms/${normaliseCode(session.code)}/snapshot`,
+    credential(session),
+  );
 }
 
 export async function leaveRoom(session: StoredSession): Promise<RoomSnapshot> {

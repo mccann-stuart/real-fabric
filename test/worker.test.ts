@@ -1,6 +1,6 @@
 import { env, runInDurableObject, SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import type { CreateRoomResponse } from "../src/shared/contracts";
+import type { CreateRoomResponse, RoomSnapshot } from "../src/shared/contracts";
 
 describe("Real Fabric Worker", () => {
   it("reports the room service without claiming transport verification", async () => {
@@ -169,6 +169,30 @@ describe("Real Fabric Worker", () => {
       body: JSON.stringify({ displayName: "Katherine" }),
     });
     const created = (await createdResponse.json()) as CreateRoomResponse;
+    const addedAiResponse = await SELF.fetch(
+      `https://real-fabric.test/api/rooms/${created.room.code}/ai`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          participantId: created.participant.id,
+          rejoinToken: created.rejoinToken,
+          displayName: "Atlas",
+          simulated: true,
+        }),
+      },
+    );
+    expect(addedAiResponse.status).toBe(201);
+    const joinedResponse = await SELF.fetch(
+      `https://real-fabric.test/api/rooms/${created.room.code}/join`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json", "cf-connecting-ip": "192.0.2.246" },
+        body: JSON.stringify({ displayName: "Grace" }),
+      },
+    );
+    expect(joinedResponse.status).toBe(200);
+    const joined = (await joinedResponse.json()) as CreateRoomResponse;
     const response = await SELF.fetch(
       `https://real-fabric.test/api/rooms/${created.room.code}/events`,
       { headers: { upgrade: "websocket" } },
@@ -188,7 +212,16 @@ describe("Real Fabric Worker", () => {
     );
 
     const snapshot = await nextMessage(socket as WebSocket);
-    expect(JSON.parse(String(snapshot.data))).toMatchObject({ type: "snapshot" });
+    const snapshotEvent = JSON.parse(String(snapshot.data)) as {
+      type: string;
+      room: RoomSnapshot;
+    };
+    expect(snapshotEvent.type).toBe("snapshot");
+    expect(snapshotEvent.room.routing).toHaveLength(1);
+    expect(snapshotEvent.room.routing[0]?.humanId).toBe(created.participant.id);
+    expect(snapshotEvent.room.routing.some((row) => row.humanId === joined.participant.id)).toBe(
+      false,
+    );
 
     socket?.send("ping");
     const pong = await nextMessage(socket as WebSocket);

@@ -40,7 +40,7 @@ function endpointName(endpoint: string): string {
  * minutes, so recreating an out-of-date schema loses nothing worth keeping and
  * is preferable to serving a snapshot with missing columns.
  */
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 const CONTROL_AUTH_TIMEOUT_MS = 5_000;
 const CONTROL_AUTH_MESSAGE_MAX_LENGTH = 512;
 
@@ -75,6 +75,7 @@ interface MetaRow {
   created_at: number;
   expires_at: number;
   empty_since: number | null;
+  owner_id: string | null;
   ai_to_ai_enabled: number;
   ai_to_ai_turns: number;
   ai_to_ai_capped_at: number | null;
@@ -186,7 +187,10 @@ export class Room extends DurableObject<Env> {
     // §8: a human joining later grants nothing until they act, so every row
     // starts with inbound consent withheld.
     this.seedRoutingForHuman(participantId, now);
-    this.ctx.storage.sql.exec("UPDATE room_meta SET empty_since = NULL WHERE singleton = 1");
+    this.ctx.storage.sql.exec(
+      "UPDATE room_meta SET empty_since = NULL, owner_id = COALESCE(owner_id, ?) WHERE singleton = 1",
+      participantId,
+    );
     await this.rescheduleAlarm();
     this.broadcast({ type: "participant_changed", participantId, state: "connected", at: now });
     return {
@@ -205,7 +209,7 @@ export class Room extends DurableObject<Env> {
     displayName: string,
     options: { address?: string; wakeName?: string; simulated?: boolean } = {},
   ): Promise<RoomSnapshot> {
-    await this.assertHuman(credential);
+    await this.assertPresenter(credential);
     return this.addAiInternal(credential.participantId, displayName, options);
   }
 
@@ -244,7 +248,7 @@ export class Room extends DurableObject<Env> {
   }
 
   async removeAi(credential: ParticipantCredential, aiId: string): Promise<RoomSnapshot> {
-    await this.assertHuman(credential);
+    await this.assertPresenter(credential);
     return this.removeAiInternal(credential.participantId, aiId);
   }
 
@@ -282,10 +286,12 @@ export class Room extends DurableObject<Env> {
     return this.snapshot(viewerId);
   }
 
-  getSnapshot(viewerId?: string): RoomSnapshot | null {
+  async getSnapshot(credential?: ParticipantCredential): Promise<RoomSnapshot | null> {
     const meta = this.meta();
     if (!meta || meta.expires_at <= Date.now()) return null;
-    return this.snapshot(viewerId);
+    if (!credential) return this.snapshot();
+    await this.assertHuman(credential);
+    return this.snapshot(credential.participantId);
   }
 
   async leave(participantId: string, rejoinToken: string): Promise<RoomSnapshot> {
@@ -333,7 +339,10 @@ export class Room extends DurableObject<Env> {
       iHearIt ? 1 : 0,
       now,
     );
-    this.broadcast({ type: "routing_changed", humanId: participantId, aiId, at: now });
+    // The shared event identifies only the affected AI. Each participant then
+    // refreshes their private projection, so the event cannot identify whose
+    // consent or listening preference changed.
+    this.broadcast({ type: "routing_changed", aiId, at: now });
     return this.snapshot(participantId);
   }
 
@@ -342,7 +351,7 @@ export class Room extends DurableObject<Env> {
     aiId: string,
     pipeline: AiPipelineState,
   ): Promise<RoomSnapshot> {
-    await this.assertHuman(credential);
+    await this.assertPresenter(credential);
     this.assertActive();
     this.assertAiParticipant(aiId);
     const now = Date.now();
@@ -364,7 +373,7 @@ export class Room extends DurableObject<Env> {
     credential: ParticipantCredential,
     aiId: string,
   ): Promise<{ granted: boolean; room: RoomSnapshot }> {
-    await this.assertHuman(credential);
+    await this.assertPresenter(credential);
     this.assertActive();
     this.assertAiParticipant(aiId);
     const now = Date.now();
@@ -403,7 +412,7 @@ export class Room extends DurableObject<Env> {
   }
 
   async releaseFloor(credential: ParticipantCredential, aiId: string): Promise<RoomSnapshot> {
-    await this.assertHuman(credential);
+    await this.assertPresenter(credential);
     this.assertActive();
     this.assertAiParticipant(aiId);
     await this.releaseFloorInternal(aiId, Date.now());
@@ -412,7 +421,7 @@ export class Room extends DurableObject<Env> {
 
   /** FR4: enabling AI-to-AI is a presenter action, and it is capped. */
   async setAiToAi(credential: ParticipantCredential, enabled: boolean): Promise<RoomSnapshot> {
-    await this.assertHuman(credential);
+    await this.assertPresenter(credential);
     this.assertActive();
     const now = Date.now();
     this.ctx.storage.sql.exec(
@@ -430,7 +439,7 @@ export class Room extends DurableObject<Env> {
   async recordAiToAiTurn(
     credential: ParticipantCredential,
   ): Promise<{ allowed: boolean; room: RoomSnapshot }> {
-    await this.assertHuman(credential);
+    await this.assertPresenter(credential);
     this.assertActive();
     const meta = this.meta();
     if (!meta) return { allowed: false, room: this.snapshot(credential.participantId) };
@@ -453,7 +462,7 @@ export class Room extends DurableObject<Env> {
 
   /** A human turn breaks the AI-to-AI chain, so the cap counts consecutive turns only. */
   async resetAiToAiTurns(credential: ParticipantCredential): Promise<void> {
-    await this.assertHuman(credential);
+    await this.assertPresenter(credential);
     if (!this.meta()) return;
     this.ctx.storage.sql.exec(
       "UPDATE room_meta SET ai_to_ai_turns = 0, ai_to_ai_capped_at = NULL WHERE singleton = 1",
@@ -468,7 +477,7 @@ export class Room extends DurableObject<Env> {
     credential: ParticipantCredential,
     configuration: PresenterConfiguration,
   ): Promise<RoomSnapshot> {
-    await this.assertHuman(credential);
+    await this.assertPresenter(credential);
     this.assertActive();
     const humans = clampSimulated(configuration.simulatedHumans);
     const ais = clampSimulated(configuration.simulatedAis);
@@ -478,9 +487,9 @@ export class Room extends DurableObject<Env> {
       ais,
       configuration.scriptedResponses ? 1 : 0,
     );
-    await this.reconcileSimulated("human", humans);
-    await this.reconcileSimulated("ai", ais);
-    return this.snapshot();
+    await this.reconcileSimulated("human", humans, credential.participantId);
+    await this.reconcileSimulated("ai", ais, credential.participantId);
+    return this.snapshot(credential.participantId);
   }
 
   /** Audio object arrival is the source of truth for "connected" (§6.2). */
@@ -666,6 +675,7 @@ export class Room extends DurableObject<Env> {
         created_at INTEGER NOT NULL,
         expires_at INTEGER NOT NULL,
         empty_since INTEGER,
+        owner_id TEXT,
         ai_to_ai_enabled INTEGER NOT NULL DEFAULT 0,
         ai_to_ai_turns INTEGER NOT NULL DEFAULT 0,
         ai_to_ai_capped_at INTEGER,
@@ -1012,6 +1022,15 @@ export class Room extends DurableObject<Env> {
     return row;
   }
 
+  private async assertPresenter(credential: ParticipantCredential): Promise<ParticipantRow> {
+    const row = await this.assertHuman(credential);
+    const meta = this.meta();
+    if (!meta || (meta.owner_id !== null && meta.owner_id !== row.id)) {
+      throw roomError(403, "presenter_only", "Only the room presenter can perform this action.");
+    }
+    return row;
+  }
+
   private async assertParticipant(id: string, token: string): Promise<ParticipantRow> {
     this.assertActive();
     const hash = await sha256(token);
@@ -1057,6 +1076,21 @@ export class Room extends DurableObject<Env> {
           .toArray()
       : [];
     const routing = routingRows.map((row) => toRouting(row, enforcement));
+    // H9 keeps the fact that an AI has incomplete context visible without
+    // revealing which human withheld consent. Only connected humans affect the
+    // badge, matching the room UI's existing connected-participant semantics.
+    const partialContextAiIds = this.ctx.storage.sql
+      .exec<{ ai_id: string }>(
+        `SELECT DISTINCT routing.ai_id
+         FROM routing
+         JOIN participants AS human ON human.id = routing.human_id
+         WHERE routing.hears_me = 0
+           AND human.role = 'human'
+           AND human.state = 'connected'
+         ORDER BY routing.ai_id`,
+      )
+      .toArray()
+      .map((row) => row.ai_id);
 
     return {
       code: meta.code,
@@ -1064,6 +1098,7 @@ export class Room extends DurableObject<Env> {
       expiresAt: meta.expires_at,
       participants,
       routing,
+      partialContextAiIds,
       transport: this.transportStatus(),
       aiToAi: {
         enabled: meta.ai_to_ai_enabled === 1,

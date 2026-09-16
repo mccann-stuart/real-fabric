@@ -131,7 +131,10 @@ export interface RoomSnapshot {
   createdAt: number;
   expiresAt: number;
   participants: Participant[];
+  /** Viewer-owned rows only; empty in the unauthenticated public projection. */
   routing: RoutingPreference[];
+  /** AI IDs with incomplete human context, without identifying who withheld consent. */
+  partialContextAiIds: string[];
   transport: TransportStatus;
   aiToAi: AiToAiState;
   floor: FloorState;
@@ -167,7 +170,7 @@ export interface ApiError {
 export type RoomEvent =
   | { type: "snapshot"; room: RoomSnapshot; at: number }
   | { type: "participant_changed"; participantId: string; state: ParticipantState; at: number }
-  | { type: "routing_changed"; humanId: string; aiId: string; at: number }
+  | { type: "routing_changed"; aiId: string; at: number }
   | { type: "ai_pipeline_changed"; aiId: string; pipeline: AiPipelineState; at: number }
   | { type: "floor_changed"; holderId: string | null; queue: string[]; at: number }
   | { type: "ai_to_ai_changed"; enabled: boolean; consecutiveTurns: number; at: number }
@@ -190,14 +193,13 @@ export function aiDisplayActivity(
   ai: Participant,
   routing: readonly RoutingPreference[],
   viewerId: string,
-  connectedHumanIds: readonly string[],
+  partialContext: boolean,
 ): AiDisplayActivity {
   if (ai.pipeline === "unavailable" || ai.state === "left") return "Unavailable";
 
-  // Performance optimization (⚡ Bolt): Single linear pass over routing array instead of
-  // O(|connectedHumanIds| * |routing|) nested iterations with .find() and .every() + .some().
+  // The detailed projection contains only this viewer's rows. The aggregate
+  // partial-context flag is calculated server-side without naming other humans.
   let viewerHearsMe: boolean | undefined;
-  const hearingHumans = new Set<string>();
 
   for (let index = 0; index < routing.length; index += 1) {
     const row = routing[index];
@@ -205,21 +207,11 @@ export function aiDisplayActivity(
       if (row.humanId === viewerId) {
         viewerHearsMe = row.hearsMe;
       }
-      if (row.hearsMe) {
-        hearingHumans.add(row.humanId);
-      }
     }
   }
 
   if (viewerHearsMe === false) return "Not listening to you";
-
-  // Visible to everyone: this AI is answering on an incomplete picture.
-  for (let index = 0; index < connectedHumanIds.length; index += 1) {
-    const humanId = connectedHumanIds[index];
-    if (humanId && !hearingHumans.has(humanId)) {
-      return "Partial context";
-    }
-  }
+  if (partialContext) return "Partial context";
 
   switch (ai.pipeline) {
     case "thinking":

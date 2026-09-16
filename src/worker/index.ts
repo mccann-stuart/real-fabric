@@ -85,7 +85,7 @@ async function route(request: Request, env: Env, correlationId: string): Promise
   }
 
   const match = url.pathname.match(
-    /^\/api\/rooms\/([A-Z0-9]{20})(?:\/(join|leave|routing|events|ai|ai-pipeline|floor|ai-to-ai|presenter|active))?$/,
+    /^\/api\/rooms\/([A-Z0-9]{20})(?:\/(snapshot|join|leave|routing|events|ai|ai-pipeline|floor|ai-to-ai|presenter|active))?$/,
   );
   if (match) {
     const code = match[1];
@@ -156,6 +156,13 @@ async function handleRoomAction(
 
   if (request.method === "GET" && !action) {
     const room = await stub.getSnapshot();
+    if (!room) throw roomNotFound();
+    return json<RoomSnapshot>(room);
+  }
+
+  if (request.method === "POST" && action === "snapshot") {
+    const body = await readJsonObject(request);
+    const room = await stub.getSnapshot(readCredential(body));
     if (!room) throw roomNotFound();
     return json<RoomSnapshot>(room);
   }
@@ -263,7 +270,7 @@ async function handleRoomAction(
     }
     if (operation === "reset") {
       await stub.resetAiToAiTurns(credential);
-      const room = await stub.getSnapshot(credential.participantId);
+      const room = await stub.getSnapshot(credential);
       if (!room) throw roomNotFound();
       return json(room);
     }

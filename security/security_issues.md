@@ -11,22 +11,22 @@ This document turns the completed Codex Security review into an implementation b
 - Validated findings: 13 — 2 high, 10 medium and 1 low
 - Canonical sources: [`report.md`](./report.md), [`findings.json`](./findings.json), [`coverage.json`](./coverage.json) and [`scan-manifest.json`](./scan-manifest.json)
 
-The line numbers and excerpts below are pinned to the scanned revision (`a784122aa18c6b7fbee1ae53d34b054a24d71f0b`). As reconciled on 10 September 2026, five findings have been remediated in code and validated by automated tests (SEC-05, SEC-06, SEC-07, SEC-08, SEC-09), while eight findings remain open as forward-looking engineering backlog items.
+The line numbers and excerpts below are pinned to the scanned revision (`a784122aa18c6b7fbee1ae53d34b054a24d71f0b`). As reconciled on 16 September 2026, nine findings have been remediated in code and validated by automated tests (SEC-02, SEC-04–SEC-11), while four findings remain open as forward-looking engineering backlog items.
 
 ## Priority summary
 
-| Priority | Issue | Severity | Confidence | Status (10 Sep 2026) | Primary boundary |
+| Priority | Issue | Severity | Confidence | Status (16 Sep 2026) | Primary boundary |
 | --- | --- | --- | --- | --- | --- |
 | P1 | [SEC-01 — Relay-wide browser bearer](#sec-01--room-creation-and-joining-disclose-a-relay-wide-publishsubscribe-bearer) | High | Medium | **Open (Known P1)** | Relay authorisation |
-| P1 | [SEC-02 — Any human receives presenter authority](#sec-02--any-joined-human-can-execute-presenter-and-ai-lifecycle-controls) | High | High | **Open** | Room authorisation |
+| P1 | [SEC-02 — Any human receives presenter authority](#sec-02--any-joined-human-can-execute-presenter-and-ai-lifecycle-controls) | High | High | **Remediated** | Room authorisation |
 | P2 | [SEC-03 — Unvalidated AI floor target](#sec-03--unvalidated-ai-identifiers-can-wedge-or-pre-empt-the-global-floor) | Medium | High | **Open** | Shared floor integrity |
-| P2 | [SEC-04 — Routing preference disclosure](#sec-04--public-room-snapshots-disclose-every-humans-per-ai-routing-preferences) | Medium | High | **Open** | Participant privacy |
+| P2 | [SEC-04 — Routing preference disclosure](#sec-04--public-room-snapshots-disclose-every-humans-per-ai-routing-preferences) | Medium | High | **Remediated** | Participant privacy |
 | P2 | [SEC-05 — Reusable bearer in WebSocket URL](#sec-05--a-reusable-participant-bearer-is-placed-in-the-websocket-query-string) | Medium | Medium | **Remediated** | Credential handling |
 | P2 | [SEC-06 — Unbounded control sockets](#sec-06--one-participant-token-can-open-unbounded-concurrent-control-sockets) | Medium | High | **Remediated** | Durable Object availability |
 | P2 | [SEC-07 — Unthrottled room joins](#sec-07--unthrottled-open-room-joins-permit-unbounded-participant-and-routing-allocation) | Medium | High | **Remediated** | Durable Object availability |
 | P2 | [SEC-08 — Unbounded JSON parsing](#sec-08--worker-parses-unbounded-json-bodies-before-rate-limiting-or-authentication) | Medium | High | **Remediated** | Worker availability |
 | P2 | [SEC-09 — Unbounded playback deduplication](#sec-09--playback-deduplication-retains-unbounded-object-identifiers-per-group) | Medium | High | **Remediated** | Browser memory |
-| P2 | [SEC-10 — Unbounded media burst work](#sec-10--media-bursts-trigger-count-unbounded-sorting-and-decoder-submission) | Medium | High | **Open** | Browser CPU and decoder |
+| P2 | [SEC-10 — Unbounded media burst work](#sec-10--media-bursts-trigger-count-unbounded-sorting-and-decoder-submission) | Medium | High | **Remediated** | Browser CPU and decoder |
 | P2 | [SEC-11 — Unknown room probes create SQLite state](#sec-11--unknown-room-code-probes-initialise-persistent-sqlite-durable-objects) | Medium | High | **Remediated** | Cloudflare resource allocation |
 | P2 | [SEC-12 — Read-only clients start capture](#sec-12--narrow-read-only-clients-still-start-microphone-capture-and-publication) | Medium | Medium | **Open** | Microphone privacy |
 | P3 | [SEC-13 — Cross-participant activity spoofing](#sec-13--any-participant-can-spoof-another-participants-activity) | Low | High | **Open** | Presentation integrity |
@@ -118,7 +118,7 @@ Trade-off: this narrows cross-room blast radius but creates credential lifecycle
 - **Rule:** `authorization.any-human-global-room-control`
 - **Taxonomy:** CWE-862
 - **Severity / confidence:** High / High
-- **Status:** Open.
+- **Status:** Remediated in codebase (10 September 2026). Room creator stored as `owner_id` in `room_meta`; `assertPresenter` in `src/worker/room.ts` enforces that only the room creator/presenter can execute presenter and AI lifecycle controls, returning HTTP 403 `presenter_only` for unauthorized humans. Validated by automated tests.
 
 ### Evidence
 
@@ -244,7 +244,7 @@ Trade-off: gives stronger storage invariants, but requires a SQLite schema migra
 - **Rule:** `privacy.routing-preference-disclosure`
 - **Taxonomy:** CWE-200
 - **Severity / confidence:** Medium / High
-- **Status:** Open.
+- **Status:** Remediated in codebase (16 September 2026). Public snapshots omit routing rows; join, authenticated refresh and WebSocket snapshots contain only the viewing human's rows. A separate `partialContextAiIds` aggregate preserves the required room-visible warning without identifying who withheld consent, and shared routing-change events no longer carry the human ID. Validated by automated tests.
 
 ### Evidence
 
@@ -614,7 +614,7 @@ Trade-off: gives a hard memory bound and efficient duplicate checks, but require
 - **Rule:** `resource-exhaustion.media-burst-sorting`
 - **Taxonomy:** CWE-407
 - **Severity / confidence:** Medium / High
-- **Status:** Open.
+- **Status:** Remediated in codebase (13 September 2026). Jitter-buffer insertion, stale-frame pruning, per-tick draining and decoder submission are bounded. Validated by automated tests.
 
 ### Evidence
 
@@ -683,7 +683,7 @@ Trade-off: smaller patch and good immediate containment, but bounded array sorti
 - **Rule:** `resource-exhaustion.unknown-room-durable-object`
 - **Taxonomy:** CWE-770
 - **Severity / confidence:** Medium / High
-- **Status:** Open; exact Cloudflare billing and quota effects remain unverified.
+- **Status:** Remediated in codebase (10 September 2026). Unknown room-code probes no longer initialise room SQLite state before explicit room creation. Exact Cloudflare billing and quota effects remain unverified.
 
 ### Evidence
 
@@ -869,21 +869,23 @@ Trade-off: produces shared authoritative recency, but depends on a trusted trans
 
 ## Remediation progress and Next steps / vision statements
 
-### Remediated controls (as of 10 September 2026)
+### Remediated controls (as of 16 September 2026)
 
+- **SEC-02:** Persisted room creator as `owner_id` in `room_meta` and enforced `assertPresenter` in `src/worker/room.ts` to restrict AI lifecycle, floor administration and presenter simulation to the room presenter.
+- **SEC-04:** Projected detailed routing rows to the authenticated viewer across HTTP, join and WebSocket snapshots; public snapshots retain only anonymous `partialContextAiIds` state, and shared routing-change events omit the human ID.
 - **SEC-05 & SEC-06:** Replaced query-string WebSocket credentials with initial in-socket `{ type: "auth" }` authentication, and enforced at most 1 active control socket per participant in Durable Object storage.
 - **SEC-07 & SEC-08:** Enforced IP-based rate limiting on room joins (`enforceJoinRateLimit`) and bounded JSON request bodies to 32 KiB using a streaming reader (`readJsonObject`).
 - **SEC-09:** Bounded playback deduplication to 100 objects per group (`MAXIMUM_OBJECTS_PER_GROUP`) in `PlaybackDeduplicator`.
+- **SEC-10:** Bounded jitter-buffer insertion and receive-side drain and decoder work against faulty or adversarial media bursts.
 - **SEC-11:** Deferred SQLite table migration on unknown room code probes in `Room` Durable Object until explicit room initialisation (`initialise()`), avoiding persistent SQLite allocation on uninitialised probes.
 - **Relay token validation:** Added fail-closed checks in Worker to reject expired or malformed relay JWTs.
 
 ### Next steps and vision statements (Remaining backlog order)
 
-1. **SEC-02 (Next step):** Implement persisted room owner/presenter roles to restrict AI lifecycle, floor administration and presenter simulation from ordinary attendees.
-2. **SEC-04 & SEC-12 (Next step):** Project viewer-specific room snapshots to prevent routing disclosure, and implement explicit session capability gating so narrow read-only clients never invoke `getUserMedia`.
-3. **SEC-10 (Next step):** Bound media burst sorting and decoder submission in `AdaptiveJitterBuffer` and `TrackPlayer` against adversarial packet floods.
-4. **SEC-03, SEC-11 & SEC-13 (Next step):** Validate AI floor targets against active participants, reject unknown room probes before Durable Object allocation, and bind activity reporting to local object receipt.
-5. **SEC-01 (Vision target / Gate 1):** Replace the shared relay-wide token with participant- and room-scoped credentials once supported by the relay API, verifying enforcement with a live trace.
+1. **SEC-03 (Next step):** Validate AI floor targets against active participants and make floor ownership transitions deterministic under concurrent requests.
+2. **SEC-12 (Next step):** Implement explicit session capability gating so narrow read-only clients never invoke `getUserMedia`.
+3. **SEC-13 (Next step):** Bind activity reporting to locally observed or otherwise trusted publication events.
+4. **SEC-01 (Vision target / Gate 1):** Replace the shared relay-wide token with participant- and room-scoped credentials once supported by the relay API, verifying enforcement with a live trace.
 
 ## Closure checklist
 

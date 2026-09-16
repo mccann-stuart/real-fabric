@@ -15,6 +15,7 @@ export interface TrackMixStats {
   bufferedSamples: number;
   underruns: number;
   ratio: number;
+  active: boolean;
 }
 
 export interface MixerGraphCallbacks {
@@ -128,6 +129,11 @@ export class MixerGraph {
     this.post({ type: "samples", trackId, samples }, [samples.buffer]);
   }
 
+  /** DTX and explicit end-of-turn silence must not count as decoder strain. */
+  setTrackActive(trackId: string, active: boolean): void {
+    this.post({ type: "activity", trackId, active });
+  }
+
   /** FR3 drift correction, computed by DriftEstimator on this thread. */
   setRatio(trackId: string, ratio: number): void {
     this.post({ type: "ratio", trackId, ratio });
@@ -162,6 +168,15 @@ export class MixerGraph {
   totalUnderruns(): Measurement<number> {
     if (!this.running) return notExposed("The mixing graph is not running.");
     return measured(this.latest.reduce((sum, entry) => sum + entry.underruns, 0));
+  }
+
+  /** The output clock used for per-track drift estimation. */
+  outputClockMs(): Measurement<number> {
+    const currentTime = this.context?.currentTime;
+    if (!this.running || typeof currentTime !== "number" || !Number.isFinite(currentTime)) {
+      return notExposed("The AudioContext output clock is not running.");
+    }
+    return measured(currentTime * 1_000);
   }
 
   /** Browser-reported output latency, where the browser exposes it (H15). */
