@@ -90,30 +90,42 @@ export class AdaptiveJitterBuffer<T> {
     }
     this.lastArrivalAt = frame.receivedAt;
 
-    // ⚡ Bolt Optimization: Prune stale frames in-place without allocating a new
-    // array on every frame push (prevents GC churn at 50Hz).
+    // ⚡ Bolt Optimization: Fast-path check for stale frames before looping.
+    // If head frame is not stale, no frame is stale in ordered arrival, eliminating array compaction overhead.
     const staleBefore = frame.receivedAt - this.maximumMs;
-    let writeIndex = 0;
-    let prunedCount = 0;
-    for (let readIndex = 0; readIndex < this.frames.length; readIndex += 1) {
-      const candidate = this.frames[readIndex];
-      if (candidate && candidate.receivedAt < staleBefore) {
-        prunedCount += 1;
-      } else if (candidate) {
-        if (writeIndex !== readIndex) {
-          this.frames[writeIndex] = candidate;
+    const firstFrame = this.frames[0];
+    if (firstFrame && firstFrame.receivedAt < staleBefore) {
+      let writeIndex = 0;
+      let prunedCount = 0;
+      for (let readIndex = 0; readIndex < this.frames.length; readIndex += 1) {
+        const candidate = this.frames[readIndex];
+        if (candidate && candidate.receivedAt < staleBefore) {
+          prunedCount += 1;
+        } else if (candidate) {
+          if (writeIndex !== readIndex) {
+            this.frames[writeIndex] = candidate;
+          }
+          writeIndex += 1;
         }
-        writeIndex += 1;
       }
-    }
-    if (prunedCount > 0) {
-      this.lateDrops += prunedCount;
-      this.frames.length = writeIndex;
+      if (prunedCount > 0) {
+        this.lateDrops += prunedCount;
+        this.frames.length = writeIndex;
+      }
     }
   }
 
   pull(now: number): T | undefined {
-    const index = this.frames.findIndex((frame) => frame.receivedAt <= now - this.targetMs);
+    // ⚡ Bolt Optimization: O(1) fast-path head check for standard in-order audio playback (50Hz hot path).
+    // Avoids findIndex linear predicate call when oldest frame is ready.
+    const head = this.frames[0];
+    let index = -1;
+    if (head && head.receivedAt <= now - this.targetMs) {
+      index = 0;
+    } else {
+      index = this.frames.findIndex((frame) => frame.receivedAt <= now - this.targetMs);
+    }
+
     if (index < 0) {
       this.underruns += 1;
       // A run of underruns means the target is too tight for this path.
@@ -122,6 +134,10 @@ export class AdaptiveJitterBuffer<T> {
         this.retarget();
       }
       return undefined;
+    }
+
+    if (index === 0) {
+      return this.frames.shift()?.value;
     }
     return this.frames.splice(index, 1)[0]?.value;
   }
@@ -133,13 +149,33 @@ export class AdaptiveJitterBuffer<T> {
   cancelGroup(groupId: number): number {
     this.cancelledGroups.add(groupId);
     const before = this.frames.length;
-    this.frames = this.frames.filter((frame) => frame.groupId !== groupId);
-    const dropped = before - this.frames.length;
+    // ⚡ Bolt Optimization: In-place filtering to avoid allocating new array during cancellation.
+    let writeIndex = 0;
+    for (let readIndex = 0; readIndex < this.frames.length; readIndex += 1) {
+      const candidate = this.frames[readIndex];
+      if (candidate && candidate.groupId !== groupId) {
+        if (writeIndex !== readIndex) {
+          this.frames[writeIndex] = candidate;
+        }
+        writeIndex += 1;
+      }
+    }
+    const dropped = before - writeIndex;
+    this.frames.length = writeIndex;
     this.cancelledDrops += dropped;
+
     // Bound the cancellation memory; groups are monotonic and one second long.
+    // ⚡ Bolt Optimization: Loop to find oldest group ID without array spread allocation.
     if (this.cancelledGroups.size > 8) {
-      const oldest = Math.min(...this.cancelledGroups);
-      this.cancelledGroups.delete(oldest);
+      let oldest = Infinity;
+      for (const id of this.cancelledGroups) {
+        if (id < oldest) {
+          oldest = id;
+        }
+      }
+      if (oldest !== Infinity) {
+        this.cancelledGroups.delete(oldest);
+      }
     }
     return dropped;
   }
