@@ -6,6 +6,7 @@ import { DemoScriptPanel } from "../src/client/components/DemoScriptPanel";
 import { Inspector } from "../src/client/components/Inspector";
 import { LeaveRoomDialog } from "../src/client/components/LeaveRoomDialog";
 import { ParticipantCard } from "../src/client/components/ParticipantCard";
+import { PreflightPanel } from "../src/client/components/PreflightPanel";
 import { RoomStatusStack } from "../src/client/components/RoomStatusStack";
 import { RoomTopBar } from "../src/client/components/RoomTopBar";
 import { EntryPage } from "../src/client/pages/EntryPage";
@@ -368,5 +369,43 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(html).toContain('aria-label="Mark cue at 0:00 as not seen"');
     expect(html).toContain('aria-label="Skip cue at 0:00"');
     expect(html).toContain('aria-label="Abandon current demo run"');
+  });
+
+  it("renders PreflightPanel with fieldset legend groupings for required and optional checks", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(PreflightPanel, {
+        report: {
+          secureContext: "ready",
+          webTransport: "ready",
+          webTransportReliability: "ready",
+          opusEncoder: "ready",
+          opusDecoder: "ready",
+          capture: "ready",
+          captureReason: "",
+          playout: "ready",
+          playoutReason: "",
+          microphone: "ready",
+          audioSession: "ready",
+          wakeLock: "ready",
+          dtx: "ready",
+          lowLatencyCongestionControl: "ready",
+          codecReason: "",
+          relay: "ready",
+          relayReason: "",
+          network: {
+            state: "reachable",
+            detail: "",
+            remediation: null,
+            elapsedMs: 0,
+            reliability: "Not exposed",
+            congestionControl: "Not exposed",
+          },
+          failure: null,
+        },
+      }),
+    );
+
+    expect(html).toContain("Required capabilities");
+    expect(html).toContain("Optional enhancements");
   });
 });
