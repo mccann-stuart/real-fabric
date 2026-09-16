@@ -263,7 +263,7 @@ async function handleRoomAction(
     }
     if (operation === "reset") {
       await stub.resetAiToAiTurns(credential);
-      const room = await stub.getSnapshot();
+      const room = await stub.getSnapshot(credential.participantId);
       if (!room) throw roomNotFound();
       return json(room);
     }

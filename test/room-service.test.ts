@@ -209,6 +209,50 @@ describe("H9 and §8 — consent is per human and AI pair", () => {
     });
     expect(status).toBe(401);
   });
+
+  it("does not disclose routing preferences in unauthenticated public snapshots (SEC-04)", async () => {
+    const created = await createRoom();
+    const room = await addAi(created, "Atlas");
+    const atlas = room.participants.find((participant) => participant.role === "ai");
+    await call<RoomSnapshot>(`/api/rooms/${created.room.code}/routing`, {
+      ...credential(created),
+      aiId: atlas?.id,
+      hearsMe: true,
+      iHearIt: true,
+    });
+
+    const publicResponse = await SELF.fetch(`${BASE}/api/rooms/${created.room.code}`);
+    expect(publicResponse.status).toBe(200);
+    const publicSnapshot = (await publicResponse.json()) as RoomSnapshot;
+    expect(publicSnapshot.routing).toEqual([]);
+  });
+
+  it("scopes snapshot routing rows to the viewing human participant (SEC-04)", async () => {
+    const created = await createRoom();
+    const room = await addAi(created, "Atlas");
+    const atlas = room.participants.find((participant) => participant.role === "ai");
+
+    await call<RoomSnapshot>(`/api/rooms/${created.room.code}/routing`, {
+      ...credential(created),
+      aiId: atlas?.id,
+      hearsMe: true,
+      iHearIt: true,
+    });
+
+    const joinedGrace = await call<CreateRoomResponse>(`/api/rooms/${created.room.code}/join`, {
+      displayName: "Grace",
+    });
+
+    // Grace's snapshot contains Grace's routing preferences, not Ada's.
+    expect(
+      joinedGrace.value.room.routing.every(
+        (row) => row.humanId === joinedGrace.value.participant.id,
+      ),
+    ).toBe(true);
+    expect(
+      joinedGrace.value.room.routing.find((row) => row.humanId === created.participant.id),
+    ).toBeUndefined();
+  });
 });
 
 describe("Activity endpoint authorization", () => {

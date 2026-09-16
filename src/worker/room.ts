@@ -190,7 +190,7 @@ export class Room extends DurableObject<Env> {
     await this.rescheduleAlarm();
     this.broadcast({ type: "participant_changed", participantId, state: "connected", at: now });
     return {
-      room: this.snapshot(),
+      room: this.snapshot(participantId),
       participant: this.participant(participantId),
       rejoinToken: token,
     };
@@ -206,10 +206,11 @@ export class Room extends DurableObject<Env> {
     options: { address?: string; wakeName?: string; simulated?: boolean } = {},
   ): Promise<RoomSnapshot> {
     await this.assertHuman(credential);
-    return this.addAiInternal(displayName, options);
+    return this.addAiInternal(credential.participantId, displayName, options);
   }
 
   private async addAiInternal(
+    viewerId: string | undefined,
     displayName: string,
     options: { address?: string; wakeName?: string; simulated?: boolean } = {},
   ): Promise<RoomSnapshot> {
@@ -239,12 +240,12 @@ export class Room extends DurableObject<Env> {
       state: "connected",
       at: now,
     });
-    return this.snapshot();
+    return this.snapshot(viewerId);
   }
 
   async removeAi(credential: ParticipantCredential, aiId: string): Promise<RoomSnapshot> {
     await this.assertHuman(credential);
-    return this.removeAiInternal(aiId);
+    return this.removeAiInternal(credential.participantId, aiId);
   }
 
   private assertAiParticipant(aiId: string): ParticipantRow {
@@ -264,7 +265,10 @@ export class Room extends DurableObject<Env> {
     return row;
   }
 
-  private async removeAiInternal(aiId: string): Promise<RoomSnapshot> {
+  private async removeAiInternal(
+    viewerId: string | undefined,
+    aiId: string,
+  ): Promise<RoomSnapshot> {
     this.assertActive();
     this.assertAiParticipant(aiId);
     const now = Date.now();
@@ -275,13 +279,13 @@ export class Room extends DurableObject<Env> {
     this.ctx.storage.sql.exec("DELETE FROM routing WHERE ai_id = ?", aiId);
     await this.releaseFloorInternal(aiId, now);
     this.broadcast({ type: "participant_changed", participantId: aiId, state: "left", at: now });
-    return this.snapshot();
+    return this.snapshot(viewerId);
   }
 
-  getSnapshot(): RoomSnapshot | null {
+  getSnapshot(viewerId?: string): RoomSnapshot | null {
     const meta = this.meta();
     if (!meta || meta.expires_at <= Date.now()) return null;
-    return this.snapshot();
+    return this.snapshot(viewerId);
   }
 
   async leave(participantId: string, rejoinToken: string): Promise<RoomSnapshot> {
@@ -295,7 +299,7 @@ export class Room extends DurableObject<Env> {
     );
     await this.rescheduleAlarm();
     this.broadcast({ type: "participant_changed", participantId, state: "reconnecting", at: now });
-    return this.snapshot();
+    return this.snapshot(participantId);
   }
 
   /**
@@ -330,7 +334,7 @@ export class Room extends DurableObject<Env> {
       now,
     );
     this.broadcast({ type: "routing_changed", humanId: participantId, aiId, at: now });
-    return this.snapshot();
+    return this.snapshot(participantId);
   }
 
   async setAiPipeline(
@@ -349,7 +353,7 @@ export class Room extends DurableObject<Env> {
       aiId,
     );
     this.broadcast({ type: "ai_pipeline_changed", aiId, pipeline, at: now });
-    return this.snapshot();
+    return this.snapshot(credential.participantId);
   }
 
   /**
@@ -367,7 +371,8 @@ export class Room extends DurableObject<Env> {
     const meta = this.meta();
     if (!meta) throw roomError(404, "room_not_found", "Room is not initialised.");
 
-    if (meta.floor_holder === aiId) return { granted: true, room: this.snapshot() };
+    if (meta.floor_holder === aiId)
+      return { granted: true, room: this.snapshot(credential.participantId) };
     if (meta.floor_holder === null) {
       this.ctx.storage.sql.exec(
         "UPDATE room_meta SET floor_holder = ?, floor_since = ? WHERE singleton = 1",
@@ -376,7 +381,7 @@ export class Room extends DurableObject<Env> {
       );
       this.ctx.storage.sql.exec("DELETE FROM floor_queue WHERE ai_id = ?", aiId);
       this.broadcast({ type: "floor_changed", holderId: aiId, queue: this.floorQueue(), at: now });
-      return { granted: true, room: this.snapshot() };
+      return { granted: true, room: this.snapshot(credential.participantId) };
     }
 
     this.ctx.storage.sql.exec(
@@ -394,7 +399,7 @@ export class Room extends DurableObject<Env> {
       queue: this.floorQueue(),
       at: now,
     });
-    return { granted: false, room: this.snapshot() };
+    return { granted: false, room: this.snapshot(credential.participantId) };
   }
 
   async releaseFloor(credential: ParticipantCredential, aiId: string): Promise<RoomSnapshot> {
@@ -402,7 +407,7 @@ export class Room extends DurableObject<Env> {
     this.assertActive();
     this.assertAiParticipant(aiId);
     await this.releaseFloorInternal(aiId, Date.now());
-    return this.snapshot();
+    return this.snapshot(credential.participantId);
   }
 
   /** FR4: enabling AI-to-AI is a presenter action, and it is capped. */
@@ -415,7 +420,7 @@ export class Room extends DurableObject<Env> {
       enabled ? 1 : 0,
     );
     this.broadcast({ type: "ai_to_ai_changed", enabled, consecutiveTurns: 0, at: now });
-    return this.snapshot();
+    return this.snapshot(credential.participantId);
   }
 
   /**
@@ -428,21 +433,22 @@ export class Room extends DurableObject<Env> {
     await this.assertHuman(credential);
     this.assertActive();
     const meta = this.meta();
-    if (!meta) return { allowed: false, room: this.snapshot() };
+    if (!meta) return { allowed: false, room: this.snapshot(credential.participantId) };
     // Off by default (H10): a turn is only ever allowed after a presenter action.
-    if (meta.ai_to_ai_enabled !== 1) return { allowed: false, room: this.snapshot() };
+    if (meta.ai_to_ai_enabled !== 1)
+      return { allowed: false, room: this.snapshot(credential.participantId) };
     const now = Date.now();
     if (meta.ai_to_ai_turns >= AI_TO_AI_TURN_CAP) {
       this.ctx.storage.sql.exec(
         "UPDATE room_meta SET ai_to_ai_capped_at = ? WHERE singleton = 1 AND ai_to_ai_capped_at IS NULL",
         now,
       );
-      return { allowed: false, room: this.snapshot() };
+      return { allowed: false, room: this.snapshot(credential.participantId) };
     }
     const turns = meta.ai_to_ai_turns + 1;
     this.ctx.storage.sql.exec("UPDATE room_meta SET ai_to_ai_turns = ? WHERE singleton = 1", turns);
     this.broadcast({ type: "ai_to_ai_changed", enabled: true, consecutiveTurns: turns, at: now });
-    return { allowed: true, room: this.snapshot() };
+    return { allowed: true, room: this.snapshot(credential.participantId) };
   }
 
   /** A human turn breaks the AI-to-AI chain, so the cap counts consecutive turns only. */
@@ -628,7 +634,7 @@ export class Room extends DurableObject<Env> {
       socket.send(
         JSON.stringify({
           type: "snapshot",
-          room: this.snapshot(),
+          room: this.snapshot(participantId),
           at: Date.now(),
         } satisfies RoomEvent),
       );
@@ -734,7 +740,7 @@ export class Room extends DurableObject<Env> {
       at: now,
     });
     return {
-      room: this.snapshot(),
+      room: this.snapshot(existing.id),
       participant: this.participant(existing.id),
       rejoinToken,
     };
@@ -796,7 +802,11 @@ export class Room extends DurableObject<Env> {
     });
   }
 
-  private async reconcileSimulated(role: "human" | "ai", target: number): Promise<void> {
+  private async reconcileSimulated(
+    role: "human" | "ai",
+    target: number,
+    viewerId?: string,
+  ): Promise<void> {
     const existing = this.ctx.storage.sql
       .exec<ParticipantRow>(
         "SELECT * FROM participants WHERE simulated = 1 AND role = ? AND state != 'left' ORDER BY joined_at",
@@ -951,7 +961,7 @@ export class Room extends DurableObject<Env> {
         }
       } else {
         for (const item of surplus) {
-          await this.removeAiInternal(item.id);
+          await this.removeAiInternal(viewerId, item.id);
         }
       }
     }
@@ -1029,19 +1039,24 @@ export class Room extends DurableObject<Env> {
       .map((row) => row.ai_id);
   }
 
-  private snapshot(): RoomSnapshot {
+  private snapshot(viewerId?: string): RoomSnapshot {
     const meta = this.assertActive();
     const participants = this.ctx.storage.sql
       .exec<ParticipantRow>("SELECT * FROM participants WHERE state != 'left' ORDER BY joined_at")
       .toArray()
       .map(toParticipant);
-    // Performance optimization (⚡ Bolt): Evaluate routingEnforcement once per snapshot
-    // rather than N times per routing row inside .map().
+    // Security (SEC-04 / CWE-200): Scope routing rows to the authenticated viewer
+    // so unauthenticated callers or other participants cannot inspect individual routing preferences.
     const enforcement = this.routingEnforcement();
-    const routing = this.ctx.storage.sql
-      .exec<RoutingRow>("SELECT * FROM routing ORDER BY updated_at")
-      .toArray()
-      .map((row) => toRouting(row, enforcement));
+    const routingRows = viewerId
+      ? this.ctx.storage.sql
+          .exec<RoutingRow>(
+            "SELECT * FROM routing WHERE human_id = ? ORDER BY updated_at",
+            viewerId,
+          )
+          .toArray()
+      : [];
+    const routing = routingRows.map((row) => toRouting(row, enforcement));
 
     return {
       code: meta.code,
