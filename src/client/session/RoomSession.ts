@@ -413,7 +413,7 @@ export class RoomSession {
       // is still valid before a resumed transport publishes into the room.
       await markActive(this.options.session, this.options.session.participantId);
       if (generation !== this.audioGeneration || this.closed) return;
-      this.applyRoom(await fetchRoom(this.options.session.code));
+      this.applyRoom(await fetchRoom(this.options.session));
       if (generation !== this.audioGeneration || this.closed) return;
       await this.openTransport(generation);
     } catch (error) {
@@ -1550,7 +1550,7 @@ export class RoomSession {
     // The snapshot the socket sends on connect is authoritative; between
     // events, re-read rather than patching local copies of server state.
     try {
-      this.applyRoom(await fetchRoom(this.options.session.code));
+      this.applyRoom(await fetchRoom(this.options.session));
       await this.reconcileSubscriptions();
     } catch {
       this.log.record("failure", "The room snapshot could not be refreshed.");

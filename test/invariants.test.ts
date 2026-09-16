@@ -697,9 +697,9 @@ describe("H9 — per-AI routing, honestly labelled", () => {
       routing({ humanId: "h2", aiId: "a1", hearsMe: true }),
     ];
     // The viewer whose consent is off sees that fact specifically.
-    expect(aiDisplayActivity(agent, rows, "h1", ["h1", "h2"])).toBe("Not listening to you");
+    expect(aiDisplayActivity(agent, rows, "h1", true)).toBe("Not listening to you");
     // The other human sees only that the AI has an incomplete picture.
-    expect(aiDisplayActivity(agent, rows, "h2", ["h1", "h2"])).toBe("Partial context");
+    expect(aiDisplayActivity(agent, rows, "h2", true)).toBe("Partial context");
   });
 
   it("reports the pipeline once the AI hears every human", () => {
@@ -707,13 +707,13 @@ describe("H9 — per-AI routing, honestly labelled", () => {
       routing({ humanId: "h1", hearsMe: true }),
       routing({ humanId: "h2", hearsMe: true }),
     ];
-    expect(aiDisplayActivity(ai("a1", { pipeline: "thinking" }), rows, "h1", ["h1", "h2"])).toBe(
+    expect(aiDisplayActivity(ai("a1", { pipeline: "thinking" }), rows, "h1", false)).toBe(
       "Thinking",
     );
-    expect(aiDisplayActivity(ai("a1", { pipeline: "interrupted" }), rows, "h1", ["h1", "h2"])).toBe(
+    expect(aiDisplayActivity(ai("a1", { pipeline: "interrupted" }), rows, "h1", false)).toBe(
       "Interrupted",
     );
-    expect(aiDisplayActivity(ai("a1", { pipeline: "unavailable" }), rows, "h1", ["h1", "h2"])).toBe(
+    expect(aiDisplayActivity(ai("a1", { pipeline: "unavailable" }), rows, "h1", false)).toBe(
       "Unavailable",
     );
   });

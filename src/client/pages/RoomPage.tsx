@@ -111,14 +111,6 @@ export function RoomPage({
     }
   }, [code, leave, leaving, navigate]);
 
-  const connectedHumanIds = useMemo(
-    () =>
-      (room?.participants ?? [])
-        .filter((participant) => participant.role === "human" && participant.state === "connected")
-        .map((participant) => participant.id),
-    [room],
-  );
-
   const layout = useMemo(
     () =>
       room
@@ -190,23 +182,7 @@ export function RoomPage({
       (participant) => participant.role === "ai" && participant.pipeline === "speaking",
     ).length;
 
-    const heardHumanIdsByAi = new Map<string, Set<string>>();
-    for (const row of room?.routing ?? []) {
-      if (!row.hearsMe) continue;
-      let heardHumanIds = heardHumanIdsByAi.get(row.aiId);
-      if (!heardHumanIds) {
-        heardHumanIds = new Set<string>();
-        heardHumanIdsByAi.set(row.aiId, heardHumanIds);
-      }
-      heardHumanIds.add(row.humanId);
-    }
-
-    const partialContext = participants
-      .filter((participant) => participant.role === "ai")
-      .filter((ai) =>
-        connectedHumanIds.some((humanId) => !heardHumanIdsByAi.get(ai.id)?.has(humanId)),
-      )
-      .map((ai) => ai.id);
+    const partialContext = room?.partialContextAiIds ?? [];
 
     return {
       msSinceRoomOpen: room ? Date.now() - room.createdAt : Number.MAX_SAFE_INTEGER,
@@ -225,7 +201,7 @@ export function RoomPage({
       // H15: every figure on screen goes through MeasurementValue.
       unobservablesLabelled: true,
     };
-  }, [state, room, connectedHumanIds, reclaimed]);
+  }, [state, room, reclaimed]);
 
   if (!stored) {
     return (
@@ -255,7 +231,7 @@ export function RoomPage({
       current={participant.id === viewerId}
       viewerId={viewerId}
       routing={room?.routing ?? []}
-      connectedHumanIds={connectedHumanIds}
+      partialContext={room?.partialContextAiIds.includes(participant.id) ?? false}
       level={participant.id === viewerId && !state?.muted ? (state?.micLevel ?? 0) : 0}
       speaking={participant.id === viewerId && !state?.muted ? (state?.speaking ?? false) : false}
       subscription={subscriptionMap.get(participant.id)}

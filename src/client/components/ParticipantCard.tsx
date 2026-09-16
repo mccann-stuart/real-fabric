@@ -18,7 +18,7 @@ export interface ParticipantCardProps {
   current: boolean;
   viewerId: string;
   routing: readonly RoutingPreference[];
-  connectedHumanIds: readonly string[];
+  partialContext: boolean;
   /** Live capture level for the viewer's own card, 0 to 1. */
   level?: number;
   speaking?: boolean;
@@ -34,7 +34,7 @@ export const ParticipantCard = memo(function ParticipantCard({
   current,
   viewerId,
   routing,
-  connectedHumanIds,
+  partialContext,
   level = 0,
   speaking = false,
   subscription,
@@ -51,7 +51,7 @@ export const ParticipantCard = memo(function ParticipantCard({
     participant.state === "reconnecting"
       ? "Reconnecting"
       : isAi
-        ? aiDisplayActivity(participant, routing, viewerId, connectedHumanIds)
+        ? aiDisplayActivity(participant, routing, viewerId, partialContext)
         : speaking
           ? "Speaking"
           : "Listening";

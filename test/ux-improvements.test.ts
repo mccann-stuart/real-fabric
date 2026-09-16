@@ -69,7 +69,7 @@ describe("Micro-UX & Accessibility Improvements", () => {
         current: false,
         viewerId: "human-1",
         routing: mockRouting,
-        connectedHumanIds: ["human-1"],
+        partialContext: false,
         onRouting: () => {},
       }),
     );
@@ -111,6 +111,7 @@ describe("Micro-UX & Accessibility Improvements", () => {
       expiresAt: 100_000,
       participants: [],
       routing: [],
+      partialContextAiIds: [],
       floor: { holderId: null, queue: [], heldSince: null },
       aiToAi: { enabled: false, turnCap: 6, consecutiveTurns: 0, cappedAt: null },
       presenter: { simulatedHumans: 0, simulatedAis: 0, scriptedResponses: false },
