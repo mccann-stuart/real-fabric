@@ -22,10 +22,18 @@ export const MINIMUM_CORRECTION_RATIO = 0.95;
  */
 export const MAXIMUM_STEP_RATIO = 1.02;
 export const MINIMUM_STEP_RATIO = 0.98;
-/** Ignore the first samples; a cold buffer's timing says nothing about drift. */
-const WARMUP_OBSERVATIONS = 25;
-/** Smoothing on the parts-per-million estimate. */
-const SMOOTHING = 32;
+/**
+ * Arrival jitter is much larger than oscillator drift. Sample sparsely and
+ * require a long span before exposing an estimate so relay bursts cannot be
+ * mistaken for a clock that is hundreds of thousands of ppm out.
+ */
+export const DRIFT_SAMPLE_INTERVAL_MS = 250;
+export const MINIMUM_DRIFT_SPAN_MS = 8_000;
+export const DRIFT_WINDOW_MS = 20_000;
+const MINIMUM_PAIR_SPAN_MS = 4_000;
+const MAXIMUM_CLOCK_DISCONTINUITY_MS = 1_000;
+const MINIMUM_SLOPES = 8;
+const ESTIMATE_SMOOTHING = 8;
 
 export interface DriftCorrection {
   at: number;
@@ -37,37 +45,66 @@ export interface DriftCorrection {
 
 export type DriftHealth = "converged" | "correcting" | "beyond_range";
 
+interface ClockObservation {
+  mediaTimestampMs: number;
+  outputTimeMs: number;
+}
+
 export class DriftEstimator {
-  private observations = 0;
+  private samples: ClockObservation[] = [];
+  private lastObserved: ClockObservation | null = null;
+  private estimates = 0;
   private smoothedSkewPpm = 0;
-  private firstMediaTimestampMs: number | null = null;
-  private firstLocalTimeMs: number | null = null;
   private lastCorrection: DriftCorrection | null = null;
 
   constructor(readonly trackId: string) {}
 
   /**
    * `mediaTimestampMs` comes from the sender's clock via the object header;
-   * `localTimeMs` is the local AudioContext clock at arrival. Their divergence
-   * over time is the skew.
+   * `outputTimeMs` is the local AudioContext output clock sampled when the
+   * object is received. A robust long-window slope separates oscillator drift
+   * from relay jitter and main-thread scheduling.
    */
-  observe(mediaTimestampMs: number, localTimeMs: number): void {
-    if (this.firstMediaTimestampMs === null || this.firstLocalTimeMs === null) {
-      this.firstMediaTimestampMs = mediaTimestampMs;
-      this.firstLocalTimeMs = localTimeMs;
-      this.observations = 1;
+  observe(mediaTimestampMs: number, outputTimeMs: number): void {
+    if (!Number.isFinite(mediaTimestampMs) || !Number.isFinite(outputTimeMs)) return;
+
+    const observation = { mediaTimestampMs, outputTimeMs };
+    const previous = this.lastObserved;
+    if (previous) {
+      const mediaStep = mediaTimestampMs - previous.mediaTimestampMs;
+      const outputStep = outputTimeMs - previous.outputTimeMs;
+      if (
+        mediaStep <= 0 ||
+        outputStep < 0 ||
+        Math.abs(outputStep - mediaStep) > MAXIMUM_CLOCK_DISCONTINUITY_MS
+      ) {
+        this.reset();
+      }
+    }
+    this.lastObserved = observation;
+
+    const lastSample = this.samples[this.samples.length - 1];
+    if (!lastSample) {
+      this.samples.push(observation);
       return;
     }
 
-    const mediaElapsed = mediaTimestampMs - this.firstMediaTimestampMs;
-    const localElapsed = localTimeMs - this.firstLocalTimeMs;
-    this.observations += 1;
-    if (mediaElapsed <= 0) return;
+    // A relay burst therefore contributes one point, not dozens of correlated
+    // points. The committed point remains the interval anchor.
+    if (outputTimeMs - lastSample.outputTimeMs < DRIFT_SAMPLE_INTERVAL_MS) return;
 
-    // Positive skew: the sender's clock is running slow relative to ours, so
-    // we must read its buffer more slowly to avoid draining it.
-    const skewPpm = ((localElapsed - mediaElapsed) / mediaElapsed) * 1_000_000;
-    this.smoothedSkewPpm += (skewPpm - this.smoothedSkewPpm) / SMOOTHING;
+    this.samples.push(observation);
+    const keepAfter = outputTimeMs - DRIFT_WINDOW_MS;
+    while (this.samples.length > 0 && (this.samples[0]?.outputTimeMs ?? outputTimeMs) < keepAfter) {
+      this.samples.shift();
+    }
+
+    const skewPpm = robustSkewPpm(this.samples);
+    if (skewPpm === null) return;
+
+    this.estimates += 1;
+    if (this.estimates === 1) this.smoothedSkewPpm = skewPpm;
+    else this.smoothedSkewPpm += (skewPpm - this.smoothedSkewPpm) / ESTIMATE_SMOOTHING;
   }
 
   /**
@@ -78,22 +115,28 @@ export class DriftEstimator {
    * converges over a few seconds rather than in one audible jump.
    */
   correctionRatio(): number {
-    if (this.observations < WARMUP_OBSERVATIONS) return 1;
-    const raw = 1 + this.smoothedSkewPpm / 1_000_000;
+    if (!this.hasEstimate) return 1;
+    const raw = correctionForSkew(this.smoothedSkewPpm);
     return clamp(raw, MINIMUM_STEP_RATIO, MAXIMUM_STEP_RATIO);
   }
 
   health(): DriftHealth {
-    if (this.observations < WARMUP_OBSERVATIONS) return "converged";
-    const raw = 1 + this.smoothedSkewPpm / 1_000_000;
-    if (raw > MAXIMUM_CORRECTION_RATIO || raw < MINIMUM_CORRECTION_RATIO) return "beyond_range";
+    if (!this.hasEstimate) return "converged";
+    const clockRatio = 1 + this.smoothedSkewPpm / 1_000_000;
+    if (clockRatio > MAXIMUM_CORRECTION_RATIO || clockRatio < MINIMUM_CORRECTION_RATIO) {
+      return "beyond_range";
+    }
     return Math.abs(this.smoothedSkewPpm) > 50 ? "correcting" : "converged";
+  }
+
+  get hasEstimate(): boolean {
+    return this.estimates > 0;
   }
 
   /** H15: no estimate before warm-up reads as zero drift. */
   skewPpm(): Measurement<number> {
-    if (this.observations < WARMUP_OBSERVATIONS) {
-      return notExposed("Fewer arrivals than the drift estimator needs to converge.");
+    if (!this.hasEstimate) {
+      return notExposed("The output-clock window is too short for a robust drift estimate.");
     }
     return measured(this.smoothedSkewPpm);
   }
@@ -114,11 +157,49 @@ export class DriftEstimator {
 
   /** FR3: rebuild this track's buffer at the next silence. */
   reset(): void {
-    this.observations = 0;
+    this.samples = [];
+    this.lastObserved = null;
+    this.estimates = 0;
     this.smoothedSkewPpm = 0;
-    this.firstMediaTimestampMs = null;
-    this.firstLocalTimeMs = null;
+    this.lastCorrection = null;
   }
+}
+
+function correctionForSkew(skewPpm: number): number {
+  // Positive skew means the local output clock advanced further than the
+  // sender media clock. Consume source samples more slowly, not faster.
+  return 1 / (1 + skewPpm / 1_000_000);
+}
+
+function robustSkewPpm(samples: ClockObservation[]): number | null {
+  const first = samples[0];
+  const last = samples[samples.length - 1];
+  if (!first || !last || last.outputTimeMs - first.outputTimeMs < MINIMUM_DRIFT_SPAN_MS) {
+    return null;
+  }
+
+  const slopes: number[] = [];
+  for (let leftIndex = 0; leftIndex < samples.length; leftIndex += 1) {
+    const left = samples[leftIndex];
+    if (!left) continue;
+    for (let rightIndex = leftIndex + 1; rightIndex < samples.length; rightIndex += 1) {
+      const right = samples[rightIndex];
+      if (!right) continue;
+      const mediaElapsed = right.mediaTimestampMs - left.mediaTimestampMs;
+      if (mediaElapsed < MINIMUM_PAIR_SPAN_MS) continue;
+      const outputElapsed = right.outputTimeMs - left.outputTimeMs;
+      if (outputElapsed <= 0) continue;
+      slopes.push(outputElapsed / mediaElapsed);
+    }
+  }
+  if (slopes.length < MINIMUM_SLOPES) return null;
+  slopes.sort((left, right) => left - right);
+  const middle = Math.floor(slopes.length / 2);
+  const median =
+    slopes.length % 2 === 0
+      ? ((slopes[middle - 1] ?? 1) + (slopes[middle] ?? 1)) / 2
+      : (slopes[middle] ?? 1);
+  return (median - 1) * 1_000_000;
 }
 
 function clamp(value: number, minimum: number, maximum: number): number {

@@ -24,6 +24,42 @@ export interface LadderInput {
   now: number;
 }
 
+export interface UnderrunSnapshot {
+  trackId: string;
+  /** Cumulative worklet counter for this subscription. */
+  underruns: number;
+  /** False while prebuffering, in DTX silence, or no longer producing audio. */
+  active: boolean;
+}
+
+/**
+ * Converts cumulative worklet counters into one ladder window. New and
+ * resubscribed tracks establish a baseline instead of replaying old strain.
+ */
+export class UnderrunWindowCounter {
+  private readonly previous = new Map<string, number>();
+
+  next(snapshots: ReadonlyArray<UnderrunSnapshot>): number {
+    const present = new Set<string>();
+    let total = 0;
+    for (const snapshot of snapshots) {
+      present.add(snapshot.trackId);
+      const previous = this.previous.get(snapshot.trackId);
+      this.previous.set(snapshot.trackId, snapshot.underruns);
+      if (previous === undefined || !snapshot.active) continue;
+      total += Math.max(0, snapshot.underruns - previous);
+    }
+    for (const trackId of this.previous.keys()) {
+      if (!present.has(trackId)) this.previous.delete(trackId);
+    }
+    return total;
+  }
+
+  reset(): void {
+    this.previous.clear();
+  }
+}
+
 export interface LadderState {
   step: DegradationStep;
   /** Nominal jitter target the buffers should adopt. */

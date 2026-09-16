@@ -30,7 +30,11 @@ import {
   updateRouting,
 } from "../api";
 import { CaptureController } from "../audio/CaptureController";
-import { DegradationLadder, type LadderState } from "../audio/DegradationLadder";
+import {
+  DegradationLadder,
+  type LadderState,
+  UnderrunWindowCounter,
+} from "../audio/DegradationLadder";
 import { DeviceWatcher } from "../audio/DeviceWatcher";
 import {
   ForegroundAudioLifecycle,
@@ -182,6 +186,8 @@ export interface RoomSessionOptions {
 }
 
 const LADDER_INTERVAL_MS = 2_000;
+const ACTIVE_SPEAKER_WINDOW_MS = 2_000;
+const DRIFT_EVENT_INTERVAL_MS = 2_000;
 const DRAIN_INTERVAL_MS = 20;
 const CONTROL_RETRY_BASE_MS = 250;
 const CONTROL_RETRY_MAX_MS = 5_000;
@@ -231,11 +237,14 @@ export class RoomSession {
   private readonly playbackDeduplicator = new PlaybackDeduplicator();
   private readonly lifecycle: ForegroundAudioLifecycle;
   private readonly ladder = new DegradationLadder();
+  private readonly underrunWindow = new UnderrunWindowCounter();
   private readonly reconnection = new ReconnectionPolicy();
   private readonly players = new Map<string, TrackPlayer>();
   private readonly subscriptionIntent = new Map<string, boolean>();
   private readonly subscriptionRetries = new Map<string, SubscriptionRetry>();
   private readonly subscriptionsOpening = new Set<string>();
+  private readonly lastDriftEventAt = new Map<string, number>();
+  private readonly uncorrectableDriftParticipants = new Set<string>();
   private readonly now: () => number;
 
   private readonly devices: DeviceWatcher;
@@ -449,6 +458,8 @@ export class RoomSession {
     this.subscriptionRetries.clear();
     for (const player of this.players.values()) player.close();
     this.players.clear();
+    this.lastDriftEventAt.clear();
+    this.underrunWindow.reset();
     await Promise.allSettled([
       this.capture.stop(),
       this.transport.close("foreground audio interrupted"),
@@ -660,6 +671,8 @@ export class RoomSession {
     // after the bounded reconnect succeeds.
     for (const player of this.players.values()) player.close();
     this.players.clear();
+    this.lastDriftEventAt.clear();
+    this.underrunWindow.reset();
     this.subscriptionsOpening.clear();
     this.subscriptionRetries.clear();
     this.clearSubscriptionRetryTimer();
@@ -832,6 +845,7 @@ export class RoomSession {
         participantHash: this.participantHash,
         mediaTimestamp: Math.round(frame.timestamp / 1_000),
         sequence: this.sequence++,
+        endOfTurn: !this.capture.speaking,
       },
       payload,
     );
@@ -991,6 +1005,12 @@ export class RoomSession {
     const room = this.room;
     if (!room || this.phase.name !== "live") return;
     const wanted = new Set(this.subscribableParticipants().map((participant) => participant.id));
+    for (const participantId of this.uncorrectableDriftParticipants) {
+      if (!wanted.has(participantId)) this.uncorrectableDriftParticipants.delete(participantId);
+    }
+    if (this.uncorrectableDriftParticipants.size === 0) {
+      this.failures = this.failures.filter((code) => code !== "drift_uncorrectable");
+    }
     for (const participantId of this.subscriptionRetries.keys()) {
       if (!wanted.has(participantId)) this.subscriptionRetries.delete(participantId);
     }
@@ -1017,16 +1037,35 @@ export class RoomSession {
               () => undefined,
             );
           },
-          onDriftCorrection: (correction) =>
+          onDriftCorrection: (correction) => {
+            const lastEventAt = this.lastDriftEventAt.get(participantId);
+            if (
+              lastEventAt !== undefined &&
+              correction.at - lastEventAt < DRIFT_EVENT_INTERVAL_MS
+            ) {
+              return;
+            }
+            this.lastDriftEventAt.set(participantId, correction.at);
             this.log.record(
               "drift",
               `ratio ${correction.ratio.toFixed(5)} at ${Math.round(correction.skewPpm)} ppm`,
               { subject: participantId },
-            ),
+            );
+          },
           onDriftBeyondRange: () => {
+            this.uncorrectableDriftParticipants.add(participantId);
             this.raise("drift_uncorrectable");
             // §11.3: scheduled, not immediate. Rebuilding mid-word is audible.
             this.log.record("drift", "Beyond correction range; buffer rebuild queued for a pause", {
+              subject: participantId,
+            });
+          },
+          onDriftRecovered: () => {
+            this.uncorrectableDriftParticipants.delete(participantId);
+            if (this.uncorrectableDriftParticipants.size === 0) {
+              this.failures = this.failures.filter((code) => code !== "drift_uncorrectable");
+            }
+            this.log.record("drift", "Output-clock estimate stable after buffer rebuild", {
               subject: participantId,
             });
           },
@@ -1049,6 +1088,9 @@ export class RoomSession {
         this.playbackDeduplicator,
         this.now,
       );
+      if (this.uncorrectableDriftParticipants.has(participantId)) {
+        player.requireDriftRecovery();
+      }
       this.subscriptionsOpening.add(participantId);
       this.log.record("subscribe", `audio/${participantId}`, { subject: participantId });
       this.emit();
@@ -1151,6 +1193,11 @@ export class RoomSession {
     player.close();
     this.players.delete(participantId);
     this.subscriptionRetries.delete(participantId);
+    this.lastDriftEventAt.delete(participantId);
+    this.uncorrectableDriftParticipants.delete(participantId);
+    if (this.uncorrectableDriftParticipants.size === 0) {
+      this.failures = this.failures.filter((code) => code !== "drift_uncorrectable");
+    }
     await this.transport.unsubscribe(audioTrack(room.code, participantId)).catch(() => undefined);
     this.log.record("unsubscribe", detail, { subject: participantId });
   }
@@ -1359,24 +1406,45 @@ export class RoomSession {
   private tickLadder(): void {
     const room = this.room;
     if (!room) return;
+    const now = this.now();
     const tracks = [...this.players.values()].map((player) => ({
       trackId: player.trackId,
       lastActiveAt: player.lastActiveAt,
     }));
+    const activeTrackIds = new Set(
+      tracks
+        .filter((track) => now - track.lastActiveAt < ACTIVE_SPEAKER_WINDOW_MS)
+        .map((track) => track.trackId),
+    );
     const worst = this.mixer.worstBufferMs();
-    const underruns = this.mixer.totalUnderruns();
+    const underrunsInWindow = this.underrunWindow.next(
+      this.mixer.stats().map((track) => ({
+        trackId: track.trackId,
+        underruns: track.underruns,
+        active: track.active && activeTrackIds.has(track.trackId),
+      })),
+    );
     const next = this.ladder.evaluate({
-      activeSpeakers: tracks.filter((track) => this.now() - track.lastActiveAt < 2_000).length,
+      activeSpeakers: activeTrackIds.size,
       worstBufferMs: worst.exposed ? worst.value : 0,
-      underrunsInWindow: underruns.exposed ? underruns.value : 0,
+      underrunsInWindow,
       tracks,
-      now: this.now(),
+      now,
     });
 
     if (next.step !== this.degradation.step) {
       // H7: every step is announced. Silent degradation is the failure mode.
-      if (next.step > 0) this.raise("beyond_measured_capacity");
-      this.log.record("degradation", next.announcement ?? "Recovered to full quality");
+      const degrading = next.step > this.degradation.step;
+      if (degrading) this.raise("beyond_measured_capacity");
+      if (next.step === 0) {
+        this.failures = this.failures.filter((code) => code !== "beyond_measured_capacity");
+      }
+      const detail = degrading
+        ? next.announcement
+        : next.step === 0
+          ? "Recovered to full quality"
+          : `Capacity recovering — degradation step ${next.step}`;
+      this.log.record("degradation", detail ?? "Recovered to full quality");
       this.telemetry.record({ type: "degradation_step", value: next.step });
       for (const player of this.players.values()) player.setNominalBuffer(next.nominalBufferMs);
     }
@@ -1540,6 +1608,10 @@ export class RoomSession {
     this.controlRetryTimer = null;
     this.subscriptionRetries.clear();
     this.subscriptionsOpening.clear();
+    this.lastDriftEventAt.clear();
+    this.uncorrectableDriftParticipants.clear();
+    this.underrunWindow.reset();
+    this.ladder.reset();
 
     for (const player of this.players.values()) player.close();
     this.players.clear();

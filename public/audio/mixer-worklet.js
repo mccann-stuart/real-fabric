@@ -26,15 +26,19 @@ class TrackBuffer {
     this.writeIndex = 0;
     this.readIndex = 0;
     this.available = 0;
-    /** Drift correction. Above 1 reads faster, pulling a slow sender back. */
+    /** Drift correction. Above 1 consumes source samples faster. */
     this.ratio = 1;
     this.underruns = 0;
     this.consecutiveUnderrunQuanta = 0;
     this.everWritten = false;
+    this.active = false;
+    this.awaitingActiveSamples = false;
+    this.starved = false;
   }
 
   write(samples) {
     this.everWritten = true;
+    this.awaitingActiveSamples = false;
     for (let index = 0; index < samples.length; index += 1) {
       this.ring[this.writeIndex] = samples[index];
       this.writeIndex = (this.writeIndex + 1) % RING_SAMPLES;
@@ -63,6 +67,18 @@ class TrackBuffer {
     this.writeIndex = 0;
     this.readIndex = 0;
     this.available = 0;
+    this.starved = false;
+    this.awaitingActiveSamples = this.active;
+  }
+
+  setActive(active) {
+    if (active && !this.active) this.awaitingActiveSamples = true;
+    if (!active) {
+      this.awaitingActiveSamples = false;
+      this.starved = false;
+      this.consecutiveUnderrunQuanta = 0;
+    }
+    this.active = active;
   }
 }
 
@@ -88,6 +104,11 @@ class RealFabricMixer extends AudioWorkletProcessor {
       case "samples": {
         const track = this.tracks.get(message.trackId);
         if (track) track.write(message.samples);
+        break;
+      }
+      case "activity": {
+        const track = this.tracks.get(message.trackId);
+        if (track) track.setActive(message.active === true);
         break;
       }
       case "ratio": {
@@ -129,15 +150,26 @@ class RealFabricMixer extends AudioWorkletProcessor {
 
       if (readAny) {
         track.consecutiveUnderrunQuanta = 0;
+        track.starved = false;
         continue;
       }
 
-      track.underruns += 1;
       track.consecutiveUnderrunQuanta += 1;
+      // One starvation run is one underrun. Do not count prebuffering,
+      // explicitly inactive/DTX tracks, or every empty 128-sample quantum.
+      if (track.active && track.everWritten && !track.awaitingActiveSamples && !track.starved) {
+        track.underruns += 1;
+        track.starved = true;
+      }
       // FR3: sustained loss produces comfort noise, not silence — but only for
       // a track that has actually carried audio, and only until it is clearly
       // just quiet rather than broken. DTX means silence is normal here.
-      if (track.everWritten && track.consecutiveUnderrunQuanta < COMFORT_NOISE_QUANTA) {
+      if (
+        track.active &&
+        track.everWritten &&
+        !track.awaitingActiveSamples &&
+        track.consecutiveUnderrunQuanta < COMFORT_NOISE_QUANTA
+      ) {
         for (let frame = 0; frame < frames; frame += 1) {
           channel[frame] += (Math.random() * 2 - 1) * COMFORT_NOISE_GAIN;
         }
@@ -168,6 +200,7 @@ class RealFabricMixer extends AudioWorkletProcessor {
         bufferedSamples: track.available,
         underruns: track.underruns,
         ratio: track.ratio,
+        active: track.active,
       });
     }
     this.port.postMessage({ type: "stats", at: currentTime, tracks });

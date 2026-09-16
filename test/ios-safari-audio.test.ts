@@ -18,6 +18,7 @@ import {
 import { RoomSession, type SessionPhase } from "../src/client/session/RoomSession";
 import { requiredTransportReliabilityError } from "../src/client/transport/MoqTransportAdapter";
 import { probeRelayReachability } from "../src/client/transport/NetworkProbe";
+import { measured } from "../src/shared/measurement";
 import {
   type BrowserCapabilityEvidence,
   IOS_CHROME_CONFIGURATION,
@@ -440,8 +441,10 @@ describe("HTTP/3-only and Opus capability probes", () => {
       addTrack: vi.fn(),
       removeTrack: vi.fn(),
       pushSamples: vi.fn(),
+      setTrackActive: vi.fn(),
       setRatio: vi.fn(),
       flush: vi.fn(),
+      outputClockMs: () => measured(1_000),
     } as unknown as MixerGraph;
     const payload = encodeAudioObject(
       { participantHash: 1, mediaTimestamp: 1_000, sequence: 1 },
