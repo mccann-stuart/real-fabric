@@ -236,6 +236,8 @@ describe("Micro-UX & Accessibility Improvements", () => {
     );
 
     expect(html).toContain('aria-busy="true"');
+    expect(html).toContain('aria-label="Starting audio… (please wait)"');
+    expect(html).toContain('title="Starting audio… (please wait)"');
     expect(html).toContain("Starting audio…");
   });
 

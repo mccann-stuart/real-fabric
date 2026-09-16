@@ -48,6 +48,8 @@ export function RoomTopBar({
             className="button button--compact button--primary"
             disabled={micAction.disabled}
             aria-busy={micAction.disabled}
+            aria-label={micAction.disabled ? `${micAction.label} (please wait)` : micAction.label}
+            title={micAction.disabled ? `${micAction.label} (please wait)` : micAction.label}
             type="button"
             onClick={onStartAudio}
           >
