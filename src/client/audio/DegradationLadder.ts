@@ -82,6 +82,14 @@ const NOMINAL_BY_STEP: Record<DegradationStep, number> = {
 /** Step three unsubscribes in blocks rather than one track at a time. */
 const UNSUBSCRIBE_BLOCK = 2;
 
+/** Thresholds for evaluating whether the client load is strained. */
+export const STRAIN_UNDERRUNS_THRESHOLD = 3;
+export const STRAIN_WORST_BUFFER_MS_THRESHOLD = 180;
+export const STRAIN_ACTIVE_SPEAKERS_THRESHOLD = 8;
+
+/** Quiet windows required before recovering down one rung on the ladder. */
+export const RECOVERY_HEALTHY_WINDOWS_THRESHOLD = 3;
+
 export class DegradationLadder {
   private step: DegradationStep = 0;
   private unsubscribedTrackIds: string[] = [];
@@ -90,16 +98,18 @@ export class DegradationLadder {
 
   evaluate(input: LadderInput): LadderState {
     const strained =
-      input.underrunsInWindow > 3 || input.worstBufferMs >= 180 || input.activeSpeakers > 8;
+      input.underrunsInWindow > STRAIN_UNDERRUNS_THRESHOLD ||
+      input.worstBufferMs >= STRAIN_WORST_BUFFER_MS_THRESHOLD ||
+      input.activeSpeakers > STRAIN_ACTIVE_SPEAKERS_THRESHOLD;
 
     if (strained) {
       this.healthyWindows = 0;
       if (this.step < 3) this.step = (this.step + 1) as DegradationStep;
     } else {
       this.healthyWindows += 1;
-      // Recover one rung at a time, and only after three quiet windows, so the
+      // Recover one rung at a time, and only after quiet windows threshold, so the
       // ladder does not flap in front of an audience.
-      if (this.healthyWindows >= 3 && this.step > 0) {
+      if (this.healthyWindows >= RECOVERY_HEALTHY_WINDOWS_THRESHOLD && this.step > 0) {
         this.step = (this.step - 1) as DegradationStep;
         this.healthyWindows = 0;
         if (this.step < 3) this.unsubscribedTrackIds = [];
