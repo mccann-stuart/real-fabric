@@ -10,6 +10,7 @@ import {
   type FloorState,
   MAX_SIMULATED_PARTICIPANTS,
   type MoqDraft,
+  ONE_MINUTE_MS,
   type Participant,
   PINNED_MOQT_DRAFT,
   type PresenterConfiguration,
@@ -43,6 +44,7 @@ function endpointName(endpoint: string): string {
 const SCHEMA_VERSION = 3;
 const CONTROL_AUTH_TIMEOUT_MS = 5_000;
 const CONTROL_AUTH_MESSAGE_MAX_LENGTH = 512;
+const RATE_LIMIT_WINDOW_MS = 10 * ONE_MINUTE_MS;
 
 interface ParticipantRow {
   [key: string]: SqlStorageValue;
@@ -110,7 +112,7 @@ export interface ParticipantCredential {
 export class Room extends DurableObject<Env> {
   checkCreationRateLimit(now: number): boolean {
     this.ensureRateTable();
-    const cutoff = now - 10 * 60_000;
+    const cutoff = now - RATE_LIMIT_WINDOW_MS;
     this.ctx.storage.sql.exec("DELETE FROM rate_events WHERE created_at < ?", cutoff);
     const row = this.ctx.storage.sql
       .exec<{ count: number }>("SELECT COUNT(*) AS count FROM rate_events")
@@ -122,7 +124,7 @@ export class Room extends DurableObject<Env> {
 
   checkJoinRateLimit(now: number): boolean {
     this.ensureRateTable();
-    const cutoff = now - 10 * 60_000;
+    const cutoff = now - RATE_LIMIT_WINDOW_MS;
     this.ctx.storage.sql.exec("DELETE FROM rate_events WHERE created_at < ?", cutoff);
     const row = this.ctx.storage.sql
       .exec<{ count: number }>("SELECT COUNT(*) AS count FROM rate_events")
