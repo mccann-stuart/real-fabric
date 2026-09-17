@@ -6,6 +6,7 @@ import {
   loadSession,
   markActive,
   normaliseCode,
+  signalLeaveOnUnload,
   storeSession,
 } from "../src/client/api";
 
@@ -148,6 +149,55 @@ describe("client API session management", () => {
         expect(clientErr.message).toBe("Request failed with HTTP 500.");
         expect(clientErr.correlationId).toBe("not-exposed");
       }
+    });
+  });
+
+  describe("signalLeaveOnUnload", () => {
+    it("sends a keepalive POST request with session credentials", () => {
+      const fetchSpy = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+      vi.stubGlobal("fetch", fetchSpy);
+
+      const session = {
+        code: "ROOM123",
+        participantId: "p-1",
+        rejoinToken: "token-abc",
+        displayName: "Alice",
+        storedAt: 123456789,
+      };
+
+      signalLeaveOnUnload(session);
+
+      expect(fetchSpy).toHaveBeenCalledWith("/api/rooms/ROOM123/leave", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ participantId: "p-1", rejoinToken: "token-abc" }),
+        keepalive: true,
+      });
+    });
+
+    it("catches and swallows fetch errors gracefully without throwing", async () => {
+      const fetchSpy = vi.fn().mockRejectedValue(new Error("Network error during page unload"));
+      vi.stubGlobal("fetch", fetchSpy);
+
+      const session = {
+        code: "ROOM123",
+        participantId: "p-1",
+        rejoinToken: "token-abc",
+        displayName: "Alice",
+        storedAt: 123456789,
+      };
+
+      expect(() => signalLeaveOnUnload(session)).not.toThrow();
+
+      // Allow microtasks to run so the .catch() callback executes
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(fetchSpy).toHaveBeenCalledWith("/api/rooms/ROOM123/leave", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ participantId: "p-1", rejoinToken: "token-abc" }),
+        keepalive: true,
+      });
     });
   });
 
