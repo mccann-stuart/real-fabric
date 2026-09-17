@@ -533,7 +533,10 @@ export class Room extends DurableObject<Env> {
 
   async alarm(): Promise<void> {
     const now = Date.now();
-    for (const socket of this.ctx.getWebSockets()) {
+    const activeSockets = this.ctx.getWebSockets();
+    for (let i = 0; i < activeSockets.length; i++) {
+      const socket = activeSockets[i];
+      if (!socket) continue;
       const attachment = socket.deserializeAttachment() as SocketAttachment | null;
       if (
         attachment &&
@@ -550,7 +553,10 @@ export class Room extends DurableObject<Env> {
     // FR1: the hard stop ends the room and its AI sessions outright.
     if (meta.expires_at <= now || this.emptyExpiryDue(meta, now)) {
       this.broadcast({ type: "room_expired", at: now });
-      for (const socket of this.ctx.getWebSockets()) socket.close(4001, "room expired");
+      const sockets = this.ctx.getWebSockets();
+      for (let i = 0; i < sockets.length; i++) {
+        sockets[i]?.close(4001, "room expired");
+      }
       this.ctx.storage.sql.exec(
         "UPDATE participants SET state = 'left', reconnect_until = NULL, pipeline = CASE WHEN role = 'ai' THEN 'unavailable' ELSE pipeline END",
       );
@@ -624,8 +630,10 @@ export class Room extends DurableObject<Env> {
 
       // Security: Enforce 1 active control socket per participant (SEC-06 / CWE-770)
       // to prevent resource exhaustion from unbounded concurrent connections.
-      for (const existingSocket of this.ctx.getWebSockets()) {
-        if (existingSocket !== socket) {
+      const currentSockets = this.ctx.getWebSockets();
+      for (let i = 0; i < currentSockets.length; i++) {
+        const existingSocket = currentSockets[i];
+        if (existingSocket && existingSocket !== socket) {
           const existingAttachment =
             existingSocket.deserializeAttachment() as SocketAttachment | null;
           if (existingAttachment?.participantId === participantId) {
@@ -1235,7 +1243,10 @@ export class Room extends DurableObject<Env> {
       )
       .toArray()[0]?.reconnect_until;
     if (nextReconnect !== undefined) candidates.push(nextReconnect);
-    for (const socket of this.ctx.getWebSockets()) {
+    const sockets = this.ctx.getWebSockets();
+    for (let i = 0; i < sockets.length; i++) {
+      const socket = sockets[i];
+      if (!socket) continue;
       const attachment = socket.deserializeAttachment() as SocketAttachment | null;
       if (attachment && !attachment.participantId && attachment.authDeadline !== null) {
         candidates.push(attachment.authDeadline);
@@ -1246,7 +1257,10 @@ export class Room extends DurableObject<Env> {
 
   private broadcast(event: RoomEvent): void {
     const encoded = JSON.stringify(event);
-    for (const socket of this.ctx.getWebSockets()) {
+    const sockets = this.ctx.getWebSockets();
+    for (let i = 0; i < sockets.length; i++) {
+      const socket = sockets[i];
+      if (!socket) continue;
       const attachment = socket.deserializeAttachment() as SocketAttachment | null;
       if (attachment?.participantId) {
         socket.send(encoded);
