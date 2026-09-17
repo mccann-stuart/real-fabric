@@ -83,12 +83,12 @@ const NOMINAL_BY_STEP: Record<DegradationStep, number> = {
 const UNSUBSCRIBE_BLOCK = 2;
 
 /** Thresholds for evaluating whether the client load is strained. */
-export const STRAIN_UNDERRUNS_THRESHOLD = 3;
-export const STRAIN_WORST_BUFFER_MS_THRESHOLD = 180;
-export const STRAIN_ACTIVE_SPEAKERS_THRESHOLD = 8;
+const STRAIN_UNDERRUNS_THRESHOLD = 3;
+const STRAIN_WORST_BUFFER_MS_THRESHOLD = 180;
+const STRAIN_ACTIVE_SPEAKERS_THRESHOLD = 8;
 
 /** Quiet windows required before recovering down one rung on the ladder. */
-export const RECOVERY_HEALTHY_WINDOWS_THRESHOLD = 3;
+const RECOVERY_HEALTHY_WINDOWS_THRESHOLD = 3;
 
 export class DegradationLadder {
   private step: DegradationStep = 0;
@@ -107,7 +107,7 @@ export class DegradationLadder {
       if (this.step < 3) this.step = (this.step + 1) as DegradationStep;
     } else {
       this.healthyWindows += 1;
-      // Recover one rung at a time, and only after quiet windows threshold, so the
+      // Recover one rung at a time, and only after three quiet windows, so the
       // ladder does not flap in front of an audience.
       if (this.healthyWindows >= RECOVERY_HEALTHY_WINDOWS_THRESHOLD && this.step > 0) {
         this.step = (this.step - 1) as DegradationStep;
