@@ -742,6 +742,42 @@ describe("H9 — per-AI routing, honestly labelled", () => {
     expect(refused.canAnswer).toBe(false);
     expect(refused.label).toMatch(/Scripted/);
   });
+
+  it("applies state updates safely without deep nesting", () => {
+    const responder = new ScriptedResponder();
+
+    // Falsy or missing items state handled gracefully
+    responder.applyState({});
+    expect(responder.getItems()).toEqual([]);
+
+    // Items without ID are skipped, new items are added, existing items are updated
+    responder.applyState({
+      items: [
+        { name: "No ID item" } as unknown as { id: string },
+        { id: "item1", val: 10 },
+        { id: "item2", val: 20 },
+      ],
+    });
+
+    expect(responder.getItems()).toEqual([
+      { id: "item1", val: 10 },
+      { id: "item2", val: 20 },
+    ]);
+
+    // Update existing item
+    responder.applyState({
+      items: [{ id: "item1", val: 15 }],
+    });
+
+    expect(responder.getItems()).toEqual([
+      { id: "item1", val: 15 },
+      { id: "item2", val: 20 },
+    ]);
+
+    // Clearing clears items
+    responder.clear();
+    expect(responder.getItems()).toEqual([]);
+  });
 });
 
 describe("H12 — reload reclaims identity without duplicate playback", () => {

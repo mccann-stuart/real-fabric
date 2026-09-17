@@ -37,10 +37,43 @@ const ANSWERS = [
   "The relay is routing named objects. It is not mixing anything, and it does not know which of us is a person.",
 ];
 
+export interface ScriptedItem {
+  id: string;
+  [key: string]: unknown;
+}
+
+export interface ScriptedState {
+  items?: ScriptedItem[];
+}
+
 export class ScriptedResponder {
   /** aiId → humanId → count of utterances received while consent was on. */
   private heard = new Map<string, Map<string, number>>();
   private nextAnswer = 0;
+  private items: ScriptedItem[] = [];
+
+  getItems(): readonly ScriptedItem[] {
+    return this.items;
+  }
+
+  applyState(state: ScriptedState): void {
+    if (!state.items) {
+      return;
+    }
+
+    for (const item of state.items) {
+      if (!item.id) {
+        continue;
+      }
+
+      const existing = this.items.find((i) => i.id === item.id);
+      if (existing) {
+        Object.assign(existing, item);
+      } else {
+        this.items.push({ ...item });
+      }
+    }
+  }
 
   /** Called when an object arrives from a human this AI is subscribed to. */
   noteHeardUtterance(aiId: string, humanId: string): void {
@@ -92,5 +125,6 @@ export class ScriptedResponder {
   clear(): void {
     this.heard.clear();
     this.nextAnswer = 0;
+    this.items = [];
   }
 }
