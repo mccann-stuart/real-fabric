@@ -24,6 +24,7 @@ import {
 import { configFlag, configValue } from "./env";
 import { inspectRelayCredential } from "./relayCredential";
 import { roomError } from "./roomError";
+import { parseAuthPayload } from "./validation";
 
 /** The relay's operator-facing name, as the inspector and Gate 1 sheet quote it. */
 function endpointName(endpoint: string): string {
@@ -591,29 +592,17 @@ export class Room extends DurableObject<Env> {
         return;
       }
 
-      if (
-        !payload ||
-        typeof payload !== "object" ||
-        (payload as Record<string, unknown>).type !== "auth"
-      ) {
-        socket.close(4401, "authentication required");
+      const parsedAuth = parseAuthPayload(payload);
+      if (!parsedAuth.success) {
+        if (parsedAuth.error === "authentication_required") {
+          socket.close(4401, "authentication required");
+        } else {
+          socket.close(4401, "participant control credentials required");
+        }
         return;
       }
 
-      const participantId = (payload as Record<string, unknown>).participantId;
-      const token = (payload as Record<string, unknown>).token;
-
-      if (
-        typeof participantId !== "string" ||
-        participantId.length === 0 ||
-        participantId.length > 64 ||
-        typeof token !== "string" ||
-        token.length === 0 ||
-        token.length > 128
-      ) {
-        socket.close(4401, "participant control credentials required");
-        return;
-      }
+      const { participantId, token } = parsedAuth.data;
 
       try {
         await this.assertParticipant(participantId, token);
