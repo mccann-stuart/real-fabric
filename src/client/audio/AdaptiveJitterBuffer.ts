@@ -62,23 +62,27 @@ export class AdaptiveJitterBuffer<T> {
     if (len === 0 || (lastFrame && frame.sequence > lastFrame.sequence)) {
       this.frames.push(frame);
     } else {
-      let insertIndex = len;
-      for (let i = len - 1; i >= 0; i -= 1) {
+      let i = len - 1;
+      while (i >= 0) {
         const candidate = this.frames[i];
-        if (candidate) {
+        if (candidate && candidate.sequence <= frame.sequence) {
           if (candidate.sequence === frame.sequence) {
             return; // Duplicate frame
           }
-          if (candidate.sequence < frame.sequence) {
-            insertIndex = i + 1;
-            break;
-          }
+          break;
         }
-        if (i === 0) {
-          insertIndex = 0;
+        i -= 1;
+      }
+      const insertIndex = i + 1;
+      // ⚡ Bolt Optimization: Manual element shifting instead of Array.prototype.splice
+      // avoids internal JS engine splice overhead and extra allocations for small bounded arrays.
+      for (let j = len; j > insertIndex; j -= 1) {
+        const prev = this.frames[j - 1];
+        if (prev) {
+          this.frames[j] = prev;
         }
       }
-      this.frames.splice(insertIndex, 0, frame);
+      this.frames[insertIndex] = frame;
     }
 
     if (this.lastArrivalAt !== null) {
