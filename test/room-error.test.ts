@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decodeRoomError, roomError } from "../src/worker/roomError";
+import { decodeRoomError, RoomWaiters, roomError } from "../src/worker/roomError";
 
 describe("roomError and decodeRoomError", () => {
   it("creates a properly formatted Error instance with roomError", () => {
@@ -87,5 +87,63 @@ describe("roomError and decodeRoomError", () => {
     // Missing fields
     expect(decodeRoomError(new Error("RF-ROOM-ERROR|404"))).toBeNull();
     expect(decodeRoomError(new Error("RF-ROOM-ERROR|404|room_not_found"))).toBeNull();
+  });
+});
+
+describe("RoomWaiters", () => {
+  it("resolves registered waiters when no error is passed", () => {
+    const waiters = new RoomWaiters();
+    let resolvedCount = 0;
+    let rejectedCount = 0;
+
+    waiters.add({
+      resolve: () => {
+        resolvedCount++;
+      },
+      reject: () => {
+        rejectedCount++;
+      },
+    });
+    waiters.add({
+      resolve: () => {
+        resolvedCount++;
+      },
+      reject: () => {
+        rejectedCount++;
+      },
+    });
+
+    expect(waiters.count).toBe(2);
+    waiters.resolveWaiters();
+
+    expect(resolvedCount).toBe(2);
+    expect(rejectedCount).toBe(0);
+    expect(waiters.count).toBe(0);
+  });
+
+  it("rejects registered waiters with error when an error is passed", () => {
+    const waiters = new RoomWaiters();
+    const errors: Error[] = [];
+
+    waiters.add({
+      resolve: () => {},
+      reject: (err) => {
+        errors.push(err);
+      },
+    });
+
+    const testError = new Error("Connection closed");
+    waiters.resolveWaiters(testError);
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toBe(testError);
+    expect(waiters.count).toBe(0);
+  });
+
+  it("handles empty waiters gracefully", () => {
+    const waiters = new RoomWaiters();
+    expect(waiters.count).toBe(0);
+    expect(() => waiters.resolveWaiters()).not.toThrow();
+    expect(() => waiters.resolveWaiters(new Error("test"))).not.toThrow();
   });
 });
