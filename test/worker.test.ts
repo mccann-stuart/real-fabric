@@ -254,7 +254,39 @@ describe("Real Fabric Worker", () => {
       }),
     );
 
-    expect((await closed).code).toBe(4401);
+    const closeEvent = await closed;
+    expect(closeEvent.code).toBe(4401);
+    expect(closeEvent.reason).toBe("participant control credentials invalid or expired");
+  });
+
+  it("closes WebSocket connections when participant does not exist or has left", async () => {
+    const createdResponse = await SELF.fetch("https://real-fabric.test/api/rooms", {
+      method: "POST",
+      headers: { "content-type": "application/json", "cf-connecting-ip": "192.0.2.152" },
+      body: JSON.stringify({ displayName: "Dorothy" }),
+    });
+    const created = (await createdResponse.json()) as CreateRoomResponse;
+
+    const response = await SELF.fetch(
+      `https://real-fabric.test/api/rooms/${created.room.code}/events`,
+      { headers: { upgrade: "websocket" } },
+    );
+    expect(response.status).toBe(101);
+    const socket = response.webSocket as WebSocket;
+    socket.accept();
+
+    const closed = nextClose(socket);
+    socket.send(
+      JSON.stringify({
+        type: "auth",
+        participantId: "00000000-0000-0000-0000-000000000000",
+        token: created.rejoinToken,
+      }),
+    );
+
+    const closeEvent = await closed;
+    expect(closeEvent.code).toBe(4401);
+    expect(closeEvent.reason).toBe("participant control credentials invalid or expired");
   });
 
   it("closes WebSocket connections that send invalid JSON as authentication message", async () => {
