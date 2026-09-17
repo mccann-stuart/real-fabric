@@ -254,6 +254,9 @@ export class RoomSession {
   private socket: WebSocket | null = null;
   private phase: SessionPhase = { name: "idle" };
   private room: RoomSnapshot | null = null;
+  private readonly participantsById = new Map<string, Participant>();
+  private readonly aiParticipants: Participant[] = [];
+  private readonly hearsMeByHumanAndAi = new Map<string, Map<string, boolean>>();
   private observedDiscovery: DiscoveryMechanism | null = null;
   private captureMode: CaptureMode = { name: "idle" };
   private network: ProbeResult = notRunProbe("The relay reachability probe has not started.");
@@ -1160,7 +1163,9 @@ export class RoomSession {
 
   /** Local listener control for remote human tracks. AI intent stays in FR8 routing. */
   async setSubscription(participantId: string, enabled: boolean): Promise<void> {
-    const participant = this.room?.participants.find((candidate) => candidate.id === participantId);
+    const participant =
+      this.participantsById.get(participantId) ??
+      this.room?.participants.find((candidate) => candidate.id === participantId);
     if (
       !participant ||
       participant.id === this.options.session.participantId ||
@@ -1269,22 +1274,16 @@ export class RoomSession {
   }
 
   private noteScriptedContext(fromParticipantId: string): void {
-    const room = this.room;
-    if (!room) return;
-    const sender = room.participants.find((participant) => participant.id === fromParticipantId);
+    const sender = this.participantsById.get(fromParticipantId);
     if (sender?.role !== "human") return;
 
-    // Preserve the first-row semantics of Array.find while avoiding one routing
-    // scan per AI on every received audio object.
-    const hearsSenderByAi = new Map<string, boolean>();
-    for (const row of room.routing) {
-      if (row.humanId === fromParticipantId && !hearsSenderByAi.has(row.aiId)) {
-        hearsSenderByAi.set(row.aiId, row.hearsMe);
-      }
-    }
-    for (const participant of room.participants) {
-      if (participant.role === "ai" && hearsSenderByAi.get(participant.id)) {
-        this.scripted.noteHeardUtterance(participant.id, fromParticipantId);
+    const aiMap = this.hearsMeByHumanAndAi.get(fromParticipantId);
+    if (!aiMap) return;
+
+    for (let i = 0; i < this.aiParticipants.length; i++) {
+      const ai = this.aiParticipants[i];
+      if (ai && aiMap.get(ai.id)) {
+        this.scripted.noteHeardUtterance(ai.id, fromParticipantId);
       }
     }
   }
@@ -1318,9 +1317,7 @@ export class RoomSession {
     if (parsed.participantId === this.options.session.participantId) return false;
     if (track.namespace !== participantNamespace(room.code, parsed.participantId)) return false;
 
-    const participant = room.participants.find(
-      (candidate) => candidate.id === parsed.participantId,
-    );
+    const participant = this.participantsById.get(parsed.participantId);
     // A PUBLISH can outrun the control-plane membership event. Accept a
     // correctly scoped unknown participant by default and reconcile it when
     // the room snapshot arrives.
@@ -1573,10 +1570,29 @@ export class RoomSession {
     this.room = this.observedDiscovery
       ? { ...room, transport: { ...room.transport, discovery: this.observedDiscovery } }
       : room;
-    for (const ai of room.participants.filter((participant) => participant.role === "ai")) {
-      this.director.register(ai.id, "hold_to_ask");
-      this.director.setAvailable(ai.id, ai.pipeline !== "unavailable");
+    this.participantsById.clear();
+    this.aiParticipants.length = 0;
+    for (const participant of room.participants) {
+      this.participantsById.set(participant.id, participant);
+      if (participant.role === "ai") {
+        this.aiParticipants.push(participant);
+        this.director.register(participant.id, "hold_to_ask");
+        this.director.setAvailable(participant.id, participant.pipeline !== "unavailable");
+      }
     }
+
+    this.hearsMeByHumanAndAi.clear();
+    for (const row of room.routing ?? []) {
+      let aiMap = this.hearsMeByHumanAndAi.get(row.humanId);
+      if (!aiMap) {
+        aiMap = new Map<string, boolean>();
+        this.hearsMeByHumanAndAi.set(row.humanId, aiMap);
+      }
+      if (!aiMap.has(row.aiId)) {
+        aiMap.set(row.aiId, row.hearsMe);
+      }
+    }
+
     this.director.setAiToAi(room.aiToAi.enabled);
   }
 
@@ -1624,6 +1640,9 @@ export class RoomSession {
     this.underrunWindow.reset();
     this.ladder.reset();
 
+    this.participantsById.clear();
+    this.aiParticipants.length = 0;
+    this.hearsMeByHumanAndAi.clear();
     this.closePlayers();
     this.devices.stop();
     await this.capture.stop();

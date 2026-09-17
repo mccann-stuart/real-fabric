@@ -465,16 +465,17 @@ describe("Real Fabric Worker", () => {
     });
     const created = (await createdResponse.json()) as CreateRoomResponse;
 
-    const response = await SELF.fetch(
+    // Test case 1: empty participantId
+    const response1 = await SELF.fetch(
       `https://real-fabric.test/api/rooms/${created.room.code}/events`,
       { headers: { upgrade: "websocket" } },
     );
-    expect(response.status).toBe(101);
-    const socket = response.webSocket as WebSocket;
-    socket.accept();
+    expect(response1.status).toBe(101);
+    const socket1 = response1.webSocket as WebSocket;
+    socket1.accept();
 
-    const closed = nextClose(socket);
-    socket.send(
+    const closed1 = nextClose(socket1);
+    socket1.send(
       JSON.stringify({
         type: "auth",
         participantId: "",
@@ -482,9 +483,53 @@ describe("Real Fabric Worker", () => {
       }),
     );
 
-    const closeEvent = await closed;
-    expect(closeEvent.code).toBe(4401);
-    expect(closeEvent.reason).toBe("participant control credentials required");
+    const closeEvent1 = await closed1;
+    expect(closeEvent1.code).toBe(4401);
+    expect(closeEvent1.reason).toBe("participant control credentials required");
+
+    // Test case 2: non-string participantId (e.g. number)
+    const response2 = await SELF.fetch(
+      `https://real-fabric.test/api/rooms/${created.room.code}/events`,
+      { headers: { upgrade: "websocket" } },
+    );
+    expect(response2.status).toBe(101);
+    const socket2 = response2.webSocket as WebSocket;
+    socket2.accept();
+
+    const closed2 = nextClose(socket2);
+    socket2.send(
+      JSON.stringify({
+        type: "auth",
+        participantId: 12345,
+        token: created.rejoinToken,
+      }),
+    );
+
+    const closeEvent2 = await closed2;
+    expect(closeEvent2.code).toBe(4401);
+    expect(closeEvent2.reason).toBe("participant control credentials required");
+
+    // Test case 3: oversized token (> 128 chars)
+    const response3 = await SELF.fetch(
+      `https://real-fabric.test/api/rooms/${created.room.code}/events`,
+      { headers: { upgrade: "websocket" } },
+    );
+    expect(response3.status).toBe(101);
+    const socket3 = response3.webSocket as WebSocket;
+    socket3.accept();
+
+    const closed3 = nextClose(socket3);
+    socket3.send(
+      JSON.stringify({
+        type: "auth",
+        participantId: created.participant.id,
+        token: "a".repeat(129),
+      }),
+    );
+
+    const closeEvent3 = await closed3;
+    expect(closeEvent3.code).toBe(4401);
+    expect(closeEvent3.reason).toBe("participant control credentials required");
   });
 
   it("closes WebSocket connections that send binary messages or invalid post-auth messages", async () => {

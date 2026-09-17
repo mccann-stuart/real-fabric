@@ -10,7 +10,6 @@ import {
   type FloorState,
   MAX_SIMULATED_PARTICIPANTS,
   type MoqDraft,
-  ONE_MINUTE_MS,
   type Participant,
   PINNED_MOQT_DRAFT,
   type PresenterConfiguration,
@@ -25,6 +24,7 @@ import {
 import { configFlag, configValue } from "./env";
 import { inspectRelayCredential } from "./relayCredential";
 import { roomError } from "./roomError";
+import { parseAuthPayload } from "./validation";
 
 /** The relay's operator-facing name, as the inspector and Gate 1 sheet quote it. */
 function endpointName(endpoint: string): string {
@@ -42,9 +42,12 @@ function endpointName(endpoint: string): string {
  * is preferable to serving a snapshot with missing columns.
  */
 const SCHEMA_VERSION = 3;
+const SCHEMA_TABLES = ["participants", "routing", "room_meta", "floor_queue"] as const;
+
 const CONTROL_AUTH_TIMEOUT_MS = 5_000;
 const CONTROL_AUTH_MESSAGE_MAX_LENGTH = 512;
-const RATE_LIMIT_WINDOW_MS = 10 * ONE_MINUTE_MS;
+const HTTP_SWITCHING_PROTOCOLS = 101;
+const RATE_LIMIT_WINDOW_MS = 10 * 60_000;
 
 interface ParticipantRow {
   [key: string]: SqlStorageValue;
@@ -530,12 +533,15 @@ export class Room extends DurableObject<Env> {
     } satisfies SocketAttachment);
     this.ctx.acceptWebSocket(server);
     await this.rescheduleAlarm();
-    return new Response(null, { status: 101, webSocket: client });
+    return new Response(null, { status: HTTP_SWITCHING_PROTOCOLS, webSocket: client });
   }
 
   async alarm(): Promise<void> {
     const now = Date.now();
-    for (const socket of this.ctx.getWebSockets()) {
+    const activeSockets = this.ctx.getWebSockets();
+    for (let i = 0; i < activeSockets.length; i++) {
+      const socket = activeSockets[i];
+      if (!socket) continue;
       const attachment = socket.deserializeAttachment() as SocketAttachment | null;
       if (
         attachment &&
@@ -552,7 +558,10 @@ export class Room extends DurableObject<Env> {
     // FR1: the hard stop ends the room and its AI sessions outright.
     if (meta.expires_at <= now || this.emptyExpiryDue(meta, now)) {
       this.broadcast({ type: "room_expired", at: now });
-      for (const socket of this.ctx.getWebSockets()) socket.close(4001, "room expired");
+      const sockets = this.ctx.getWebSockets();
+      for (let i = 0; i < sockets.length; i++) {
+        sockets[i]?.close(4001, "room expired");
+      }
       this.ctx.storage.sql.exec(
         "UPDATE participants SET state = 'left', reconnect_until = NULL, pipeline = CASE WHEN role = 'ai' THEN 'unavailable' ELSE pipeline END",
       );
@@ -593,29 +602,17 @@ export class Room extends DurableObject<Env> {
         return;
       }
 
-      if (
-        !payload ||
-        typeof payload !== "object" ||
-        (payload as Record<string, unknown>).type !== "auth"
-      ) {
-        socket.close(4401, "authentication required");
+      const parsedAuth = parseAuthPayload(payload);
+      if (!parsedAuth.success) {
+        if (parsedAuth.error === "authentication_required") {
+          socket.close(4401, "authentication required");
+        } else {
+          socket.close(4401, "participant control credentials required");
+        }
         return;
       }
 
-      const participantId = (payload as Record<string, unknown>).participantId;
-      const token = (payload as Record<string, unknown>).token;
-
-      if (
-        typeof participantId !== "string" ||
-        participantId.length === 0 ||
-        participantId.length > 64 ||
-        typeof token !== "string" ||
-        token.length === 0 ||
-        token.length > 128
-      ) {
-        socket.close(4401, "participant control credentials required");
-        return;
-      }
+      const { participantId, token } = parsedAuth.data;
 
       try {
         await this.assertParticipant(participantId, token);
@@ -626,8 +623,10 @@ export class Room extends DurableObject<Env> {
 
       // Security: Enforce 1 active control socket per participant (SEC-06 / CWE-770)
       // to prevent resource exhaustion from unbounded concurrent connections.
-      for (const existingSocket of this.ctx.getWebSockets()) {
-        if (existingSocket !== socket) {
+      const currentSockets = this.ctx.getWebSockets();
+      for (let i = 0; i < currentSockets.length; i++) {
+        const existingSocket = currentSockets[i];
+        if (existingSocket && existingSocket !== socket) {
           const existingAttachment =
             existingSocket.deserializeAttachment() as SocketAttachment | null;
           if (existingAttachment?.participantId === participantId) {
@@ -667,7 +666,7 @@ export class Room extends DurableObject<Env> {
         ?.version ?? 0;
     if (current === SCHEMA_VERSION) return;
 
-    for (const table of ["participants", "routing", "room_meta", "floor_queue"]) {
+    for (const table of SCHEMA_TABLES) {
       sql.exec(`DROP TABLE IF EXISTS ${table}`);
     }
     sql.exec(`
@@ -1237,7 +1236,10 @@ export class Room extends DurableObject<Env> {
       )
       .toArray()[0]?.reconnect_until;
     if (nextReconnect !== undefined) candidates.push(nextReconnect);
-    for (const socket of this.ctx.getWebSockets()) {
+    const sockets = this.ctx.getWebSockets();
+    for (let i = 0; i < sockets.length; i++) {
+      const socket = sockets[i];
+      if (!socket) continue;
       const attachment = socket.deserializeAttachment() as SocketAttachment | null;
       if (attachment && !attachment.participantId && attachment.authDeadline !== null) {
         candidates.push(attachment.authDeadline);
@@ -1248,7 +1250,10 @@ export class Room extends DurableObject<Env> {
 
   private broadcast(event: RoomEvent): void {
     const encoded = JSON.stringify(event);
-    for (const socket of this.ctx.getWebSockets()) {
+    const sockets = this.ctx.getWebSockets();
+    for (let i = 0; i < sockets.length; i++) {
+      const socket = sockets[i];
+      if (!socket) continue;
       const attachment = socket.deserializeAttachment() as SocketAttachment | null;
       if (attachment?.participantId) {
         socket.send(encoded);

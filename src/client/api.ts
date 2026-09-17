@@ -259,6 +259,8 @@ async function throwApiError(response: Response): Promise<never> {
   throw new ApiClientError(problem.error.code, problem.error.message, problem.error.correlationId);
 }
 
+const HTTP_STATUS_NO_CONTENT = 204;
+
 async function request<T>(input: string, init?: RequestInit): Promise<T> {
   const response = await fetch(input, {
     ...init,
@@ -267,6 +269,6 @@ async function request<T>(input: string, init?: RequestInit): Promise<T> {
   if (!response.ok) {
     await throwApiError(response);
   }
-  if (response.status === 204) return undefined as T;
+  if (response.status === HTTP_STATUS_NO_CONTENT) return undefined as T;
   return (await response.json()) as T;
 }

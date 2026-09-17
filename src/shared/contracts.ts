@@ -21,11 +21,11 @@ export function asMoqDraft(value: string): MoqDraft | null {
   return (MOQT_DRAFTS as readonly string[]).includes(value) ? (value as MoqDraft) : null;
 }
 
-export const ONE_MINUTE_MS = 60_000;
-export const REJOIN_WINDOW_MS = 1 * ONE_MINUTE_MS;
-export const ROOM_LIFETIME_MS = 20 * ONE_MINUTE_MS;
+const MINUTE_MS = 60_000;
+export const REJOIN_WINDOW_MS = MINUTE_MS;
+export const ROOM_LIFETIME_MS = 20 * MINUTE_MS;
 /** FR1: empty rooms expire well before the hard stop. */
-export const EMPTY_ROOM_EXPIRY_MS = 15 * ONE_MINUTE_MS;
+export const EMPTY_ROOM_EXPIRY_MS = 15 * MINUTE_MS;
 /** FR4: hard cap on consecutive AI-to-AI turns once a presenter enables them. */
 export const AI_TO_AI_TURN_CAP = 6;
 /** FR8: a routing change must take effect within this budget. */
