@@ -67,7 +67,9 @@ export class ForegroundAudioLifecycle {
   async releaseWakeLock(reason = "Audio is no longer in the foreground."): Promise<void> {
     const lock = this.wakeLock;
     this.wakeLock = null;
-    if (lock && !lock.released) await lock.release().catch(() => undefined);
+    if (lock && !lock.released) {
+      await lock.release().catch(() => undefined);
+    }
     if (this.environment.wakeLock) {
       this.update({ wakeLock: "released", wakeLockReason: reason });
     }
@@ -75,10 +77,9 @@ export class ForegroundAudioLifecycle {
 
   async dispose(): Promise<void> {
     await this.releaseWakeLock("The room session ended.");
-    if (this.listeningToAudioSession) {
-      this.environment.audioSession?.removeEventListener("statechange", this.onAudioSessionState);
-      this.listeningToAudioSession = false;
-    }
+    if (!this.listeningToAudioSession) return;
+    this.environment.audioSession?.removeEventListener("statechange", this.onAudioSessionState);
+    this.listeningToAudioSession = false;
   }
 
   private activateAudioSession(): void {
@@ -122,7 +123,8 @@ export class ForegroundAudioLifecycle {
       const sentinel = await wakeLock.request("screen");
       this.wakeLock = sentinel;
       sentinel.addEventListener("release", () => {
-        if (this.wakeLock === sentinel) this.wakeLock = null;
+        if (this.wakeLock !== sentinel) return;
+        this.wakeLock = null;
         this.update({
           wakeLock: "released",
           wakeLockReason: "The browser released the optional screen wake lock.",
