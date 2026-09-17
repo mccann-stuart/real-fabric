@@ -3,9 +3,11 @@ import {
   ApiClientError,
   clearSession,
   fetchHealth,
+  leaveRoom,
   loadSession,
   markActive,
   normaliseCode,
+  signalLeaveOnUnload,
   storeSession,
 } from "../src/client/api";
 
@@ -273,6 +275,90 @@ describe("client API session management", () => {
       clearSession("room-123!");
       expect(sessionStorage.getItem("real-fabric:ROOM123")).toBeNull();
       expect(loadSession("room-123")).toBeNull();
+    });
+  });
+
+  describe("leaveRoom", () => {
+    it("posts to leave endpoint with session credentials and returns room snapshot", async () => {
+      const mockSnapshot = { code: "ROOM123", participants: [] };
+      const mockFetch = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify(mockSnapshot), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+      vi.stubGlobal("fetch", mockFetch);
+
+      const session = {
+        code: "ROOM123",
+        participantId: "p-1",
+        rejoinToken: "token-abc",
+        displayName: "Alice",
+        storedAt: 123456789,
+      };
+
+      const snapshot = await leaveRoom(session);
+
+      expect(snapshot).toEqual(mockSnapshot);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const call = mockFetch.mock.calls[0];
+      if (!call) throw new Error("Expected fetch to be called");
+      const [url, init] = call as [string, RequestInit];
+      expect(url).toBe("/api/rooms/ROOM123/leave");
+      expect(init.method).toBe("POST");
+      expect(JSON.parse(init.body as string)).toEqual({
+        participantId: "p-1",
+        rejoinToken: "token-abc",
+      });
+    });
+  });
+
+  describe("signalLeaveOnUnload", () => {
+    it("triggers fire-and-forget fetch with keepalive: true and session credentials", () => {
+      const mockFetch = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+      vi.stubGlobal("fetch", mockFetch);
+
+      const session = {
+        code: "ROOM123",
+        participantId: "p-1",
+        rejoinToken: "token-abc",
+        displayName: "Alice",
+        storedAt: 123456789,
+      };
+
+      signalLeaveOnUnload(session);
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const call = mockFetch.mock.calls[0];
+      if (!call) throw new Error("Expected fetch to be called");
+      const [url, init] = call as [string, RequestInit];
+      expect(url).toBe("/api/rooms/ROOM123/leave");
+      expect(init.method).toBe("POST");
+      expect(init.keepalive).toBe(true);
+      expect(init.headers).toEqual({ "content-type": "application/json" });
+      expect(JSON.parse(init.body as string)).toEqual({
+        participantId: "p-1",
+        rejoinToken: "token-abc",
+      });
+    });
+
+    it("handles network error rejection gracefully without throwing", async () => {
+      const mockFetch = vi.fn().mockRejectedValue(new TypeError("Network error"));
+      vi.stubGlobal("fetch", mockFetch);
+
+      const session = {
+        code: "ROOM123",
+        participantId: "p-1",
+        rejoinToken: "token-abc",
+        displayName: "Alice",
+        storedAt: 123456789,
+      };
+
+      expect(() => signalLeaveOnUnload(session)).not.toThrow();
+
+      // Wait for promise microtask queue to ensure catch block is executed without unhandled rejection
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(mockFetch).toHaveBeenCalledTimes(1);
     });
   });
 });
