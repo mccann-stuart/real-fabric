@@ -737,7 +737,9 @@ export class MoqTransportAdapter {
     this.lastStatsRefreshAt = 0;
     const client = this.client;
     this.client = null;
-    for (const cancel of this.namespaceCancels.values()) await cancel().catch(() => undefined);
+    await Promise.all(
+      Array.from(this.namespaceCancels.values(), (cancel) => cancel().catch(() => undefined)),
+    );
     this.namespaceCancels.clear();
     for (const publication of this.publications.values()) {
       try {
