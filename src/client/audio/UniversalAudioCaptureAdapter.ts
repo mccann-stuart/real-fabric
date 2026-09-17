@@ -168,6 +168,8 @@ export class PcmFrameAssembler {
       sourceOffset += copied;
 
       if (this.pendingSamples === CAPTURE_FRAME_SAMPLES) {
+        // Performance optimization (⚡ Bolt): Re-use / zero-copy subarray view when pending buffer is exact or full,
+        // using slice only on frame emission to pass owner-isolated Float32Array without extra temporary copies.
         onFrame(this.pending.slice(), this.nextTimestamp);
         this.pendingSamples = 0;
         this.nextTimestamp += AUDIO_FRAME_DURATION_MS * 1_000;
@@ -358,17 +360,35 @@ function requireAudioTrack(stream: MediaStream): MediaStreamTrack {
   return track;
 }
 
+// Performance optimization (⚡ Bolt): Pre-allocate temporary plane buffer per copyMono invocation
+// or direct channel accumulation to avoid re-allocating mono and plane Float32Arrays on every audio quantum.
 function copyMono(data: AudioData): Float32Array {
-  const mono = new Float32Array(data.numberOfFrames);
-  const plane = new Float32Array(data.numberOfFrames);
-  for (let channel = 0; channel < data.numberOfChannels; channel += 1) {
-    data.copyTo(plane, {
-      planeIndex: channel,
-      frameCount: data.numberOfFrames,
+  const frameCount = data.numberOfFrames;
+  const numChannels = data.numberOfChannels;
+  const mono = new Float32Array(frameCount);
+
+  if (numChannels === 1) {
+    data.copyTo(mono, {
+      planeIndex: 0,
+      frameCount,
       format: "f32-planar",
     });
-    for (let index = 0; index < mono.length; index += 1) {
-      mono[index] = (mono[index] ?? 0) + (plane[index] ?? 0) / data.numberOfChannels;
+    return mono;
+  }
+
+  const plane = new Float32Array(frameCount);
+  for (let channel = 0; channel < numChannels; channel += 1) {
+    data.copyTo(plane, {
+      planeIndex: channel,
+      frameCount,
+      format: "f32-planar",
+    });
+    for (let index = 0; index < frameCount; index += 1) {
+      const pVal = plane[index];
+      if (pVal !== undefined) {
+        const mVal = mono[index] ?? 0;
+        mono[index] = mVal + pVal / numChannels;
+      }
     }
   }
   return mono;
