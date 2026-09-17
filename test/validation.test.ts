@@ -200,7 +200,7 @@ describe("request validation", () => {
     } satisfies Partial<HttpError>);
   });
 
-  it("throws 413 payload_too_large when Content-Length header exceeds limit", async () => {
+  it("parses valid body even when Content-Length header is spoofed to be large", async () => {
     const request = new Request("https://example.test", {
       method: "POST",
       headers: {
@@ -209,11 +209,8 @@ describe("request validation", () => {
       },
       body: JSON.stringify({ displayName: "Ada" }),
     });
-    await expect(readJsonObject(request)).rejects.toMatchObject({
-      status: 413,
-      code: "payload_too_large",
-      message: "Request body exceeds maximum allowed size.",
-    } satisfies Partial<HttpError>);
+    const body = await readJsonObject(request);
+    expect(requiredString(body, "displayName", 80)).toBe("Ada");
   });
 
   it("throws 413 payload_too_large when request body exceeds 32 KiB limit", async () => {

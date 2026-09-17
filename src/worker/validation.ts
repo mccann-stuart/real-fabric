@@ -17,15 +17,6 @@ export async function readJsonObject(request: Request): Promise<Record<string, u
     throw new HttpError(415, "unsupported_media_type", "Expected an application/json request.");
   }
 
-  // Security: Check Content-Length header to reject oversized payloads before buffering
-  const contentLengthHeader = request.headers.get("content-length");
-  if (contentLengthHeader) {
-    const contentLength = Number.parseInt(contentLengthHeader, 10);
-    if (!Number.isNaN(contentLength) && contentLength > MAX_BODY_BYTES) {
-      throw new HttpError(413, "payload_too_large", "Request body exceeds maximum allowed size.");
-    }
-  }
-
   let text: string;
   if (request.body) {
     const reader = request.body.getReader();
