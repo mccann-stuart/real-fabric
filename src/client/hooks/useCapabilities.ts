@@ -61,6 +61,10 @@ export interface EvaluatedCapabilities
   relayEndpoint: string | null;
 }
 
+const MICROPHONE_TEST_FFT_SIZE = 256;
+const AUDIO_PCM_BYTE_CENTER = 128;
+const MICROPHONE_TEST_PEAK_SCALE = 48;
+
 const INITIAL: CapabilityReport = {
   secureContext: "checking",
   webTransport: "checking",
@@ -320,16 +324,16 @@ export function useCapabilities() {
       audioContextRef.current = context;
       const source = context.createMediaStreamSource(stream);
       const analyser = context.createAnalyser();
-      analyser.fftSize = 256;
+      analyser.fftSize = MICROPHONE_TEST_FFT_SIZE;
       source.connect(analyser);
       const samples = new Uint8Array(analyser.frequencyBinCount);
       const tick = () => {
         analyser.getByteTimeDomainData(samples);
         const peak = samples.reduce(
-          (maximum, value) => Math.max(maximum, Math.abs(value - 128)),
+          (maximum, value) => Math.max(maximum, Math.abs(value - AUDIO_PCM_BYTE_CENTER)),
           0,
         );
-        setLevel(Math.min(1, peak / 48));
+        setLevel(Math.min(1, peak / MICROPHONE_TEST_PEAK_SCALE));
         animationRef.current = requestAnimationFrame(tick);
       };
       tick();
