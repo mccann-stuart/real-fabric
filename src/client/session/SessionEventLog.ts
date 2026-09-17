@@ -62,27 +62,41 @@ export class SessionEventLog {
     options: { subject?: string; simulated?: boolean; at?: number } = {},
   ): SessionEvent {
     const at = options.at ?? Date.now();
+    const subject = options.subject ?? null;
     const previous = this.events[0];
-    if (
-      kind === "failure" &&
-      previous?.kind === kind &&
-      previous.detail === detail &&
-      previous.subject === (options.subject ?? null) &&
-      at - previous.at < DUPLICATE_FAILURE_WINDOW_MS
-    ) {
+
+    if (this.isDuplicateFailure(previous, kind, detail, subject, at)) {
       return previous;
     }
+
     const event: SessionEvent = {
       id: crypto.randomUUID(),
       at,
       kind,
-      subject: options.subject ?? null,
+      subject,
       detail,
       simulated: options.simulated ?? false,
     };
     this.events = [event, ...this.events].slice(0, RETAINED_EVENTS);
     this.persist();
     return event;
+  }
+
+  private isDuplicateFailure(
+    previous: SessionEvent | undefined,
+    kind: SessionEventKind,
+    detail: string,
+    subject: string | null,
+    at: number,
+  ): previous is SessionEvent {
+    if (kind !== "failure" || !previous || previous.kind !== "failure") {
+      return false;
+    }
+    return (
+      previous.detail === detail &&
+      previous.subject === subject &&
+      at - previous.at < DUPLICATE_FAILURE_WINDOW_MS
+    );
   }
 
   list(): SessionEvent[] {
