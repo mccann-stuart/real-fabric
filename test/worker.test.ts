@@ -162,6 +162,21 @@ describe("Real Fabric Worker", () => {
     });
   });
 
+  it("handles unparseable relay endpoint URLs gracefully in Room.transport.endpointName", async () => {
+    const code = "UNPARSEABLETEST00001";
+    const rooms = env.ROOMS;
+    if (!rooms) throw new Error("The ROOMS binding is required.");
+    const stub = rooms.getByName(code);
+
+    await runInDurableObject(stub, async (instance, _state) => {
+      // Temporarily set an unparseable relay URL on the instance environment
+      (instance as unknown as { env: Record<string, string> }).env.MOQ_RELAY_URL =
+        "http://[invalid-host";
+      const snapshot = await instance.initialise(code, Date.now());
+      expect(snapshot.transport.endpointName).toBe("an unparseable endpoint");
+    });
+  });
+
   it("uses WebSockets for authenticated control messages only", async () => {
     const createdResponse = await SELF.fetch("https://real-fabric.test/api/rooms", {
       method: "POST",
