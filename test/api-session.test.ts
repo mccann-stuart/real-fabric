@@ -70,6 +70,27 @@ describe("client API session management", () => {
       expect(res).toEqual(mockData);
     });
 
+    it("adds a UUID correlation ID to outgoing requests", async () => {
+      const fetchMock = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      await fetchHealth();
+
+      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(fetchMock).toHaveBeenCalledWith("/api/health", {
+        headers: {
+          "x-correlation-id": expect.stringMatching(
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+          ),
+        },
+      });
+    });
+
     it("returns undefined on HTTP 204 No Content response", async () => {
       vi.stubGlobal(
         "fetch",
