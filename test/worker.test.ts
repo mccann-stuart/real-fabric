@@ -1,6 +1,7 @@
 import { env, runInDurableObject, SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import type { CreateRoomResponse, RoomSnapshot } from "../src/shared/contracts";
+import worker from "../src/worker/index";
 
 describe("Real Fabric Worker", () => {
   it("reports the room service without claiming transport verification", async () => {
@@ -19,6 +20,32 @@ describe("Real Fabric Worker", () => {
       routingEnforcement: "cooperative",
       discovery: "unknown",
     });
+  });
+
+  it("handles empty or invalid relay endpoints in endpointName helper", async () => {
+    const ctx = { waitUntil: () => {} } as unknown as ExecutionContext;
+
+    // Test with empty MOQ_RELAY_URL
+    const resEmpty = await worker.fetch(
+      new Request("https://real-fabric.test/api/health"),
+      { ...env, MOQ_RELAY_URL: "" as unknown as typeof env.MOQ_RELAY_URL },
+      ctx,
+    );
+    expect(resEmpty.status).toBe(200);
+    const jsonEmpty = (await resEmpty.json()) as Record<string, unknown>;
+    expect(jsonEmpty.relayEndpoint).toBeNull();
+    expect(jsonEmpty.relayEndpointName).toBeNull();
+
+    // Test with invalid MOQ_RELAY_URL URL string
+    const resInvalid = await worker.fetch(
+      new Request("https://real-fabric.test/api/health"),
+      { ...env, MOQ_RELAY_URL: "not-a-valid-url" as unknown as typeof env.MOQ_RELAY_URL },
+      ctx,
+    );
+    expect(resInvalid.status).toBe(200);
+    const jsonInvalid = (await resInvalid.json()) as Record<string, unknown>;
+    expect(jsonInvalid.relayEndpoint).toBe("not-a-valid-url");
+    expect(jsonInvalid.relayEndpointName).toBeNull();
   });
 
   it("creates a non-guessable room and rejoins the same participant", async () => {
