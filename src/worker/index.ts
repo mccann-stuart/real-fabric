@@ -25,10 +25,14 @@ export { Room };
 
 type RoomNamespace = DurableObjectNamespace<Room>;
 
+const HTTP_STATUS_OK = 200;
+
 const JSON_HEADERS = {
   "content-type": "application/json; charset=utf-8",
   "cache-control": "no-store",
 };
+
+const HTTP_SWITCHING_PROTOCOLS = 101;
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -51,7 +55,7 @@ export default {
         ),
       );
       // A WebSocket upgrade response owns a live socket and cannot be cloned to add headers.
-      if (response.status === 101) return response;
+      if (response.status === HTTP_SWITCHING_PROTOCOLS) return response;
       return withSecurityHeaders(response, correlationId);
     } catch (error) {
       // A refusal from the room service carries its own status, so an invalid
@@ -382,7 +386,7 @@ function roomCode(): string {
   return crypto.randomUUID().replaceAll("-", "").slice(0, 20).toUpperCase();
 }
 
-function json<T>(value: T, status = 200): Response {
+function json<T>(value: T, status = HTTP_STATUS_OK): Response {
   return new Response(JSON.stringify(value), { status, headers: JSON_HEADERS });
 }
 

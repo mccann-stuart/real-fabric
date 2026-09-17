@@ -43,6 +43,7 @@ function endpointName(endpoint: string): string {
 const SCHEMA_VERSION = 3;
 const CONTROL_AUTH_TIMEOUT_MS = 5_000;
 const CONTROL_AUTH_MESSAGE_MAX_LENGTH = 512;
+const HTTP_SWITCHING_PROTOCOLS = 101;
 
 interface ParticipantRow {
   [key: string]: SqlStorageValue;
@@ -528,7 +529,7 @@ export class Room extends DurableObject<Env> {
     } satisfies SocketAttachment);
     this.ctx.acceptWebSocket(server);
     await this.rescheduleAlarm();
-    return new Response(null, { status: 101, webSocket: client });
+    return new Response(null, { status: HTTP_SWITCHING_PROTOCOLS, webSocket: client });
   }
 
   async alarm(): Promise<void> {

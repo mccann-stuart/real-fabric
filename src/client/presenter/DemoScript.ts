@@ -97,7 +97,7 @@ export const DEMO_STEPS: DemoStep[] = [
     id: "barge_in",
     atSeconds: 105,
     action: "Presenter interrupts mid-answer",
-    mustBeVisible: "Silent within 300 ms; state shows Interrupted",
+    mustBeVisible: `Silent within ${BARGE_IN_BUDGET_MS} ms; state shows Interrupted`,
     verification: "automatic",
   },
   {
