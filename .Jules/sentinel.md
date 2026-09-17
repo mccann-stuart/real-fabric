@@ -7,3 +7,8 @@
 **Vulnerability:** Any human joining a room could execute global presenter and AI lifecycle controls (adding/removing AIs, forcing AI pipeline state, controlling floor queue, changing AI-to-AI modes, reshaping simulation) because `assertHuman` only checked role === 'human' (SEC-02 / CWE-862).
 **Learning:** Room creator identity was not bound to room state in the Durable Object. Frontend UI flags (`presenterMode`) alone are non-enforcing client-side controls.
 **Prevention:** Store `owner_id` on initial join in `room_meta` and enforce `assertPresenter` in Durable Object RPC methods for all presenter/AI management operations.
+
+## 2026-09-16 - Read-Only Session Capability Enforcement
+**Vulnerability:** Read-only / narrow clients attempted microphone capture and publication (`getUserMedia`) regardless of capability support or read-only settings (SEC-12 / CWE-359).
+**Learning:** Client-side UI read-only flags alone do not prevent lower-level audio capture controllers from calling `navigator.mediaDevices.getUserMedia` if previously authorized.
+**Prevention:** Inspect local capture capabilities (`inspectCaptureSupport()`) before initiating microphone capture in `RoomSession.ts` and transition unsupported/read-only clients directly to `listen_only`.

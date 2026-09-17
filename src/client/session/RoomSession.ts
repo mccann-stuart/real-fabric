@@ -45,6 +45,7 @@ import { MixerGraph } from "../audio/MixerGraph";
 import { PlaybackDeduplicator } from "../audio/PlaybackDeduplicator";
 import { TrackPlayer } from "../audio/TrackPlayer";
 import type { CapturePath } from "../audio/UniversalAudioCaptureAdapter";
+import { inspectCaptureSupport } from "../audio/UniversalAudioCaptureAdapter";
 import { SessionTelemetry } from "../telemetry/SessionTelemetry";
 import {
   isTrackNotFoundError,
@@ -752,6 +753,16 @@ export class RoomSession {
 
   private async startPublishingOnce(generation: number): Promise<void> {
     if (this.closed) return;
+
+    // Security (SEC-12 / CWE-359): Check capture capabilities before attempting microphone capture.
+    // Read-only or unsupported capture environments must not invoke getUserMedia or open microphone hardware.
+    const support = inspectCaptureSupport();
+    if (!support.available) {
+      this.enterListenOnly("microphone_no_device", support.reason);
+      this.emit();
+      return;
+    }
+
     const mixerStart = this.mixer.start();
     // Invoked before the first await so Safari sees getUserMedia in the same
     // transient user activation as the Start/Resume button.

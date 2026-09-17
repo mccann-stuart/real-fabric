@@ -154,4 +154,42 @@ describe("Capabilities Evaluation", () => {
     expect(result.relay).toBe("unavailable");
     expect(result.failure).toBe("udp_blocked");
   });
+
+  it("prevents microphone capture and getUserMedia invocation when capture support is unavailable (SEC-12)", async () => {
+    // Stub missing WebCodecs AudioData to make capture support unavailable
+    vi.stubGlobal("AudioData", undefined);
+
+    const getUserMediaMock = vi.fn();
+    vi.stubGlobal("navigator", {
+      mediaDevices: {
+        getUserMedia: getUserMediaMock,
+      },
+    });
+
+    const { RoomSession } = await import("../src/client/session/RoomSession");
+    const session = new RoomSession({
+      session: {
+        code: "AAAAAAAAAAAAAAAAAAAA",
+        participantId: "test-human",
+        rejoinToken: "rejoin-token",
+        displayName: "Test Human",
+        storedAt: 0,
+      },
+      presenterMode: false,
+    });
+
+    await session.startPublishing();
+
+    // Verify getUserMedia was never called
+    expect(getUserMediaMock).not.toHaveBeenCalled();
+
+    // Verify capture state is listen_only
+    const internal = session as unknown as {
+      captureMode: { name: string; failure?: string; reason?: string };
+    };
+    expect(internal.captureMode.name).toBe("listen_only");
+    expect(internal.captureMode.failure).toBe("microphone_no_device");
+
+    await session.close();
+  });
 });

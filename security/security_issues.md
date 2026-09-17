@@ -28,7 +28,7 @@ The line numbers and excerpts below are pinned to the scanned revision (`a784122
 | P2 | [SEC-09 — Unbounded playback deduplication](#sec-09--playback-deduplication-retains-unbounded-object-identifiers-per-group) | Medium | High | **Remediated** | Browser memory |
 | P2 | [SEC-10 — Unbounded media burst work](#sec-10--media-bursts-trigger-count-unbounded-sorting-and-decoder-submission) | Medium | High | **Remediated** | Browser CPU and decoder |
 | P2 | [SEC-11 — Unknown room probes create SQLite state](#sec-11--unknown-room-code-probes-initialise-persistent-sqlite-durable-objects) | Medium | High | **Remediated** | Cloudflare resource allocation |
-| P2 | [SEC-12 — Read-only clients start capture](#sec-12--narrow-read-only-clients-still-start-microphone-capture-and-publication) | Medium | Medium | **Open** | Microphone privacy |
+| P2 | [SEC-12 — Read-only clients start capture](#sec-12--narrow-read-only-clients-still-start-microphone-capture-and-publication) | Medium | Medium | **Remediated** | Microphone privacy |
 | P3 | [SEC-13 — Cross-participant activity spoofing](#sec-13--any-participant-can-spoof-another-participants-activity) | Low | High | **Open** | Presentation integrity |
 
 ## Decision principles
@@ -746,7 +746,7 @@ Trade-off: straightforward and revocable, but adds a shared coordination compone
 - **Rule:** `privacy.narrow-read-only-microphone`
 - **Taxonomy:** CWE-359
 - **Severity / confidence:** Medium / Medium
-- **Status:** Open; live narrow-browser publication has not been exercised.
+- **Status:** Remediated in codebase (16 September 2026). Capture support checked prior to `startPublishingOnce()` in `src/client/session/RoomSession.ts`. Unsupported/read-only capture environments enter `listen_only` mode without calling `getUserMedia` or initializing microphone capture hardware. Validated by automated tests in `test/capabilities.test.ts`.
 
 ### Evidence
 
@@ -878,6 +878,7 @@ Trade-off: produces shared authoritative recency, but depends on a trusted trans
 - **SEC-09:** Bounded playback deduplication to 100 objects per group (`MAXIMUM_OBJECTS_PER_GROUP`) in `PlaybackDeduplicator`.
 - **SEC-10:** Bounded jitter-buffer insertion and receive-side drain and decoder work against faulty or adversarial media bursts.
 - **SEC-11:** Deferred SQLite table migration on unknown room code probes in `Room` Durable Object until explicit room initialisation (`initialise()`), avoiding persistent SQLite allocation on uninitialised probes.
+- **SEC-12:** Enforced capture capability checks before starting microphone capture in `RoomSession.ts` to transition unsupported or read-only clients cleanly to `listen_only` without calling `getUserMedia`.
 - **Relay token validation:** Added fail-closed checks in Worker to reject expired or malformed relay JWTs.
 
 ### Next steps and vision statements (Remaining backlog order)
