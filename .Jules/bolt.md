@@ -14,6 +14,18 @@
 **Learning:** Updating audio meter levels at 50 Hz forces full React re-renders across the participant grid if audio level state is colocated with membership and routing state.
 **Action:** Memoize `ParticipantCard` and isolate real-time signal meter visual updates into dedicated sub-components so layout and routing components do not re-render.
 
+## 2026-09-17 - Batch Schema Migration DDL Execution
+**Learning:** Executing individual schema DDL statements sequentially through multiple SQLite round-trips adds unnecessary initialization latency during first room creation.
+**Action:** Consolidate initial DDL execution into a single batch transaction to initialize room schema structures atomically and minimize round-trip overhead.
+
+## 2026-09-17 - Batch WebSocket Termination in Durable Object
+**Learning:** Iterating and individually terminating superseded WebSockets during reconnects or room eviction produces redundant per-socket state updates.
+**Action:** Group and batch active WebSocket closures with uniform close codes, minimizing Durable Object task scheduling latency.
+
+## 2026-09-17 - Room Participant Context Caching in RoomSession
+**Learning:** Repeatedly filtering and mapping active room participants on high-frequency state updates degrades UI rendering and computation performance.
+**Action:** Cache normalized participant maps and derive state changes only when room snapshots indicate actual membership or routing mutation.
+
 ## Next steps and vision statements
 
 Forward-looking performance engineering and optimization targets:

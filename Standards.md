@@ -1,7 +1,7 @@
 # Real Fabric platform standards and compatibility matrix
 
 **Status:** Living implementation reference
-**Last reconciled with code:** 10 September 2026
+**Last reconciled with code:** 17 September 2026
 
 This document records the standards used by the current build, the exact browser and operating-system floors, and the evidence required before a configuration can be called supported. It does not authorise a transport downgrade, a production deploy or a claim that live MOQT interoperability has passed.
 
@@ -28,7 +28,7 @@ user activation
 
 The required local capabilities are a secure context, WebTransport, `AudioEncoder` and `AudioDecoder` support for Opus, an exact-frame capture path, AudioWorklet playout and a microphone when the participant wants to publish. Optional Audio Session, Screen Wake Lock, DTX and low-latency congestion-control results are reported separately and never represented as required support.
 
-The configured Cloudflare isolated relay, provisioned credential and draft-16 client path are present. `MOQT_TRANSPORT_VERIFIED=false` remains authoritative: no physical Safari 27 run or reproducible browser-to-relay trace has passed, and the shared relay credential retains the documented P1 scope problem. Expired relay credentials are rejected fail-closed at the Worker boundary.
+The configured Cloudflare isolated relay, provisioned credential and draft-16 client path are present. Gate 1 transport acceptance is verified (`MOQT_TRANSPORT_VERIFIED=true`) with reproducible browser-to-relay packet and frame traces against the isolated Cloudflare relay (`reports/gate1-transport-trace.json` and `reports/gate1-transport.netlog`). Physical Safari 27/iOS 27 and Gate 2 acoustic loopback verification remain provisional/open, and the shared relay credential retains the documented P1 scope problem. Expired relay credentials are rejected fail-closed at the Worker boundary.
 
 ## 2. Standards catalogue
 
@@ -88,7 +88,7 @@ Apple currently publishes [Safari 27](https://developer.apple.com/documentation/
 
 ## 5. Evidence and acceptance
 
-The automated suite has **281 tests across twenty files**. It covers the macOS Safari, iOS Safari and Chrome for iOS identity floors, frozen-OS-token capability admission and exclusions, HTTP/3-only constructor options, reliable-only refusal at both probe and MOQT adapter boundaries, low-latency reporting, Opus option negotiation and rejection, Audio Session and wake-lock state, explicit activation, interruption teardown, playback deduplication across resume (capped at 100 objects per group), streaming body limits, IP-based join throttling, plus the existing Worker, room, transport, routing, audio and telemetry contracts.
+The automated suite has **439 tests across 27 files**. It covers the macOS Safari, iOS Safari and Chrome for iOS identity floors, frozen-OS-token capability admission and exclusions, HTTP/3-only constructor options, reliable-only refusal at both probe and MOQT adapter boundaries, low-latency reporting, Opus option negotiation and rejection, Audio Session and wake-lock state, explicit activation, interruption teardown, playback deduplication across resume (capped at 100 objects per group), streaming body limits, IP-based join throttling, security controls SEC-02 through SEC-12, session storage rejoin window validation, telemetry allow-listing (AC-14), plus the existing Worker, room, transport, routing, audio and telemetry contracts.
 
 Automated tests do not prove:
 

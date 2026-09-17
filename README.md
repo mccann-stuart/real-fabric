@@ -6,19 +6,24 @@ Real Fabric is a conference-stage demonstration of humans and AI agents speaking
 
 ## Status
 
-The room service, presenter simulation, client media pipeline, protocol inspector, provisioned relay-credential handling, network probe and Milestone 2 audio resilience are implemented with 300 automated tests across twenty files. The Objects and Latency inspector tabs expose session-local object counts, rates, sizes, IDs and ages plus capture, codec callback, MOQT request, receiver-hold, output and optional WebTransport `getStats()` timings. Complete measurements are compared with the specification's budgets or targets; diagnostic-only and partial values are labelled `Reported · no gate`. The production Worker is configured with the isolated `real-fabric-production` relay. Gate 1 transport acceptance is verified and accepted with live Chromium NetLog packet and frame traces (`reports/gate1-transport.netlog` and `reports/gate1-transport-trace.json`). A live AI pipeline, measured capacity, acoustic loopback, the audible ten-minute run and two clean venue-network runs remain open.
+The room service, presenter simulation, client media pipeline, protocol inspector, provisioned relay-credential handling, network probe and Milestone 2 audio resilience are implemented with 439 automated tests across 27 files. The Objects and Latency inspector tabs expose session-local object counts, rates, sizes, IDs and ages plus capture, codec callback, MOQT request, receiver-hold, output and optional WebTransport `getStats()` timings. Complete measurements are compared with the specification's budgets or targets; diagnostic-only and partial values are labelled `Reported · no gate`. The production Worker is configured with the isolated `real-fabric-production` relay. Gate 1 transport acceptance is verified and accepted with live Chromium NetLog packet and frame traces (`reports/gate1-transport.netlog` and `reports/gate1-transport-trace.json`). A live AI pipeline, measured capacity, acoustic loopback, the audible ten-minute run and two clean venue-network runs remain open.
 
 ### Recent security hardening
 
-Recent security review findings have been remediated in code and validated with automated tests:
+Recent security review findings and test outcome-proof audit defects have been remediated in code and validated with automated tests:
 
+- **SEC-02 (Room authorization):** Room creator stored as `owner_id` in `room_meta`; `assertPresenter` in `src/worker/room.ts` enforces presenter-only authority for AI lifecycle, floor administration, and simulation controls.
 - **SEC-04 (Participant privacy):** Public room snapshots omit detailed routing choices; authenticated HTTP and WebSocket snapshots contain only the viewer's rows, while an anonymous aggregate preserves the required `Partial context` state.
 - **SEC-05 (Credential exposure):** Reusable participant credentials removed from the control-plane WebSocket query string; authentication is performed via an initial in-socket message.
 - **SEC-06 (Resource exhaustion):** Enforced at most one active control socket per participant in the Durable Object, terminating superseded connections cleanly.
 - **SEC-07 (Resource exhaustion):** Client IP-based rate limiting (`enforceJoinRateLimit`) throttles rapid room join bursts before participant allocation.
 - **SEC-08 (Resource exhaustion):** Bounded streaming JSON body reader enforces a 32 KiB payload ceiling (`MAX_BODY_BYTES`) before parsing.
 - **SEC-09 (Resource exhaustion):** Playback deduplication retains at most 100 object identifiers per second group (`MAXIMUM_OBJECTS_PER_GROUP`).
+- **SEC-10 (Resource exhaustion):** Bounded media bursts at jitter buffer insertion, stale-frame pruning, per-tick draining, and decoder submission queues.
+- **SEC-11 (Resource allocation):** Deferred DDL schema migration prevents unknown room probes from initialising persistent SQLite Durable Object storage.
+- **SEC-12 (Microphone privacy):** Explicit capture capability checks before starting microphone capture transition unsupported or read-only environments directly to `listen_only`.
 - **Relay credential validation:** Expired or malformed relay JWTs are rejected fail-closed at the Worker boundary before delivery to clients.
+- **Session storage and telemetry audit fixes (PR #202):** Normalised key unification across `storeSession`, `loadSession` and `clearSession`; `loadSession` client-side `REJOIN_WINDOW_MS` enforcement with fail-closed expiry; strict telemetry export field allow-listing (AC-14); and receive-side counter reporting distinguishing absence from unobserved state (H15).
 
 ### Known security issue — shared relay credential disclosure (P1)
 
@@ -118,12 +123,12 @@ These are read from Worker configuration rather than assumed, so recording a res
 
 | Variable | Current | Meaning |
 |---|---|---|
-| `MOQT_TRANSPORT_VERIFIED` | `false` | No browser-to-relay trace has passed. Gates the *claim*, not the *attempt*: the build connects for real and reports the result honestly either way. |
+| `MOQT_TRANSPORT_VERIFIED` | `true` | Gate 1 transport acceptance passed (10 September 2026) with reproducible browser-to-relay packet and frame trace over WebTransport and HTTP/3/QUIC against the isolated Cloudflare relay (`reports/gate1-transport-trace.json`, `reports/gate1-transport.netlog`). Physical Safari 27/iOS 27 and Gate 2 acoustic loopback acceptance remain open. |
 | `MOQ_ROUTING_ENFORCEMENT` | `cooperative` | The current Cloudflare token grants relay-level publish and subscribe operations rather than per-participant track scope, so inbound routing is labelled cooperative, not enforced (FR8). |
 | `MOQ_DISCOVERY` | `unknown` | The client probes `SUBSCRIBE_NAMESPACE` after live MOQT setup, records the observed result in the inspector, and uses control-channel discovery only if the request is refused (FR7). |
 | `MOQ_RELAY_TOKEN` | configured · expired · known P1 | Cloudflare-provisioned publish-and-subscribe JWT stored as a Worker secret. Create and join responses disclose a locally current token to browsers, and Cloudflare V1 cannot restrict it to one room or participant. The production token observed on 9 September 2026 expired at `2026-09-01T20:38:32Z` and requires an explicitly authorised out-of-band rotation. Rotation limits lifetime but does not fix the scope issue. |
 
-The production relay is `real-fabric-production` (`5266d64d9209fb9a8961f009745806ef`) with upstream fallback disabled. The endpoint remains `https://draft-16.cloudflare.mediaoverquic.com`; the relay token selects the isolated scope. `/api/health` reports the endpoint and a non-secret local credential status while `transportVerified` remains `false`. The in-room browser probe and token-backed MOQT trace remain outstanding.
+The production relay is `real-fabric-production` (`5266d64d9209fb9a8961f009745806ef`) with upstream fallback disabled. The endpoint remains `https://draft-16.cloudflare.mediaoverquic.com`; the relay token selects the isolated scope. `/api/health` reports the endpoint and a non-secret local credential status while `transportVerified` is `true` for draft 16. Gate 2 acoustic loopback, measured capacity, and physical device runs remain outstanding.
 
 ## Product invariants
 
@@ -149,7 +154,7 @@ The production relay is `real-fabric-production` (`5266d64d9209fb9a8961f00974580
 - `src/client/components`, `src/client/pages` — entry, pre-flight, room, inspector and presenter surfaces.
 - `public/audio/mixer-worklet.js` — the single mixing point, served same-origin so it satisfies the existing `script-src 'self'` policy.
 - `src/worker` — API routing, security headers, redacted structured logs, provisioned relay credential handling and the SQLite Durable Object room service.
-- `test` — 300 automated tests across twenty files covering the requirements above.
+- `test` — 439 automated tests across 27 files covering the requirements above.
 
 ## Local setup
 

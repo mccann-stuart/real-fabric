@@ -1,6 +1,6 @@
 # Milestone 3 — §11.4 Gate 3: multi-agent AI orchestration, floor control and fault isolation
 
-> **Status:** Forward-looking architectural roadmap (unbuilt). Milestones 1 and 2 are built in the current codebase (281 tests passing); Milestone 3 represents proposed next steps and vision targets.
+> **Status:** Forward-looking architectural roadmap (unbuilt). Milestones 1 and 2 are built in the current codebase (439 tests passing across 27 files); Milestone 3 represents proposed next steps and vision targets.
 
 ## Next steps and vision statements: Milestone 3 Implementation Blueprint
 

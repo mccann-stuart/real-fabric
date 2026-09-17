@@ -11,11 +11,11 @@ This document turns the completed Codex Security review into an implementation b
 - Validated findings: 13 — 2 high, 10 medium and 1 low
 - Canonical sources: [`report.md`](./report.md), [`findings.json`](./findings.json), [`coverage.json`](./coverage.json) and [`scan-manifest.json`](./scan-manifest.json)
 
-The line numbers and excerpts below are pinned to the scanned revision (`a784122aa18c6b7fbee1ae53d34b054a24d71f0b`). As reconciled on 16 September 2026, nine findings have been remediated in code and validated by automated tests (SEC-02, SEC-04–SEC-11), while four findings remain open as forward-looking engineering backlog items.
+The line numbers and excerpts below are pinned to the scanned revision (`a784122aa18c6b7fbee1ae53d34b054a24d71f0b`). As reconciled on 17 September 2026, ten findings have been remediated in code and validated by automated tests (SEC-02, SEC-04–SEC-12), while three findings remain open as forward-looking engineering backlog items (SEC-01, SEC-03, SEC-13).
 
 ## Priority summary
 
-| Priority | Issue | Severity | Confidence | Status (16 Sep 2026) | Primary boundary |
+| Priority | Issue | Severity | Confidence | Status (17 Sep 2026) | Primary boundary |
 | --- | --- | --- | --- | --- | --- |
 | P1 | [SEC-01 — Relay-wide browser bearer](#sec-01--room-creation-and-joining-disclose-a-relay-wide-publishsubscribe-bearer) | High | Medium | **Open (Known P1)** | Relay authorisation |
 | P1 | [SEC-02 — Any human receives presenter authority](#sec-02--any-joined-human-can-execute-presenter-and-ai-lifecycle-controls) | High | High | **Remediated** | Room authorisation |
