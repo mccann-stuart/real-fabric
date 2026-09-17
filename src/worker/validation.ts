@@ -145,3 +145,48 @@ export function requiredEnum<T extends string>(
   }
   return value as T;
 }
+
+export interface AuthPayload {
+  type: "auth";
+  participantId: string;
+  token: string;
+}
+
+export type AuthPayloadResult =
+  | { success: true; data: AuthPayload }
+  | { success: false; error: "authentication_required" | "invalid_credentials" };
+
+export function parseAuthPayload(payload: unknown): AuthPayloadResult {
+  if (
+    !payload ||
+    typeof payload !== "object" ||
+    Array.isArray(payload) ||
+    (payload as Record<string, unknown>).type !== "auth"
+  ) {
+    return { success: false, error: "authentication_required" };
+  }
+
+  const p = payload as Record<string, unknown>;
+  const participantId = p.participantId;
+  const token = p.token;
+
+  if (
+    typeof participantId !== "string" ||
+    participantId.length === 0 ||
+    participantId.length > 64 ||
+    typeof token !== "string" ||
+    token.length === 0 ||
+    token.length > 128
+  ) {
+    return { success: false, error: "invalid_credentials" };
+  }
+
+  return {
+    success: true,
+    data: {
+      type: "auth",
+      participantId,
+      token,
+    },
+  };
+}
