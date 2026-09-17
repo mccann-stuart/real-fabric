@@ -42,7 +42,6 @@ function endpointName(endpoint: string): string {
  * is preferable to serving a snapshot with missing columns.
  */
 const SCHEMA_VERSION = 3;
-const SCHEMA_TABLES = ["participants", "routing", "room_meta", "floor_queue"] as const;
 
 const CONTROL_AUTH_TIMEOUT_MS = 5_000;
 const CONTROL_AUTH_MESSAGE_MAX_LENGTH = 512;
@@ -665,10 +664,11 @@ export class Room extends DurableObject<Env> {
         ?.version ?? 0;
     if (current === SCHEMA_VERSION) return;
 
-    for (const table of SCHEMA_TABLES) {
-      sql.exec(`DROP TABLE IF EXISTS ${table}`);
-    }
     sql.exec(`
+      DROP TABLE IF EXISTS participants;
+      DROP TABLE IF EXISTS routing;
+      DROP TABLE IF EXISTS room_meta;
+      DROP TABLE IF EXISTS floor_queue;
       CREATE TABLE room_meta (
         singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
         code TEXT NOT NULL,
