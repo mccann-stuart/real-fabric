@@ -29,7 +29,7 @@ import {
   PINNED_MOQT_DRAFT,
   type RoomSnapshot,
 } from "../src/shared/contracts";
-import { type Measurement, measured } from "../src/shared/measurement";
+import { type Measurement, measured, notExposed } from "../src/shared/measurement";
 import { configuredRelayCredential, inspectRelayCredential } from "../src/worker/relayCredential";
 
 function relayToken(expiresAtSeconds: number): string {
@@ -463,6 +463,66 @@ describe("M1 — bounded session recovery", () => {
     expect(metrics.concealedFrames).toEqual(measured(0));
     expect(metrics.aggregateBufferMs).toEqual(measured(0));
     expect(metrics.meanObjectBytes.exposed).toBe(false);
+  });
+
+  it("reports Not exposed, not zero, when a subscribed track measures nothing", () => {
+    const session = new RoomSession({
+      session: {
+        code: "AAAAAAAAAAAAAAAAAAAA",
+        participantId: "participant-1",
+        rejoinToken: "rejoin-token",
+        displayName: "Test participant",
+        storedAt: 0,
+      },
+      presenterMode: false,
+      now: () => 3_000,
+    });
+    const internal = session as unknown as {
+      phase: SessionPhase;
+      startedAt: number;
+      transportReadyAt: number;
+      players: Map<
+        string,
+        { participantId: string; released: boolean; objectStats: () => unknown }
+      >;
+      metrics: () => import("../src/client/session/RoomSession").SessionMetrics;
+    };
+    internal.phase = { name: "live" };
+    internal.startedAt = 0;
+    internal.transportReadyAt = 1_000;
+    // A track is subscribed, but nothing about it is observable yet. Summing
+    // across it yields 0 — which would assert a measurement never taken.
+    const unobservable = notExposed("No object has arrived on this track yet.");
+    internal.players = new Map([
+      [
+        "participant-2",
+        {
+          participantId: "participant-2",
+          released: false,
+          objectStats: () => ({
+            objects: unobservable,
+            meanBytes: unobservable,
+            lateDrops: unobservable,
+            cancelledDrops: unobservable,
+            concealedFrames: unobservable,
+            comfortNoiseFrames: unobservable,
+            depthMs: unobservable,
+            targetMs: unobservable,
+            skewPpm: unobservable,
+            lastSequence: unobservable,
+            lastObjectAgeMs: unobservable,
+            receiverHoldMs: unobservable,
+            decodeCallbackMs: unobservable,
+          }),
+        },
+      ],
+    ]);
+
+    const metrics = internal.metrics();
+    expect(metrics.lateDrops.exposed).toBe(false);
+    expect(metrics.cancelledDrops.exposed).toBe(false);
+    expect(metrics.concealedFrames.exposed).toBe(false);
+    expect(metrics.comfortNoiseFrames.exposed).toBe(false);
   });
 
   it("waits for an explicit audio action before microphone or transport", async () => {
