@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  type HttpError,
+  HttpError,
   optionalString,
   readJsonObject,
   requiredBoolean,
@@ -182,76 +182,184 @@ describe("request validation", () => {
     });
   });
 
-  it("accepts JSON objects and trims required strings", async () => {
-    const request = new Request("https://example.test", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ displayName: "  Ada  " }),
+  describe("requiredString", () => {
+    it("returns trimmed string when field is a valid non-empty string within maximumLength", () => {
+      expect(requiredString({ name: "Ada" }, "name", 10)).toBe("Ada");
+      expect(requiredString({ name: "  Ada  " }, "name", 10)).toBe("Ada");
+      expect(requiredString({ name: "1234567890" }, "name", 10)).toBe("1234567890");
     });
-    const body = await readJsonObject(request);
-    expect(requiredString(body, "displayName", 80)).toBe("Ada");
+
+    it("throws HttpError 400 invalid_request when field is missing, non-string, empty, or whitespace-only", () => {
+      const invalidCases: Array<[string, Record<string, unknown>]> = [
+        ["missing field", {}],
+        ["undefined value", { name: undefined }],
+        ["null value", { name: null }],
+        ["empty string", { name: "" }],
+        ["whitespace string", { name: "   " }],
+        ["numeric value", { name: 123 }],
+        ["boolean value", { name: true }],
+        ["object value", { name: {} }],
+        ["array value", { name: ["Ada"] }],
+      ];
+
+      for (const [description, body] of invalidCases) {
+        expect(
+          () => requiredString(body, "name", 10),
+          `failed for case: ${description}`,
+        ).toThrowError();
+        try {
+          requiredString(body, "name", 10);
+        } catch (error) {
+          expect(error).toMatchObject({
+            status: 400,
+            code: "invalid_request",
+            message: "Field 'name' must be a non-empty string.",
+          } satisfies Partial<HttpError>);
+        }
+      }
+    });
+
+    it("throws HttpError 400 invalid_request when trimmed string length exceeds maximumLength", () => {
+      expect(() => requiredString({ name: "12345678901" }, "name", 10)).toThrowError();
+      try {
+        requiredString({ name: "12345678901" }, "name", 10);
+      } catch (error) {
+        expect(error).toMatchObject({
+          status: 400,
+          code: "invalid_request",
+          message: "Field 'name' must be at most 10 characters.",
+        } satisfies Partial<HttpError>);
+      }
+    });
   });
 
-  it("returns a typed error for a missing content type", async () => {
-    const request = new Request("https://example.test", { method: "POST", body: "{}" });
-    await expect(readJsonObject(request)).rejects.toMatchObject({
-      status: 415,
-      code: "unsupported_media_type",
-    } satisfies Partial<HttpError>);
-  });
-
-  it("parses valid body even when Content-Length header is spoofed to be large", async () => {
-    const request = new Request("https://example.test", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "content-length": "32769",
-      },
-      body: JSON.stringify({ displayName: "Ada" }),
-    });
-    const body = await readJsonObject(request);
-    expect(requiredString(body, "displayName", 80)).toBe("Ada");
-  });
-
-  it("throws 413 payload_too_large when request body exceeds 32 KiB limit", async () => {
-    const largeData = "a".repeat(32769);
-    const request = new Request("https://example.test", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ padding: largeData }),
-    });
-    await expect(readJsonObject(request)).rejects.toMatchObject({
-      status: 413,
-      code: "payload_too_large",
-      message: "Request body exceeds maximum allowed size.",
-    } satisfies Partial<HttpError>);
-  });
-
-  it("throws 413 payload_too_large when chunked stream body exceeds 32 KiB limit", async () => {
-    const encoder = new TextEncoder();
-    const chunk1 = encoder.encode(JSON.stringify({ padding: "a".repeat(20000) }).slice(0, 20000));
-    const chunk2 = encoder.encode(`${"a".repeat(15000)}"}`);
-
-    const stream = new ReadableStream<Uint8Array>({
-      start(controller) {
-        controller.enqueue(chunk1);
-        controller.enqueue(chunk2);
-        controller.close();
-      },
+  describe("readJsonObject", () => {
+    it("accepts JSON objects and trims required strings", async () => {
+      const request = new Request("https://example.test", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ displayName: "  Ada  " }),
+      });
+      const body = await readJsonObject(request);
+      expect(requiredString(body, "displayName", 80)).toBe("Ada");
     });
 
-    const request = new Request("https://example.test", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: stream,
-      // @ts-expect-error duplex is required by Node/undici Request init with ReadableStream
-      duplex: "half",
+    it("returns a typed error for a missing content type", async () => {
+      const request = new Request("https://example.test", { method: "POST", body: "{}" });
+      await expect(readJsonObject(request)).rejects.toMatchObject({
+        status: 415,
+        code: "unsupported_media_type",
+      } satisfies Partial<HttpError>);
     });
 
-    await expect(readJsonObject(request)).rejects.toMatchObject({
-      status: 413,
-      code: "payload_too_large",
-      message: "Request body exceeds maximum allowed size.",
-    } satisfies Partial<HttpError>);
+    it("parses valid body even when Content-Length header is spoofed to be large", async () => {
+      const request = new Request("https://example.test", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "content-length": "32769",
+        },
+        body: JSON.stringify({ displayName: "Ada" }),
+      });
+      const body = await readJsonObject(request);
+      expect(requiredString(body, "displayName", 80)).toBe("Ada");
+    });
+
+    it("throws 413 payload_too_large when request body exceeds 32 KiB limit without stream", async () => {
+      const largeData = "a".repeat(32769);
+      const request = new Request("https://example.test", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ padding: largeData }),
+      });
+      await expect(readJsonObject(request)).rejects.toMatchObject({
+        status: 413,
+        code: "payload_too_large",
+        message: "Request body exceeds maximum allowed size.",
+      } satisfies Partial<HttpError>);
+    });
+
+    it("throws 413 payload_too_large when chunked stream body exceeds 32 KiB limit", async () => {
+      const encoder = new TextEncoder();
+      const chunk1 = encoder.encode(JSON.stringify({ padding: "a".repeat(20000) }).slice(0, 20000));
+      const chunk2 = encoder.encode(`${"a".repeat(15000)}"}`);
+
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(chunk1);
+          controller.enqueue(chunk2);
+          controller.close();
+        },
+      });
+
+      const request = new Request("https://example.test", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: stream,
+        // @ts-expect-error duplex is required by Node/undici Request init with ReadableStream
+        duplex: "half",
+      });
+
+      await expect(readJsonObject(request)).rejects.toMatchObject({
+        status: 413,
+        code: "payload_too_large",
+        message: "Request body exceeds maximum allowed size.",
+      } satisfies Partial<HttpError>);
+    });
+
+    it("throws HttpError 400 invalid_json when request body is not valid JSON syntax", async () => {
+      const request = new Request("https://example.test", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{ invalid json ",
+      });
+      await expect(readJsonObject(request)).rejects.toMatchObject({
+        status: 400,
+        code: "invalid_json",
+        message: "The request body is not valid JSON.",
+      } satisfies Partial<HttpError>);
+    });
+
+    it("throws HttpError 400 invalid_json when request body parses to non-object JSON values", async () => {
+      const invalidJsonBodies = ["null", "123", '"hello"', "true", "false", "[1, 2, 3]"];
+
+      for (const bodyString of invalidJsonBodies) {
+        const request = new Request("https://example.test", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: bodyString,
+        });
+        await expect(readJsonObject(request)).rejects.toMatchObject({
+          status: 400,
+          code: "invalid_json",
+          message: "The request body is not valid JSON.",
+        } satisfies Partial<HttpError>);
+      }
+    });
+
+    it("re-throws HttpError unchanged if thrown inside try block during parsing", async () => {
+      // Test that when an HttpError is encountered (or thrown), readJsonObject rethrows it as-is
+      // e.g., if a custom error or HttpError happens in parsing
+      const request = new Request("https://example.test", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ displayName: "Ada" }),
+      });
+
+      // Simulate HttpError inside JSON.parse
+      const originalParse = JSON.parse;
+      try {
+        JSON.parse = () => {
+          throw new HttpError(403, "custom_forbidden", "Forbidden access");
+        };
+        await expect(readJsonObject(request)).rejects.toMatchObject({
+          status: 403,
+          code: "custom_forbidden",
+          message: "Forbidden access",
+        } satisfies Partial<HttpError>);
+      } finally {
+        JSON.parse = originalParse;
+      }
+    });
   });
 });
