@@ -26,18 +26,18 @@ export async function readJsonObject(request: Request): Promise<Record<string, u
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        if (value) {
-          totalBytes += value.byteLength;
-          if (totalBytes > MAX_BODY_BYTES) {
-            await reader.cancel("payload_too_large");
-            throw new HttpError(
-              413,
-              "payload_too_large",
-              "Request body exceeds maximum allowed size.",
-            );
-          }
-          chunks.push(value);
+        if (!value) continue;
+
+        totalBytes += value.byteLength;
+        if (totalBytes > MAX_BODY_BYTES) {
+          await reader.cancel("payload_too_large");
+          throw new HttpError(
+            413,
+            "payload_too_large",
+            "Request body exceeds maximum allowed size.",
+          );
         }
+        chunks.push(value);
       }
     } finally {
       reader.releaseLock();
