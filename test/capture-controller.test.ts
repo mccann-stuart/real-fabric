@@ -486,14 +486,55 @@ describe("CaptureController - error handling and boundary conditions", () => {
       expect(controller.capturePath().exposed).toBe(false);
     });
 
+    it.each(["closed", "unconfigured"] as const)(
+      "skips flush when the encoder is already %s",
+      async (state) => {
+        const controller = new CaptureController();
+        const stream = await controller.start({ onEncodedFrame: () => {} });
+        const internal = controller as unknown as {
+          encoder: MockAudioEncoder;
+        };
+        internal.encoder.state = state;
+        const flushSpy = vi.spyOn(internal.encoder, "flush");
+        const closeSpy = vi.spyOn(internal.encoder, "close");
+
+        await expect(controller.stop()).resolves.toBeUndefined();
+
+        expect(flushSpy).not.toHaveBeenCalled();
+        if (state === "closed") {
+          expect(closeSpy).not.toHaveBeenCalled();
+        } else {
+          expect(closeSpy).toHaveBeenCalledOnce();
+        }
+        const [track] = (stream as unknown as MockMediaStream).tracks;
+        expect(track?.stop).toHaveBeenCalledOnce();
+      },
+    );
+
     it("prevents re-entrant execution during stop() when already draining", async () => {
+      let adapterStopCalls = 0;
+      let releaseAdapterStop: (() => void) | undefined;
+      const adapterStopGate = new Promise<void>((resolve) => {
+        releaseAdapterStop = resolve;
+      });
+      mockAdapterStopImpl = async () => {
+        adapterStopCalls += 1;
+        await adapterStopGate;
+      };
+
       const controller = new CaptureController();
       await controller.start({ onEncodedFrame: () => {} });
 
       const stopPromise1 = controller.stop();
       const stopPromise2 = controller.stop();
 
-      await expect(Promise.all([stopPromise1, stopPromise2])).resolves.toBeDefined();
+      expect(adapterStopCalls).toBe(1);
+      releaseAdapterStop?.();
+      await expect(Promise.all([stopPromise1, stopPromise2])).resolves.toEqual([
+        undefined,
+        undefined,
+      ]);
+      expect(adapterStopCalls).toBe(1);
     });
 
     it("exposes latencyStats, speaking, and level getters", async () => {
