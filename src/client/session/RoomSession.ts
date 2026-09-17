@@ -457,8 +457,7 @@ export class RoomSession {
     this.clearSubscriptionRetryTimer();
     this.subscriptionsOpening.clear();
     this.subscriptionRetries.clear();
-    for (const player of this.players.values()) player.close();
-    this.players.clear();
+    this.closePlayers();
     this.lastDriftEventAt.clear();
     this.underrunWindow.reset();
     await Promise.allSettled([
@@ -670,8 +669,7 @@ export class RoomSession {
     // A dead subscription belongs to the dead MOQT session. Clearing these
     // lets the normal reconciliation path recreate each track idempotently
     // after the bounded reconnect succeeds.
-    for (const player of this.players.values()) player.close();
-    this.players.clear();
+    this.closePlayers();
     this.lastDriftEventAt.clear();
     this.underrunWindow.reset();
     this.subscriptionsOpening.clear();
@@ -1624,8 +1622,7 @@ export class RoomSession {
     this.underrunWindow.reset();
     this.ladder.reset();
 
-    for (const player of this.players.values()) player.close();
-    this.players.clear();
+    this.closePlayers();
     this.devices.stop();
     await this.capture.stop();
     this.publishing = false;
@@ -1638,6 +1635,12 @@ export class RoomSession {
     this.socket = null;
     this.log.record("close", "Capture stopped, publications and subscriptions closed.");
     this.setPhase({ name: "left" });
+  }
+
+  private closePlayers(): void {
+    if (this.players.size === 0) return;
+    for (const player of this.players.values()) player.close();
+    this.players.clear();
   }
 
   private setPhase(phase: SessionPhase): void {

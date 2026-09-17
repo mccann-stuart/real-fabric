@@ -1,4 +1,4 @@
-import { SELF } from "cloudflare:test";
+import { env, runInDurableObject, SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import {
   AI_TO_AI_TURN_CAP,
@@ -8,6 +8,8 @@ import {
   MAX_SIMULATED_PARTICIPANTS,
   type RoomSnapshot,
 } from "../src/shared/contracts";
+import type { Room } from "../src/worker/room";
+import { decodeRoomError } from "../src/worker/roomError";
 
 const BASE = "https://real-fabric.test";
 const TEST_RELAY_TOKEN =
@@ -579,5 +581,145 @@ describe("Presenter actions require credentials", () => {
       scriptedResponses: true,
     });
     expect(status).toBe(401);
+  });
+});
+
+describe("Room state and error paths (meta, assertActive, schema migration)", () => {
+  it("handles uninitialised room state gracefully in assertActive, getSnapshot, fetch, and alarm", async () => {
+    const rooms = env.ROOMS;
+    if (!rooms) throw new Error("The ROOMS binding is required.");
+    const stub = rooms.getByName("UNINITROOMCODE123456");
+
+    await runInDurableObject(stub, async (instance: Room) => {
+      const roomInstance = instance as unknown as {
+        assertActive(): void;
+      };
+
+      try {
+        roomInstance.assertActive();
+        expect.fail("Expected assertActive to throw");
+      } catch (err) {
+        expect(decodeRoomError(err as Error)).toEqual({
+          status: 404,
+          code: "room_not_found",
+          message: "Room is not initialised.",
+        });
+      }
+
+      const snapshot = await instance.getSnapshot();
+      expect(snapshot).toBeNull();
+
+      await expect(instance.alarm()).resolves.toBeUndefined();
+    });
+
+    const response = await SELF.fetch(
+      "https://real-fabric.test/api/rooms/UNINITROOMCODE123456/events",
+      { headers: { upgrade: "websocket" } },
+    );
+    expect(response.status).toBe(404);
+    expect(await response.text()).toBe("Room not found.");
+  });
+
+  it("handles catch block in meta() when SQL execution throws an exception", async () => {
+    const rooms = env.ROOMS;
+    if (!rooms) throw new Error("The ROOMS binding is required.");
+    const stub = rooms.getByName("SQL_ERROR_ROOM_CODE");
+
+    await runInDurableObject(stub, async (instance: Room, state: DurableObjectState) => {
+      // Create schema_meta with version = 3 so migration is not triggered,
+      // but leave room_meta missing so querying SELECT * FROM room_meta throws SQL error.
+      state.storage.sql.exec("CREATE TABLE schema_meta (version INTEGER NOT NULL)");
+      state.storage.sql.exec("INSERT INTO schema_meta (version) VALUES (3)");
+
+      const roomInstance = instance as unknown as {
+        meta(): unknown;
+        assertActive(): void;
+      };
+
+      expect(roomInstance.meta()).toBeUndefined();
+
+      try {
+        roomInstance.assertActive();
+        expect.fail("Expected assertActive to throw");
+      } catch (err) {
+        expect(decodeRoomError(err as Error)).toEqual({
+          status: 404,
+          code: "room_not_found",
+          message: "Room is not initialised.",
+        });
+      }
+    });
+  });
+
+  it("handles expired room state in assertActive, getSnapshot, fetch, and alarm", async () => {
+    const created = await createRoom();
+    const rooms = env.ROOMS;
+    if (!rooms) throw new Error("The ROOMS binding is required.");
+    const stub = rooms.getByName(created.room.code);
+
+    await runInDurableObject(stub, async (instance: Room, state: DurableObjectState) => {
+      // Force expires_at to past timestamp
+      state.storage.sql.exec(
+        "UPDATE room_meta SET expires_at = ? WHERE singleton = 1",
+        Date.now() - 1000,
+      );
+
+      const roomInstance = instance as unknown as {
+        assertActive(): void;
+      };
+
+      try {
+        roomInstance.assertActive();
+        expect.fail("Expected assertActive to throw");
+      } catch (err) {
+        expect(decodeRoomError(err as Error)).toEqual({
+          status: 410,
+          code: "room_expired",
+          message: "Room has expired.",
+        });
+      }
+
+      const snapshot = await instance.getSnapshot();
+      expect(snapshot).toBeNull();
+
+      await instance.alarm();
+
+      const metaRow = state.storage.sql
+        .exec<{ expires_at: number; floor_holder: string | null }>(
+          "SELECT expires_at, floor_holder FROM room_meta WHERE singleton = 1",
+        )
+        .toArray()[0];
+      expect(metaRow?.floor_holder).toBeNull();
+    });
+
+    const response = await SELF.fetch(
+      `https://real-fabric.test/api/rooms/${created.room.code}/events`,
+      { headers: { upgrade: "websocket" } },
+    );
+    expect(response.status).toBe(410);
+    expect(await response.text()).toBe("Room expired.");
+  });
+
+  it("triggers schema migration in meta() when schema_meta version is outdated", async () => {
+    const rooms = env.ROOMS;
+    if (!rooms) throw new Error("The ROOMS binding is required.");
+    const stub = rooms.getByName("MIGRATE_ROOM_CODE");
+
+    await runInDurableObject(stub, async (instance: Room, state: DurableObjectState) => {
+      state.storage.sql.exec("CREATE TABLE schema_meta (version INTEGER NOT NULL)");
+      state.storage.sql.exec("INSERT INTO schema_meta (version) VALUES (1)");
+
+      const roomInstance = instance as unknown as {
+        meta(): unknown;
+      };
+
+      const meta = roomInstance.meta();
+      expect(meta).toBeUndefined();
+
+      const currentVersion = state.storage.sql
+        .exec<{ version: number }>("SELECT version FROM schema_meta LIMIT 1")
+        .toArray()[0]?.version;
+      expect(currentVersion).toBe(3);
+    });
   });
 });

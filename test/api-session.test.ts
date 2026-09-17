@@ -1,12 +1,27 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ApiClientError,
+  addAi,
   clearSession,
+  configurePresenter,
+  createRoom,
   fetchHealth,
+  fetchRoom,
+  joinRoom,
+  leaveRoom,
   loadSession,
   markActive,
   normaliseCode,
+  recordAiToAiTurn,
+  releaseFloor,
+  removeAi,
+  requestFloor,
+  type StoredSession,
+  setAiPipeline,
+  setAiToAi,
+  signalLeaveOnUnload,
   storeSession,
+  updateRouting,
 } from "../src/client/api";
 
 class MemoryStorage implements Storage {
@@ -68,6 +83,27 @@ describe("client API session management", () => {
 
       const res = await fetchHealth();
       expect(res).toEqual(mockData);
+    });
+
+    it("adds a UUID correlation ID to outgoing requests", async () => {
+      const fetchMock = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      await fetchHealth();
+
+      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(fetchMock).toHaveBeenCalledWith("/api/health", {
+        headers: {
+          "x-correlation-id": expect.stringMatching(
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+          ),
+        },
+      });
     });
 
     it("returns undefined on HTTP 204 No Content response", async () => {
@@ -273,6 +309,301 @@ describe("client API session management", () => {
       clearSession("room-123!");
       expect(sessionStorage.getItem("real-fabric:ROOM123")).toBeNull();
       expect(loadSession("room-123")).toBeNull();
+    });
+  });
+
+  describe("API endpoint wrappers", () => {
+    const dummySession: StoredSession = {
+      code: "room-abc-123",
+      participantId: "p-100",
+      rejoinToken: "rt-200",
+      displayName: "Tester",
+      storedAt: 100000,
+    };
+
+    let fetchMock: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+      fetchMock = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+    });
+
+    it("createRoom sends POST /api/rooms with displayName and correlation header", async () => {
+      const res = await createRoom("Alice");
+      expect(res).toEqual({ ok: true });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [url, init] = (fetchMock.mock.calls[0] ?? []) as [
+        string,
+        RequestInit & { body: string },
+      ];
+      expect(url).toBe("/api/rooms");
+      expect(init.method).toBe("POST");
+      expect((init.headers as Record<string, string>)["content-type"]).toBe("application/json");
+      expect((init.headers as Record<string, string>)["x-correlation-id"]).toBeDefined();
+      expect(JSON.parse(init.body)).toEqual({ displayName: "Alice" });
+    });
+
+    it("joinRoom sends POST /api/rooms/:code/join without rejoinToken if not provided", async () => {
+      await joinRoom("room-abc-123", "Bob");
+      const [url, init] = (fetchMock.mock.calls[0] ?? []) as [
+        string,
+        RequestInit & { body: string },
+      ];
+      expect(url).toBe("/api/rooms/ROOMABC123/join");
+      expect(init.method).toBe("POST");
+      expect(JSON.parse(init.body)).toEqual({ displayName: "Bob" });
+    });
+
+    it("joinRoom sends POST /api/rooms/:code/join with rejoinToken if provided", async () => {
+      await joinRoom("room-abc-123", "Bob", "token-xyz");
+      const [url, init] = (fetchMock.mock.calls[0] ?? []) as [
+        string,
+        RequestInit & { body: string },
+      ];
+      expect(url).toBe("/api/rooms/ROOMABC123/join");
+      expect(init.method).toBe("POST");
+      expect(JSON.parse(init.body)).toEqual({
+        displayName: "Bob",
+        rejoinToken: "token-xyz",
+      });
+    });
+
+    it("fetchRoom sends POST /api/rooms/:code/snapshot with credentials", async () => {
+      await fetchRoom(dummySession);
+      const [url, init] = (fetchMock.mock.calls[0] ?? []) as [
+        string,
+        RequestInit & { body: string },
+      ];
+      expect(url).toBe("/api/rooms/ROOMABC123/snapshot");
+      expect(init.method).toBe("POST");
+      expect(JSON.parse(init.body)).toEqual({
+        participantId: "p-100",
+        rejoinToken: "rt-200",
+      });
+    });
+
+    it("leaveRoom sends POST /api/rooms/:code/leave with credentials", async () => {
+      await leaveRoom(dummySession);
+      const [url, init] = (fetchMock.mock.calls[0] ?? []) as [
+        string,
+        RequestInit & { body: string },
+      ];
+      expect(url).toBe("/api/rooms/room-abc-123/leave");
+      expect(init.method).toBe("POST");
+      expect(JSON.parse(init.body)).toEqual({
+        participantId: "p-100",
+        rejoinToken: "rt-200",
+      });
+    });
+
+    it("signalLeaveOnUnload sends fire-and-forget POST request with keepalive", async () => {
+      signalLeaveOnUnload(dummySession);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [url, init] = (fetchMock.mock.calls[0] ?? []) as [
+        string,
+        RequestInit & { body: string },
+      ];
+      expect(url).toBe("/api/rooms/room-abc-123/leave");
+      expect(init.method).toBe("POST");
+      expect(init.keepalive).toBe(true);
+      expect((init.headers as Record<string, string>)["content-type"]).toBe("application/json");
+      expect(JSON.parse(init.body)).toEqual({
+        participantId: "p-100",
+        rejoinToken: "rt-200",
+      });
+    });
+
+    it("signalLeaveOnUnload suppresses network rejection errors silently", async () => {
+      fetchMock.mockRejectedValue(new Error("Network disconnect on unload"));
+      expect(() => signalLeaveOnUnload(dummySession)).not.toThrow();
+    });
+
+    it("updateRouting sends POST /api/rooms/:code/routing with credentials and routing state", async () => {
+      await updateRouting(dummySession, "ai-1", true, false);
+      const [url, init] = (fetchMock.mock.calls[0] ?? []) as [
+        string,
+        RequestInit & { body: string },
+      ];
+      expect(url).toBe("/api/rooms/room-abc-123/routing");
+      expect(init.method).toBe("POST");
+      expect(JSON.parse(init.body)).toEqual({
+        participantId: "p-100",
+        rejoinToken: "rt-200",
+        aiId: "ai-1",
+        hearsMe: true,
+        iHearIt: false,
+      });
+    });
+
+    it("addAi sends POST /api/rooms/:code/ai with basic options", async () => {
+      await addAi(dummySession, "Assistant", { simulated: true });
+      const [url, init] = (fetchMock.mock.calls[0] ?? []) as [
+        string,
+        RequestInit & { body: string },
+      ];
+      expect(url).toBe("/api/rooms/room-abc-123/ai");
+      expect(init.method).toBe("POST");
+      expect(JSON.parse(init.body)).toEqual({
+        participantId: "p-100",
+        rejoinToken: "rt-200",
+        displayName: "Assistant",
+        simulated: true,
+      });
+    });
+
+    it("addAi sends POST /api/rooms/:code/ai with address and wakeName options", async () => {
+      await addAi(dummySession, "Assistant", {
+        address: "wss://ai.local",
+        wakeName: "Hey Bot",
+        simulated: false,
+      });
+      const [url, init] = (fetchMock.mock.calls[0] ?? []) as [
+        string,
+        RequestInit & { body: string },
+      ];
+      expect(url).toBe("/api/rooms/room-abc-123/ai");
+      expect(init.method).toBe("POST");
+      expect(JSON.parse(init.body)).toEqual({
+        participantId: "p-100",
+        rejoinToken: "rt-200",
+        displayName: "Assistant",
+        address: "wss://ai.local",
+        wakeName: "Hey Bot",
+        simulated: false,
+      });
+    });
+
+    it("removeAi sends DELETE /api/rooms/:code/ai with credentials and aiId", async () => {
+      await removeAi(dummySession, "ai-42");
+      const [url, init] = (fetchMock.mock.calls[0] ?? []) as [
+        string,
+        RequestInit & { body: string },
+      ];
+      expect(url).toBe("/api/rooms/room-abc-123/ai");
+      expect(init.method).toBe("DELETE");
+      expect(JSON.parse(init.body)).toEqual({
+        participantId: "p-100",
+        rejoinToken: "rt-200",
+        aiId: "ai-42",
+      });
+    });
+
+    it("setAiPipeline sends POST /api/rooms/:code/ai-pipeline with credentials and pipeline configuration", async () => {
+      const pipeline = "thinking" as const;
+      await setAiPipeline(dummySession, "ai-42", pipeline);
+      const [url, init] = (fetchMock.mock.calls[0] ?? []) as [
+        string,
+        RequestInit & { body: string },
+      ];
+      expect(url).toBe("/api/rooms/room-abc-123/ai-pipeline");
+      expect(init.method).toBe("POST");
+      expect(JSON.parse(init.body)).toEqual({
+        participantId: "p-100",
+        rejoinToken: "rt-200",
+        aiId: "ai-42",
+        pipeline,
+      });
+    });
+
+    it("requestFloor sends POST /api/rooms/:code/floor with operation request", async () => {
+      await requestFloor(dummySession, "ai-42");
+      const [url, init] = (fetchMock.mock.calls[0] ?? []) as [
+        string,
+        RequestInit & { body: string },
+      ];
+      expect(url).toBe("/api/rooms/room-abc-123/floor");
+      expect(init.method).toBe("POST");
+      expect(JSON.parse(init.body)).toEqual({
+        participantId: "p-100",
+        rejoinToken: "rt-200",
+        aiId: "ai-42",
+        operation: "request",
+      });
+    });
+
+    it("releaseFloor sends POST /api/rooms/:code/floor with operation release", async () => {
+      await releaseFloor(dummySession, "ai-42");
+      const [url, init] = (fetchMock.mock.calls[0] ?? []) as [
+        string,
+        RequestInit & { body: string },
+      ];
+      expect(url).toBe("/api/rooms/room-abc-123/floor");
+      expect(init.method).toBe("POST");
+      expect(JSON.parse(init.body)).toEqual({
+        participantId: "p-100",
+        rejoinToken: "rt-200",
+        aiId: "ai-42",
+        operation: "release",
+      });
+    });
+
+    it("setAiToAi sends POST /api/rooms/:code/ai-to-ai with specified operation", async () => {
+      await setAiToAi(dummySession, "enable");
+      const [url, init] = (fetchMock.mock.calls[0] ?? []) as [
+        string,
+        RequestInit & { body: string },
+      ];
+      expect(url).toBe("/api/rooms/room-abc-123/ai-to-ai");
+      expect(init.method).toBe("POST");
+      expect(JSON.parse(init.body)).toEqual({
+        participantId: "p-100",
+        rejoinToken: "rt-200",
+        operation: "enable",
+      });
+    });
+
+    it("recordAiToAiTurn sends POST /api/rooms/:code/ai-to-ai with turn operation", async () => {
+      await recordAiToAiTurn(dummySession);
+      const [url, init] = (fetchMock.mock.calls[0] ?? []) as [
+        string,
+        RequestInit & { body: string },
+      ];
+      expect(url).toBe("/api/rooms/room-abc-123/ai-to-ai");
+      expect(init.method).toBe("POST");
+      expect(JSON.parse(init.body)).toEqual({
+        participantId: "p-100",
+        rejoinToken: "rt-200",
+        operation: "turn",
+      });
+    });
+
+    it("configurePresenter sends POST /api/rooms/:code/presenter with presenter config", async () => {
+      const config = { simulatedHumans: 3, simulatedAis: 2, scriptedResponses: true };
+      await configurePresenter(dummySession, config);
+      const [url, init] = (fetchMock.mock.calls[0] ?? []) as [
+        string,
+        RequestInit & { body: string },
+      ];
+      expect(url).toBe("/api/rooms/room-abc-123/presenter");
+      expect(init.method).toBe("POST");
+      expect(JSON.parse(init.body)).toEqual({
+        participantId: "p-100",
+        rejoinToken: "rt-200",
+        simulatedHumans: 3,
+        simulatedAis: 2,
+        scriptedResponses: true,
+      });
+    });
+
+    it("markActive sends POST /api/rooms/:code/active with targetId and credentials", async () => {
+      fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
+      await markActive(dummySession, "target-participant-id");
+      const [url, init] = (fetchMock.mock.calls[0] ?? []) as [
+        string,
+        RequestInit & { body: string },
+      ];
+      expect(url).toBe("/api/rooms/room-abc-123/active");
+      expect(init.method).toBe("POST");
+      expect(JSON.parse(init.body)).toEqual({
+        participantId: "p-100",
+        rejoinToken: "rt-200",
+        targetId: "target-participant-id",
+      });
     });
   });
 });
