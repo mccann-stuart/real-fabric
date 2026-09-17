@@ -997,7 +997,9 @@ export class RoomSession {
     this.log.record(
       "routing_change",
       `hears me ${hearsMe ? "on" : "off"}, I hear it ${iHearIt ? "on" : "off"} in ${elapsed} ms${
-        elapsed > ROUTING_CHANGE_BUDGET_MS ? " (over the 500 ms budget)" : ""
+        elapsed > ROUTING_CHANGE_BUDGET_MS
+          ? ` (over the ${ROUTING_CHANGE_BUDGET_MS} ms budget)`
+          : ""
       }`,
       { subject: aiId },
     );
