@@ -8,7 +8,10 @@ import {
   UnderrunWindowCounter,
 } from "../src/client/audio/DegradationLadder";
 import { DriftEstimator, MAXIMUM_CORRECTION_RATIO } from "../src/client/audio/DriftEstimator";
+import { encodeAudioObject } from "../src/client/audio/frame";
+import { MixerGraph } from "../src/client/audio/MixerGraph";
 import { PlaybackDeduplicator } from "../src/client/audio/PlaybackDeduplicator";
+import { TrackPlayer } from "../src/client/audio/TrackPlayer";
 import { prioritiseFailureCodes } from "../src/client/components/FailureBanner";
 import { buildEdges } from "../src/client/components/SubscriptionGraph";
 import { DEMO_STEPS, DemoRunner, evaluateStep } from "../src/client/presenter/DemoScript";
@@ -19,6 +22,8 @@ import {
   representedFailureCodes,
 } from "../src/client/room/roomPresentation";
 import { ReconnectionPolicy, TERMINAL_AFTER_MS } from "../src/client/session/ReconnectionPolicy";
+import { RoomSession } from "../src/client/session/RoomSession";
+import type { SessionEvent } from "../src/client/session/SessionEventLog";
 import { SessionTelemetry } from "../src/client/telemetry/SessionTelemetry";
 import {
   AI_TO_AI_TURN_CAP,
@@ -89,6 +94,159 @@ function routing(overrides: Partial<RoutingPreference> = {}): RoutingPreference 
     ...overrides,
   };
 }
+
+/**
+ * H1 source scan.
+ *
+ * `node:fs` does resolve under the Workers pool, but it is backed by workerd's
+ * bundle filesystem rather than the checkout: `readdirSync("src/client/audio")`
+ * fails with ENOENT on `/bundle/src/client/audio`, and the working directory
+ * holds only the bundled entry point. Vite's raw glob is the equivalent that
+ * works here — it inlines the actual bytes of every matched file at transform
+ * time, so the assertions below read production source, not a description of
+ * it. The glob pattern and options must stay literal for Vite to see them.
+ */
+function sourceFiles(modules: Record<string, unknown>): Array<[path: string, source: string]> {
+  return Object.entries(modules)
+    .map(([path, source]): [string, string] => [path.replace(/^\.\.\//, ""), String(source)])
+    .sort(([left], [right]) => left.localeCompare(right));
+}
+
+/** The three directories that could plausibly carry audio. */
+const AUDIO_PATH_SOURCES: Array<[path: string, source: string]> = [
+  ...sourceFiles(
+    import.meta.glob("../src/client/audio/**/*.ts", {
+      query: "?raw",
+      eager: true,
+      import: "default",
+    }),
+  ),
+  ...sourceFiles(
+    import.meta.glob("../src/client/transport/**/*.ts", {
+      query: "?raw",
+      eager: true,
+      import: "default",
+    }),
+  ),
+  ...sourceFiles(
+    import.meta.glob("../src/client/ai/**/*.ts", {
+      query: "?raw",
+      eager: true,
+      import: "default",
+    }),
+  ),
+];
+
+const CLIENT_SOURCES = sourceFiles(
+  import.meta.glob("../src/client/**/*.{ts,tsx}", {
+    query: "?raw",
+    eager: true,
+    import: "default",
+  }),
+);
+
+function clientSource(path: string): string {
+  const found = CLIENT_SOURCES.find(([candidate]) => candidate === path);
+  if (!found) throw new Error(`${path} was not inlined by the source scan`);
+  return found[1];
+}
+
+/** The `{ … }` starting at `openIndex`, matched by depth. */
+function balancedBlock(source: string, openIndex: number): string {
+  let depth = 0;
+  for (let index = openIndex; index < source.length; index += 1) {
+    if (source[index] === "{") depth += 1;
+    else if (source[index] === "}") {
+      depth -= 1;
+      if (depth === 0) return source.slice(openIndex, index + 1);
+    }
+  }
+  throw new Error("The block beginning at the given index is unbalanced.");
+}
+
+function occurrences(pattern: RegExp): string[] {
+  return CLIENT_SOURCES.flatMap(([path, source]) =>
+    [...source.matchAll(pattern)].map((match) => `${path}: ${match[0]}`),
+  );
+}
+
+describe("H1 — no WebRTC or WebSocket audio fallback exists in the source", () => {
+  /** Construction, plus any bare reference to a peer-connection constructor. */
+  const FALLBACK_TRANSPORT = /\bnew\s+WebSocket\b|\b(?:webkit)?RTCPeerConnection\b/g;
+  const SOCKET_CONSTRUCTION = /\bnew\s+WebSocket\s*\(/g;
+  const PEER_CONNECTION = /\b(?:webkit)?RTCPeerConnection\b/g;
+
+  it("reads production source rather than a description of it", () => {
+    const paths = AUDIO_PATH_SOURCES.map(([path]) => path);
+    expect(paths).toContain("src/client/audio/AdaptiveJitterBuffer.ts");
+    expect(paths).toContain("src/client/audio/TrackPlayer.ts");
+    expect(paths).toContain("src/client/transport/MoqTransportAdapter.ts");
+    expect(paths).toContain("src/client/ai/AiDirector.ts");
+    expect(paths.length).toBeGreaterThanOrEqual(16);
+    expect(CLIENT_SOURCES.length).toBeGreaterThanOrEqual(paths.length);
+
+    // Were the glob to stop inlining bodies, every assertion below would pass
+    // vacuously over empty strings. Prove the bytes are really here.
+    for (const [path, source] of AUDIO_PATH_SOURCES) {
+      expect(source.length, path).toBeGreaterThan(0);
+    }
+    expect(clientSource("src/client/transport/MoqTransportAdapter.ts")).toContain("WebTransport");
+    expect(clientSource("src/client/ai/AiDirector.ts")).toContain("class AiDirector");
+  });
+
+  it("constructs no peer connection and no socket anywhere on the audio path", () => {
+    const offenders = AUDIO_PATH_SOURCES.flatMap(([path, source]) =>
+      [...source.matchAll(FALLBACK_TRANSPORT)].map((match) => `${path}: ${match[0]}`),
+    );
+    expect(offenders).toEqual([]);
+  });
+
+  it("permits exactly one socket in the whole client, and no peer connection at all", () => {
+    expect(occurrences(SOCKET_CONSTRUCTION)).toEqual([
+      "src/client/session/RoomSession.ts: new WebSocket(",
+    ]);
+    expect(occurrences(PEER_CONNECTION)).toEqual([]);
+  });
+
+  it("allow-lists that one socket only because it is the control plane", () => {
+    const roomSession = clientSource("src/client/session/RoomSession.ts");
+    const declaration = roomSession.indexOf("private openControlChannel(): void {");
+    expect(declaration).toBeGreaterThan(-1);
+    const body = balancedBlock(roomSession, roomSession.indexOf("{", declaration));
+
+    // The single socket lives inside openControlChannel, and its URL comes from
+    // the room service's control-plane events endpoint.
+    expect([...roomSession.matchAll(SOCKET_CONSTRUCTION)]).toHaveLength(1);
+    expect(body).toContain("new WebSocket(roomEventsUrl(this.options.session))");
+    expect(clientSource("src/client/api.ts")).toMatch(
+      /function roomEventsUrl\([\s\S]{0,200}\/api\/rooms\/\$\{session\.code\}\/events/,
+    );
+
+    // Everything it sends is a JSON control message, and nothing it touches is
+    // an audio primitive.
+    const sends = [...body.matchAll(/\.send\(\s*([\s\S]{0,15})/g)].map(
+      (match) => match[1]?.trimStart() ?? "",
+    );
+    expect(sends).toHaveLength(1);
+    expect(sends[0]?.startsWith("JSON.stringify(")).toBe(true);
+    expect(body).toContain('type: "auth"');
+    for (const audioToken of [
+      "audioTrack",
+      "encodeAudioObject",
+      "Uint8Array",
+      "ArrayBuffer",
+      "Blob",
+      "binaryType",
+      "payload",
+      "publish",
+    ]) {
+      expect(body.includes(audioToken), audioToken).toBe(false);
+    }
+
+    // Audio leaves by the MOQT adapter instead, on a different call entirely.
+    expect(roomSession).toMatch(/this\.transport\s*\.publish\(\s*audioTrack\(/);
+  });
+});
 
 describe("H2 — one independent track per participant, no mixing upstream", () => {
   it("addresses humans and AIs identically and opaquely", () => {
@@ -453,18 +611,94 @@ describe("H6 — barge-in inside 300 ms, including objects in flight", () => {
     expect(director.bargeIn(1_000)?.withinBudget).toBe(false);
   });
 
-  it("discards buffered and in-flight objects from the cancelled group", () => {
-    const buffer = new AdaptiveJitterBuffer<string>();
-    buffer.push({ sequence: 1, groupId: 7, receivedAt: 1_000, value: "a" });
-    buffer.push({ sequence: 2, groupId: 7, receivedAt: 1_020, value: "b" });
+  it("discards buffered and in-flight objects from the group the director opened", () => {
+    let clock = 1_000;
+    const director = new AiDirector({ now: () => clock });
+    director.register("a1");
+    director.address("a1", "h1");
+    const turn = director.speaking;
+    if (!turn) throw new Error("Addressing the AI did not open a turn.");
 
-    expect(buffer.cancelGroup(7)).toBe(2);
-    expect(buffer.depth).toBe(0);
+    // A second, unrelated turn: its objects must survive the cancellation.
+    const survivingGroup = turn.groupId + 1;
+    const buffer = new AdaptiveJitterBuffer<string>();
+    buffer.push({ sequence: 1, groupId: turn.groupId, receivedAt: 1_000, value: "a" });
+    buffer.push({ sequence: 2, groupId: turn.groupId, receivedAt: 1_020, value: "b" });
+    buffer.push({ sequence: 3, groupId: survivingGroup, receivedAt: 1_040, value: "other" });
+    expect(buffer.depth).toBe(3);
+
+    clock = 1_180;
+    const stopped = director.bargeIn(1_000);
+    if (!stopped) throw new Error("No AI was speaking when the human onset arrived.");
+    // The group id is the director's, not a literal chosen by this test.
+    expect(stopped.groupId).toBe(turn.groupId);
+
+    expect(buffer.cancelGroup(stopped.groupId)).toBe(2);
+    expect(buffer.depth).toBe(1);
 
     // The object that was already on the wire when the group closed.
-    buffer.push({ sequence: 3, groupId: 7, receivedAt: 1_040, value: "late" });
-    expect(buffer.depth).toBe(0);
+    buffer.push({ sequence: 4, groupId: stopped.groupId, receivedAt: 1_060, value: "late" });
+    expect(buffer.depth).toBe(1);
     expect(buffer.cancelledDrops).toBe(3);
+
+    // The other turn is untouched and still playable.
+    buffer.push({ sequence: 5, groupId: survivingGroup, receivedAt: 1_080, value: "other-late" });
+    expect(buffer.depth).toBe(2);
+    expect(buffer.pull(2_000)).toBe("other");
+    expect(buffer.pull(2_000)).toBe("other-late");
+  });
+
+  it("cancels the speaking AI's group from the session's own human onset", async () => {
+    const session = new RoomSession({
+      session: {
+        code: "ROOM",
+        participantId: "h1",
+        rejoinToken: "token",
+        displayName: "Human 1",
+        storedAt: 0,
+      },
+      presenterMode: false,
+    });
+    const internal = session as unknown as {
+      players: Map<string, TrackPlayer>;
+      log: { list(): SessionEvent[] };
+      onHumanOnset(): Promise<void>;
+    };
+
+    const player = new TrackPlayer("ai-1", "audio/ai-1", new MixerGraph());
+    internal.players.set("ai-1", player);
+    const object = (sequence: number) =>
+      encodeAudioObject(
+        { participantHash: 1, mediaTimestamp: sequence * 20, sequence },
+        new Uint8Array([1, 2, 3]),
+      );
+
+    session.director.register("ai-1");
+    session.director.address("ai-1", "h1");
+    const turn = session.director.speaking;
+    if (!turn) throw new Error("Addressing the AI did not open a turn.");
+
+    const survivingGroup = turn.groupId + 1;
+    player.accept(turn.groupId, 1, object(1), 1_000);
+    player.accept(turn.groupId, 2, object(2), 1_020);
+    player.accept(survivingGroup, 3, object(3), 1_040);
+    expect(player.buffer.depth).toBe(3);
+
+    await internal.onHumanOnset();
+
+    // Two queued objects from the AI's own group went; the other group stayed.
+    expect(player.buffer.depth).toBe(1);
+    expect(session.director.speaking).toBeNull();
+    const bargeIn = internal.log.list().find((event) => event.kind === "barge_in");
+    expect(bargeIn?.subject).toBe("ai-1");
+    expect(bargeIn?.detail).toContain("2 queued objects discarded");
+
+    // An object still on the wire from the cancelled group is refused too.
+    player.accept(turn.groupId, 4, object(4), 1_060);
+    expect(player.buffer.depth).toBe(1);
+    // ...while the untouched group keeps accepting.
+    player.accept(survivingGroup, 5, object(5), 1_080);
+    expect(player.buffer.depth).toBe(2);
   });
 });
 
@@ -780,7 +1014,14 @@ describe("H9 — per-AI routing, honestly labelled", () => {
   });
 });
 
-describe("H12 — reload reclaims identity without duplicate playback", () => {
+/**
+ * The "without duplicate playback" half of H12. The identity reclaim itself and
+ * its 60-second window are proved where they are implemented: client-side in
+ * `test/session-storage.test.ts` ("reclaims inside the 60-second window and
+ * refuses one millisecond past it") and Worker-side in `test/room-service.test.ts`.
+ * Naming this block after the reclaim would have claimed coverage it never had.
+ */
+describe("H12 — a reload replays nothing that already played", () => {
   it("refuses an object it has already played", () => {
     const dedupe = new PlaybackDeduplicator();
     expect(dedupe.accept("p1", 4, 9)).toBe(true);
@@ -803,6 +1044,36 @@ describe("H12 — reload reclaims identity without duplicate playback", () => {
     // Any object past 100 in the same group is rejected to bound memory (CWE-770 / SEC-09)
     expect(dedupe.accept("p1", 1, 100)).toBe(false);
     expect(dedupe.accept("p1", 1, 101)).toBe(false);
+  });
+
+  it("keeps a resubscription from the played position out of the player", () => {
+    // A reload resubscribes at a position the previous page already played.
+    // The deduplicator has to be wired into the receive path for that to matter.
+    const dedupe = new PlaybackDeduplicator();
+    const object = (sequence: number) =>
+      encodeAudioObject(
+        { participantHash: 1, mediaTimestamp: sequence * 20, sequence },
+        new Uint8Array([1, 2, 3]),
+      );
+    const player = () => new TrackPlayer("p1", "audio/p1", new MixerGraph(), {}, dedupe);
+
+    const before = player();
+    for (let sequence = 0; sequence < 5; sequence += 1) {
+      before.accept(1, sequence, object(sequence), sequence * 20);
+    }
+    expect(before.buffer.depth).toBe(5);
+
+    // The page reloads. The new player shares the session's deduplicator, and
+    // the relay redelivers the retained group from its start.
+    const after = player();
+    for (let sequence = 0; sequence < 5; sequence += 1) {
+      after.accept(1, sequence, object(sequence), 500 + sequence * 20);
+    }
+    expect(after.buffer.depth).toBe(0);
+
+    // Only what genuinely follows the played position reaches the buffer.
+    after.accept(1, 5, object(5), 620);
+    expect(after.buffer.depth).toBe(1);
   });
 });
 
@@ -889,6 +1160,8 @@ describe("H14 — every §10 failure has its own non-silent state", () => {
     }
   });
 
+  // These two assert the copy only. That the build has no such path is proved
+  // by the H1 source scan above; a regex over failure strings cannot see it.
   it("never offers another transport as the recovery for a transport failure", () => {
     for (const state of allFailureStates()) {
       const copy = `${state.behaviour} ${state.recovery}`;
@@ -984,23 +1257,68 @@ describe("AC-14 — the sanitised export carries no identifying content", () => 
 });
 
 describe("FR5 — bounded reconnection with a terminal state", () => {
-  it("backs off with jitter and gives up after 30 seconds", () => {
-    const policy = new ReconnectionPolicy(() => 0.5);
-    const first = policy.next(0);
-    expect(first.retry).toBe(true);
-    expect(first.delayMs).toBeGreaterThan(0);
+  /** With `random` stubbed the whole series is deterministic, so assert it. */
+  function series(random: () => number, attempts = 6): number[] {
+    const policy = new ReconnectionPolicy(random);
+    return Array.from({ length: attempts }, () => policy.next(0).delayMs);
+  }
 
-    const second = policy.next(1_000);
-    expect(second.delayMs).toBeGreaterThanOrEqual(first.delayMs);
-
-    expect(policy.next(TERMINAL_AFTER_MS + 1).retry).toBe(false);
+  it("draws from the whole backoff window, doubling to a 5 s ceiling", () => {
+    // §11.2 full jitter: the delay is `exponential × random()`. At the top of
+    // the window the draw contributes its full share, which is also the plain
+    // exponential schedule: 400 ms doubling until the 5 s bound.
+    expect(series(() => 1)).toEqual([400, 800, 1_600, 3_200, 5_000, 5_000]);
   });
 
-  it("bounds the delay rather than backing off forever", () => {
+  it("scales the delay by the draw rather than jittering only the top half", () => {
+    // Half the window is half of each step, all the way up — a narrower band
+    // (say `exponential/2 + exponential/2 × random()`) could not produce this,
+    // and removing jitter entirely would repeat the full-window series above.
+    expect(series(() => 0.5)).toEqual([200, 400, 800, 1_600, 2_500, 2_500]);
+    expect(series(() => 0.25)).toEqual([100, 200, 400, 800, 1_250, 1_250]);
+  });
+
+  it("floors an unlucky draw at 50 ms instead of a tight retry loop", () => {
+    // The bottom of a full-jitter window is zero. MINIMUM_DELAY_MS lifts it.
+    expect(series(() => 0)).toEqual([50, 50, 50, 50, 50, 50]);
+    // The floor applies to the delay, not to the schedule: attempts still climb.
+    const policy = new ReconnectionPolicy(() => 0);
+    expect([policy.next(0).attempt, policy.next(0).attempt]).toEqual([1, 2]);
+  });
+
+  it("returns the exact terminal decision once the 30-second window closes", () => {
     const policy = new ReconnectionPolicy(() => 1);
-    let last = 0;
-    for (let attempt = 0; attempt < 12; attempt += 1) last = policy.next(attempt * 100).delayMs;
-    expect(last).toBeLessThanOrEqual(5_000);
+    expect(policy.next(0)).toEqual({ retry: true, attempt: 1, delayMs: 400, elapsedMs: 0 });
+    expect(policy.next(10_000)).toEqual({
+      retry: true,
+      attempt: 2,
+      delayMs: 800,
+      elapsedMs: 10_000,
+    });
+
+    // The deadline is inclusive, and terminal costs no further attempt.
+    expect(policy.next(TERMINAL_AFTER_MS)).toEqual({
+      retry: false,
+      attempt: 2,
+      delayMs: 0,
+      elapsedMs: TERMINAL_AFTER_MS,
+    });
+    expect(policy.next(TERMINAL_AFTER_MS + 5_000)).toEqual({
+      retry: false,
+      attempt: 2,
+      delayMs: 0,
+      elapsedMs: TERMINAL_AFTER_MS + 5_000,
+    });
+    expect(policy.attempts).toBe(2);
+
+    // The presenter's manual retry re-opens the window from scratch.
+    policy.reset();
+    expect(policy.next(TERMINAL_AFTER_MS)).toEqual({
+      retry: true,
+      attempt: 1,
+      delayMs: 400,
+      elapsedMs: 0,
+    });
   });
 });
 

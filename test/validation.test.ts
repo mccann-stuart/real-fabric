@@ -232,6 +232,32 @@ describe("request validation", () => {
         } satisfies Partial<HttpError>);
       }
     });
+
+    // The length budget is spent on the value that is actually stored, so the
+    // measurement has to happen after trimming rather than on the raw input.
+    it("measures the trimmed value, accepting input whose raw length exceeds maximumLength", () => {
+      const surroundedByWhitespace = "   Ada   ";
+      expect(surroundedByWhitespace.length).toBe(9);
+      expect(surroundedByWhitespace.trim().length).toBe(3);
+
+      expect(requiredString({ name: surroundedByWhitespace }, "name", 5)).toBe("Ada");
+    });
+
+    it("measures the trimmed value, rejecting input whose trimmed length exceeds maximumLength", () => {
+      const surroundedByWhitespace = "  123456  ";
+      expect(surroundedByWhitespace.trim().length).toBe(6);
+
+      expect(() => requiredString({ name: surroundedByWhitespace }, "name", 5)).toThrowError();
+      try {
+        requiredString({ name: surroundedByWhitespace }, "name", 5);
+      } catch (error) {
+        expect(error).toMatchObject({
+          status: 400,
+          code: "invalid_request",
+          message: "Field 'name' must be at most 5 characters.",
+        } satisfies Partial<HttpError>);
+      }
+    });
   });
 
   describe("parseAuthPayload", () => {
@@ -310,6 +336,32 @@ describe("request validation", () => {
       } satisfies Partial<HttpError>);
     });
 
+    // The header is matched case-insensitively and as a substring, so a real
+    // browser's `Application/JSON; charset=utf-8` has to be admitted.
+    it("accepts a mixed-case content type carrying a charset parameter", async () => {
+      const request = new Request("https://example.test", {
+        method: "POST",
+        headers: { "content-type": "Application/JSON; charset=utf-8" },
+        body: JSON.stringify({ displayName: "Ada" }),
+      });
+      expect(request.headers.get("content-type")).toBe("Application/JSON; charset=utf-8");
+
+      await expect(readJsonObject(request)).resolves.toEqual({ displayName: "Ada" });
+    });
+
+    it("throws 415 unsupported_media_type for a present but non-JSON content type", async () => {
+      const request = new Request("https://example.test", {
+        method: "POST",
+        headers: { "content-type": "text/plain" },
+        body: JSON.stringify({ displayName: "Ada" }),
+      });
+      await expect(readJsonObject(request)).rejects.toMatchObject({
+        status: 415,
+        code: "unsupported_media_type",
+        message: "Expected an application/json request.",
+      } satisfies Partial<HttpError>);
+    });
+
     it("parses valid body even when Content-Length header is spoofed to be large", async () => {
       const request = new Request("https://example.test", {
         method: "POST",
@@ -321,6 +373,49 @@ describe("request validation", () => {
       });
       const body = await readJsonObject(request);
       expect(requiredString(body, "displayName", 80)).toBe("Ada");
+    });
+
+    // Pins the 32 KiB cap itself rather than merely "something large is
+    // rejected": 32768 must survive and 32769 must not, so neither a lower nor
+    // a higher constant can satisfy both cases.
+    const MAX_BODY_BYTES = 32 * 1024;
+    const JSON_ENVELOPE_BYTES = '{"padding":""}'.length;
+
+    function jsonBodyOfExactByteLength(totalBytes: number): string {
+      const body = `{"padding":"${"a".repeat(totalBytes - JSON_ENVELOPE_BYTES)}"}`;
+      expect(new TextEncoder().encode(body).byteLength).toBe(totalBytes);
+      return body;
+    }
+
+    it("accepts a body of exactly 32768 bytes, the last byte inside the 32 KiB cap", async () => {
+      const body = jsonBodyOfExactByteLength(MAX_BODY_BYTES);
+      expect(new TextEncoder().encode(body).byteLength).toBe(32768);
+
+      const request = new Request("https://example.test", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body,
+      });
+
+      const parsed = await readJsonObject(request);
+      expect(parsed.padding).toBe("a".repeat(MAX_BODY_BYTES - JSON_ENVELOPE_BYTES));
+    });
+
+    it("throws 413 payload_too_large for a body of exactly 32769 bytes, one past the cap", async () => {
+      const body = jsonBodyOfExactByteLength(MAX_BODY_BYTES + 1);
+      expect(new TextEncoder().encode(body).byteLength).toBe(32769);
+
+      const request = new Request("https://example.test", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body,
+      });
+
+      await expect(readJsonObject(request)).rejects.toMatchObject({
+        status: 413,
+        code: "payload_too_large",
+        message: "Request body exceeds maximum allowed size.",
+      } satisfies Partial<HttpError>);
     });
 
     it("throws 413 payload_too_large when request body exceeds 32 KiB limit without stream", async () => {

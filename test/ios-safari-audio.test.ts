@@ -401,6 +401,32 @@ describe("HTTP/3-only and Opus capability probes", () => {
       expect(probe.dtx.exposed).toBe(false);
       expect(probe.application).toEqual({ exposed: true, value: "voip" });
       expect(probe.signal.exposed).toBe(false);
+
+      // Standards §1: this fake echoes back whatever it is handed, so the
+      // 48 kHz / mono / 32 kbit headline is only proven by inspecting what
+      // production actually asked for, plus the config it hands the encoder.
+      const requested = audioEncoder.isConfigSupported.mock.calls;
+      expect(requested.length).toBeGreaterThan(0);
+      expect(requested[0]?.[0]).toEqual({
+        codec: "opus",
+        sampleRate: 48_000,
+        numberOfChannels: 1,
+        bitrate: 32_000,
+      });
+      for (const [candidate] of requested) {
+        expect(candidate).toMatchObject({
+          codec: "opus",
+          sampleRate: 48_000,
+          numberOfChannels: 1,
+          bitrate: 32_000,
+        });
+      }
+      expect(probe.configuration).toMatchObject({
+        codec: "opus",
+        sampleRate: 48_000,
+        numberOfChannels: 1,
+        bitrate: 32_000,
+      });
     } finally {
       if (original) Object.defineProperty(globalThis, "AudioEncoder", original);
       else Reflect.deleteProperty(globalThis, "AudioEncoder");
@@ -512,6 +538,14 @@ describe("HTTP/3-only and Opus capability probes", () => {
       expect(probe.supported).toBe(true);
       expect(probe.configuration?.opus?.frameDuration).toBeUndefined();
       expect(probe.configuration?.opus?.application).toBe("voip");
+
+      // FR3: this encoder echoes every option it is offered, so the options it
+      // accepts must be retained and reported. Dropping the retention of DTX or
+      // the voice signal hint has to fail here, not pass quietly.
+      expect(probe.dtx).toEqual({ exposed: true, value: true });
+      expect(probe.configuration?.opus?.usedtx).toBe(true);
+      expect(probe.signal).toEqual({ exposed: true, value: "voice" });
+      expect(probe.configuration?.opus?.signal).toBe("voice");
     } finally {
       if (originalEncoder) Object.defineProperty(globalThis, "AudioEncoder", originalEncoder);
       else Reflect.deleteProperty(globalThis, "AudioEncoder");
