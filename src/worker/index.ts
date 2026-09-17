@@ -25,6 +25,8 @@ export { Room };
 
 type RoomNamespace = DurableObjectNamespace<Room>;
 
+const HTTP_STATUS_OK = 200;
+
 const JSON_HEADERS = {
   "content-type": "application/json; charset=utf-8",
   "cache-control": "no-store",
@@ -382,7 +384,7 @@ function roomCode(): string {
   return crypto.randomUUID().replaceAll("-", "").slice(0, 20).toUpperCase();
 }
 
-function json<T>(value: T, status = 200): Response {
+function json<T>(value: T, status = HTTP_STATUS_OK): Response {
   return new Response(JSON.stringify(value), { status, headers: JSON_HEADERS });
 }
 
