@@ -435,6 +435,89 @@ describe("HTTP/3-only and Opus capability probes", () => {
     }
   });
 
+  it("handles missing AudioEncoder global gracefully", async () => {
+    const originalEncoder = Object.getOwnPropertyDescriptor(globalThis, "AudioEncoder");
+    Reflect.deleteProperty(globalThis, "AudioEncoder");
+    try {
+      const probe = await probeOpusEncoderSupport();
+      expect(probe).toEqual({
+        supported: false,
+        configuration: null,
+        dtx: { exposed: false, reason: "WebCodecs AudioEncoder is not exposed by this browser." },
+        application: {
+          exposed: false,
+          reason: "WebCodecs AudioEncoder is not exposed by this browser.",
+        },
+        signal: {
+          exposed: false,
+          reason: "WebCodecs AudioEncoder is not exposed by this browser.",
+        },
+        reason: "WebCodecs AudioEncoder is not exposed by this browser.",
+      });
+    } finally {
+      if (originalEncoder) Object.defineProperty(globalThis, "AudioEncoder", originalEncoder);
+    }
+  });
+
+  it("handles exceptions thrown during Opus encoder probe gracefully", async () => {
+    const originalEncoder = Object.getOwnPropertyDescriptor(globalThis, "AudioEncoder");
+    const audioEncoder = Object.assign(function AudioEncoder() {}, {
+      isConfigSupported: vi.fn().mockRejectedValue(new Error("Evaluation error")),
+    });
+    Object.defineProperty(globalThis, "AudioEncoder", {
+      configurable: true,
+      value: audioEncoder,
+    });
+    try {
+      const probe = await probeOpusEncoderSupport();
+      expect(probe).toEqual({
+        supported: false,
+        configuration: null,
+        dtx: {
+          exposed: false,
+          reason: "This browser could not evaluate the required Opus encoder configuration.",
+        },
+        application: {
+          exposed: false,
+          reason: "This browser could not evaluate the required Opus encoder configuration.",
+        },
+        signal: {
+          exposed: false,
+          reason: "This browser could not evaluate the required Opus encoder configuration.",
+        },
+        reason: "This browser could not evaluate the required Opus encoder configuration.",
+      });
+    } finally {
+      if (originalEncoder) Object.defineProperty(globalThis, "AudioEncoder", originalEncoder);
+      else Reflect.deleteProperty(globalThis, "AudioEncoder");
+    }
+  });
+
+  it("handles exceptions in acceptsOpusOption when testing optional Opus properties", async () => {
+    const originalEncoder = Object.getOwnPropertyDescriptor(globalThis, "AudioEncoder");
+    const audioEncoder = Object.assign(function AudioEncoder() {}, {
+      isConfigSupported: vi.fn().mockImplementation(async (candidate: OpusEncoderConfig) => {
+        if (candidate.opus?.frameDuration) {
+          throw new Error("Frame duration option threw");
+        }
+        return { supported: true, config: candidate };
+      }),
+    });
+    Object.defineProperty(globalThis, "AudioEncoder", {
+      configurable: true,
+      value: audioEncoder,
+    });
+    try {
+      const probe = await probeOpusEncoderSupport();
+      expect(probe.supported).toBe(true);
+      expect(probe.configuration?.opus?.frameDuration).toBeUndefined();
+      expect(probe.configuration?.opus?.application).toBe("voip");
+    } finally {
+      if (originalEncoder) Object.defineProperty(globalThis, "AudioEncoder", originalEncoder);
+      else Reflect.deleteProperty(globalThis, "AudioEncoder");
+    }
+  });
+
   it("retains playback deduplication when a player is rebuilt for resume", () => {
     const dedupe = new PlaybackDeduplicator();
     const mixer = {
