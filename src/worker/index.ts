@@ -30,6 +30,8 @@ const JSON_HEADERS = {
   "cache-control": "no-store",
 };
 
+const HTTP_SWITCHING_PROTOCOLS = 101;
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const correlationId = request.headers.get("x-correlation-id") ?? crypto.randomUUID();
@@ -51,7 +53,7 @@ export default {
         ),
       );
       // A WebSocket upgrade response owns a live socket and cannot be cloned to add headers.
-      if (response.status === 101) return response;
+      if (response.status === HTTP_SWITCHING_PROTOCOLS) return response;
       return withSecurityHeaders(response, correlationId);
     } catch (error) {
       // A refusal from the room service carries its own status, so an invalid
