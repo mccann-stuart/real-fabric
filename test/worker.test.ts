@@ -257,6 +257,134 @@ describe("Real Fabric Worker", () => {
     expect((await closed).code).toBe(4401);
   });
 
+  it("closes WebSocket connections that send invalid JSON as authentication message", async () => {
+    const createdResponse = await SELF.fetch("https://real-fabric.test/api/rooms", {
+      method: "POST",
+      headers: { "content-type": "application/json", "cf-connecting-ip": "192.0.2.147" },
+      body: JSON.stringify({ displayName: "Ada" }),
+    });
+    const created = (await createdResponse.json()) as CreateRoomResponse;
+
+    const response = await SELF.fetch(
+      `https://real-fabric.test/api/rooms/${created.room.code}/events`,
+      { headers: { upgrade: "websocket" } },
+    );
+    expect(response.status).toBe(101);
+    const socket = response.webSocket as WebSocket;
+    socket.accept();
+
+    const closed = nextClose(socket);
+    socket.send("this is invalid json {{{");
+
+    const closeEvent = await closed;
+    expect(closeEvent.code).toBe(4401);
+    expect(closeEvent.reason).toBe("invalid authentication message");
+  });
+
+  it("closes WebSocket connections that send non-auth payload type", async () => {
+    const createdResponse = await SELF.fetch("https://real-fabric.test/api/rooms", {
+      method: "POST",
+      headers: { "content-type": "application/json", "cf-connecting-ip": "192.0.2.148" },
+      body: JSON.stringify({ displayName: "Ada" }),
+    });
+    const created = (await createdResponse.json()) as CreateRoomResponse;
+
+    const response = await SELF.fetch(
+      `https://real-fabric.test/api/rooms/${created.room.code}/events`,
+      { headers: { upgrade: "websocket" } },
+    );
+    expect(response.status).toBe(101);
+    const socket = response.webSocket as WebSocket;
+    socket.accept();
+
+    const closed = nextClose(socket);
+    socket.send(JSON.stringify({ type: "other_event" }));
+
+    const closeEvent = await closed;
+    expect(closeEvent.code).toBe(4401);
+    expect(closeEvent.reason).toBe("authentication required");
+  });
+
+  it("closes WebSocket connections that send invalid credential types or lengths", async () => {
+    const createdResponse = await SELF.fetch("https://real-fabric.test/api/rooms", {
+      method: "POST",
+      headers: { "content-type": "application/json", "cf-connecting-ip": "192.0.2.149" },
+      body: JSON.stringify({ displayName: "Ada" }),
+    });
+    const created = (await createdResponse.json()) as CreateRoomResponse;
+
+    const response = await SELF.fetch(
+      `https://real-fabric.test/api/rooms/${created.room.code}/events`,
+      { headers: { upgrade: "websocket" } },
+    );
+    expect(response.status).toBe(101);
+    const socket = response.webSocket as WebSocket;
+    socket.accept();
+
+    const closed = nextClose(socket);
+    socket.send(
+      JSON.stringify({
+        type: "auth",
+        participantId: "",
+        token: created.rejoinToken,
+      }),
+    );
+
+    const closeEvent = await closed;
+    expect(closeEvent.code).toBe(4401);
+    expect(closeEvent.reason).toBe("participant control credentials required");
+  });
+
+  it("closes WebSocket connections that send binary messages or invalid post-auth messages", async () => {
+    const createdResponse = await SELF.fetch("https://real-fabric.test/api/rooms", {
+      method: "POST",
+      headers: { "content-type": "application/json", "cf-connecting-ip": "192.0.2.150" },
+      body: JSON.stringify({ displayName: "Ada" }),
+    });
+    const created = (await createdResponse.json()) as CreateRoomResponse;
+
+    // Test 1: Binary message before auth
+    const response1 = await SELF.fetch(
+      `https://real-fabric.test/api/rooms/${created.room.code}/events`,
+      { headers: { upgrade: "websocket" } },
+    );
+    expect(response1.status).toBe(101);
+    const socket1 = response1.webSocket as WebSocket;
+    socket1.accept();
+
+    const closed1 = nextClose(socket1);
+    socket1.send(new Uint8Array([1, 2, 3, 4]));
+
+    const closeEvent1 = await closed1;
+    expect(closeEvent1.code).toBe(1003);
+    expect(closeEvent1.reason).toBe("control messages only");
+
+    // Test 2: Invalid non-ping message post auth
+    const response2 = await SELF.fetch(
+      `https://real-fabric.test/api/rooms/${created.room.code}/events`,
+      { headers: { upgrade: "websocket" } },
+    );
+    expect(response2.status).toBe(101);
+    const socket2 = response2.webSocket as WebSocket;
+    socket2.accept();
+
+    socket2.send(
+      JSON.stringify({
+        type: "auth",
+        participantId: created.participant.id,
+        token: created.rejoinToken,
+      }),
+    );
+    await nextMessage(socket2);
+
+    const closed2 = nextClose(socket2);
+    socket2.send("unrecognized_command");
+
+    const closeEvent2 = await closed2;
+    expect(closeEvent2.code).toBe(1003);
+    expect(closeEvent2.reason).toBe("control messages only");
+  });
+
   it("does not accept legacy query-string credentials", async () => {
     const createdResponse = await SELF.fetch("https://real-fabric.test/api/rooms", {
       method: "POST",
