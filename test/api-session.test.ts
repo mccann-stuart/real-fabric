@@ -1,5 +1,13 @@
-import { beforeEach, describe, expect, it } from "vitest";
-import { clearSession, loadSession, normaliseCode, storeSession } from "../src/client/api";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  ApiClientError,
+  clearSession,
+  fetchHealth,
+  loadSession,
+  markActive,
+  normaliseCode,
+  storeSession,
+} from "../src/client/api";
 
 class MemoryStorage implements Storage {
   private store = new Map<string, string>();
@@ -39,6 +47,108 @@ if (typeof globalThis.sessionStorage === "undefined") {
 describe("client API session management", () => {
   beforeEach(() => {
     sessionStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  describe("request error handling", () => {
+    it("returns parsed JSON on successful response", async () => {
+      const mockData = { ok: true, service: "test" };
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(
+          new Response(JSON.stringify(mockData), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+        ),
+      );
+
+      const res = await fetchHealth();
+      expect(res).toEqual(mockData);
+    });
+
+    it("returns undefined on HTTP 204 No Content response", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(
+          new Response(null, {
+            status: 204,
+          }),
+        ),
+      );
+
+      const session = {
+        code: "ROOM123",
+        participantId: "p-1",
+        rejoinToken: "token-abc",
+        displayName: "Alice",
+        storedAt: 123456789,
+      };
+
+      const res = await markActive(session, "p-1");
+      expect(res).toBeUndefined();
+    });
+
+    it("throws ApiClientError with problem details when response is not ok and JSON is valid ApiError", async () => {
+      const apiError = {
+        error: {
+          code: "room_not_found",
+          message: "Room was not found",
+          correlationId: "corr-123",
+        },
+      };
+
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockImplementation(() =>
+          Promise.resolve(
+            new Response(JSON.stringify(apiError), {
+              status: 404,
+              headers: { "content-type": "application/json" },
+            }),
+          ),
+        ),
+      );
+
+      try {
+        await fetchHealth();
+        expect.unreachable("fetchHealth should have thrown");
+      } catch (err) {
+        expect(err).toBeInstanceOf(ApiClientError);
+        const clientErr = err as ApiClientError;
+        expect(clientErr.code).toBe("room_not_found");
+        expect(clientErr.message).toBe("Room was not found");
+        expect(clientErr.correlationId).toBe("corr-123");
+      }
+    });
+
+    it("throws ApiClientError fallback when response is not ok and JSON parsing fails", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockImplementation(() =>
+          Promise.resolve(
+            new Response("Internal Server Error HTML or text", {
+              status: 500,
+              headers: { "content-type": "text/html" },
+            }),
+          ),
+        ),
+      );
+
+      try {
+        await fetchHealth();
+        expect.unreachable("fetchHealth should have thrown");
+      } catch (err) {
+        expect(err).toBeInstanceOf(ApiClientError);
+        const clientErr = err as ApiClientError;
+        expect(clientErr.code).toBe("http_error");
+        expect(clientErr.message).toBe("Request failed with HTTP 500.");
+        expect(clientErr.correlationId).toBe("not-exposed");
+      }
+    });
   });
 
   describe("normaliseCode", () => {
