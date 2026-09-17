@@ -619,7 +619,39 @@ describe("Real Fabric Worker", () => {
 
     const closed = nextClose(socket);
     socket.send("x".repeat(513));
-    expect((await closed).code).toBe(1009);
+    const closeEvent = await closed;
+    expect(closeEvent.code).toBe(1009);
+    // The reason names the size refusal specifically, so a message rejected for
+    // some other fault cannot pass for the cap doing its job.
+    expect(closeEvent.reason).toBe("authentication message too large");
+  });
+
+  it("does not size-reject an authentication message of exactly the maximum length", async () => {
+    const createdResponse = await SELF.fetch("https://real-fabric.test/api/rooms", {
+      method: "POST",
+      headers: { "content-type": "application/json", "cf-connecting-ip": "192.0.2.52" },
+      body: JSON.stringify({ displayName: "Katherine" }),
+    });
+    const created = (await createdResponse.json()) as CreateRoomResponse;
+    const response = await SELF.fetch(
+      `https://real-fabric.test/api/rooms/${created.room.code}/events`,
+      { headers: { upgrade: "websocket" } },
+    );
+    expect(response.status).toBe(101);
+    const socket = response.webSocket as WebSocket;
+    socket.accept();
+
+    // 512 is the largest accepted length, so this payload must be parsed and
+    // then refused on its credentials — never turned away for its size.
+    const message = paddedAuthMessage(512, created.participant.id, "not-the-token");
+    expect(message).toHaveLength(512);
+
+    const closed = nextClose(socket);
+    socket.send(message);
+
+    const closeEvent = await closed;
+    expect(closeEvent.code).toBe(4401);
+    expect(closeEvent.reason).toBe("participant control credentials invalid or expired");
   });
 
   it("closes a connection whose initial authentication deadline expires", async () => {
@@ -706,6 +738,18 @@ describe("Real Fabric Worker", () => {
     socket2.close(1000, "test complete");
   });
 });
+
+/**
+ * A well-formed auth payload padded to an exact character count, so the size
+ * cap can be probed from below without changing what the payload means.
+ */
+function paddedAuthMessage(length: number, participantId: string, token: string): string {
+  const payload = { type: "auth", participantId, token, pad: "" };
+  const padding = length - JSON.stringify(payload).length;
+  if (padding < 0) throw new Error("The auth payload is already longer than the target length.");
+  payload.pad = "x".repeat(padding);
+  return JSON.stringify(payload);
+}
 
 function nextMessage(socket: WebSocket): Promise<MessageEvent> {
   return new Promise((resolve) => socket.addEventListener("message", resolve, { once: true }));

@@ -5,6 +5,7 @@ import {
   evaluateRequiredBrowserCapabilities,
   groupAudioDevices,
 } from "../src/client/hooks/useCapabilities";
+import type { SessionState } from "../src/client/session/RoomSession";
 
 const healthyRelay: HealthReport = {
   ok: true,
@@ -56,7 +57,39 @@ describe("Capabilities Evaluation", () => {
     vi.stubGlobal("AudioEncoder", undefined);
     await expect(evaluateRequiredBrowserCapabilities()).resolves.toEqual({
       state: "unavailable",
-      missing: expect.arrayContaining(["WebTransport", "WebCodecs Opus encoding"]),
+      missing: ["WebTransport", "WebCodecs Opus encoding"],
+    });
+  });
+
+  it("names every required probe when the whole browser surface is absent", async () => {
+    // H3 admission reads this list, so each of the six required probes has to
+    // be able to fail. `isSecureContext` and the AudioWorklet surface are
+    // otherwise never driven to their unavailable branch anywhere in the suite.
+    vi.stubGlobal("isSecureContext", false);
+    for (const capability of [
+      "WebTransport",
+      "AudioEncoder",
+      "AudioDecoder",
+      "AudioData",
+      "AudioContext",
+      "AudioWorkletNode",
+    ]) {
+      // Deleted rather than stubbed undefined: the playout probe tests for the
+      // key with `in`, which a stubbed-undefined value would still satisfy.
+      Reflect.deleteProperty(globalThis, capability);
+    }
+
+    // Exact and ordered: `arrayContaining` would accept a hardcoded "ready".
+    await expect(evaluateRequiredBrowserCapabilities()).resolves.toEqual({
+      state: "unavailable",
+      missing: [
+        "secure context",
+        "WebTransport",
+        "WebCodecs Opus encoding",
+        "WebCodecs Opus decoding",
+        "AudioWorklet microphone capture",
+        "AudioWorklet playout",
+      ],
     });
   });
 
@@ -181,15 +214,28 @@ describe("Capabilities Evaluation", () => {
 
     await session.startPublishing();
 
-    // Verify getUserMedia was never called
+    // Non-invocation is the security outcome: no microphone hardware is opened.
     expect(getUserMediaMock).not.toHaveBeenCalled();
 
-    // Verify capture state is listen_only
-    const internal = session as unknown as {
-      captureMode: { name: string; failure?: string; reason?: string };
-    };
-    expect(internal.captureMode.name).toBe("listen_only");
-    expect(internal.captureMode.failure).toBe("microphone_no_device");
+    // H14: observed through the public subscription rather than the private
+    // field, so the banner the participant actually sees is what is asserted.
+    const observed: SessionState[] = [];
+    const unsubscribe = session.subscribe((state) => {
+      observed.push(state);
+    });
+    unsubscribe();
+
+    const state = observed.at(-1);
+    expect(state).toBeDefined();
+    expect(state?.capture).toEqual({
+      name: "listen_only",
+      failure: "microphone_no_device",
+      reason: "WebCodecs AudioData is not exposed by this browser.",
+    });
+    // The failure list is what raises the named §10 banner. Losing the raise()
+    // would drop this human to listen-only with no explanation at all.
+    expect(state?.failures).toContain("microphone_no_device");
+    expect(state?.publishing).toBe(false);
 
     await session.close();
   });

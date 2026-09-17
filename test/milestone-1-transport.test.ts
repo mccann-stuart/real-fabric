@@ -1320,6 +1320,11 @@ describe("M1 — bounded session recovery", () => {
   });
 
   it("classifies only code-16 Track not found subscriptions as publisher-not-ready", () => {
+    // The classifier is a five-way conjunction: error class, transport code,
+    // refused operation, relay error code, and reason text. A refusal that is
+    // misread as "publisher not ready" is retried silently on the backoff
+    // ladder instead of surfacing, so each condition is varied on its own
+    // against an otherwise-matching refusal.
     expect(
       isTrackNotFoundError(
         new MoqTransportError("request_refused", "refused", {
@@ -1329,6 +1334,7 @@ describe("M1 — bounded session recovery", () => {
         }),
       ),
     ).toBe(true);
+    // Only the refused operation differs.
     expect(
       isTrackNotFoundError(
         new MoqTransportError("request_refused", "refused", {
@@ -1338,6 +1344,39 @@ describe("M1 — bounded session recovery", () => {
         }),
       ),
     ).toBe(false);
+    // Only the relay error code differs: the right reason from the wrong code
+    // is a different refusal, not a publisher that has yet to announce.
+    expect(
+      isTrackNotFoundError(
+        new MoqTransportError("request_refused", "refused", {
+          operation: "track_subscription",
+          errorCode: 3,
+          reason: "Track not found",
+        }),
+      ),
+    ).toBe(false);
+    // Only the reason differs: code 16 alone does not make a refusal benign.
+    expect(
+      isTrackNotFoundError(
+        new MoqTransportError("request_refused", "refused", {
+          operation: "track_subscription",
+          errorCode: 16,
+          reason: "Namespace denied",
+        }),
+      ),
+    ).toBe(false);
+    // Only the transport code differs.
+    expect(
+      isTrackNotFoundError(
+        new MoqTransportError("protocol_error", "refused", {
+          operation: "track_subscription",
+          errorCode: 16,
+          reason: "Track not found",
+        }),
+      ),
+    ).toBe(false);
+    // A wholly different error class carrying the same text is not a refusal.
+    expect(isTrackNotFoundError(new Error("Track not found"))).toBe(false);
   });
 
   it("backs off missing-track subscriptions and stops automatically", () => {
@@ -1382,15 +1421,21 @@ describe("M1 — bounded session recovery", () => {
     const low = new ReconnectionPolicy(() => 0).next(0);
     const high = new ReconnectionPolicy(() => 0.999).next(0);
     expect(low.delayMs).toBeLessThan(high.delayMs / 2);
-    // Floored, so an unlucky draw is not a tight retry loop.
-    expect(low.delayMs).toBeGreaterThan(0);
+    // Floored at the documented MINIMUM_DELAY_MS, so the unluckiest possible
+    // draw is a 50 ms wait rather than a tight retry loop against a relay that
+    // is already struggling. Asserted exactly: "greater than zero" would also
+    // accept a 1 ms loop, which is the failure the floor exists to prevent.
+    expect(low.delayMs).toBe(50);
   });
 
   it("grows the window exponentially and caps it", () => {
+    // random() === 1 makes the full-jitter draw the identity, so the series is
+    // exactly the backoff window: 400 ms doubling until the 5 s cap holds it
+    // flat. Asserted in full, because a linear ramp or a lower cap satisfies
+    // "first is smaller than second, and nothing exceeds the cap".
     const policy = new ReconnectionPolicy(() => 1);
     const delays = Array.from({ length: 8 }, () => policy.next(0).delayMs);
-    expect(delays[0]).toBeLessThan(delays[1] as number);
-    expect(Math.max(...delays)).toBeLessThanOrEqual(5_000);
+    expect(delays).toEqual([400, 800, 1_600, 3_200, 5_000, 5_000, 5_000, 5_000]);
   });
 
   it("becomes terminal after thirty seconds instead of retrying forever", () => {
@@ -1407,7 +1452,14 @@ describe("M1 — bounded session recovery", () => {
     policy.next(0);
     policy.next(TERMINAL_AFTER_MS + 1);
     policy.reset();
-    expect(policy.next(0).retry).toBe(true);
+    // reset() has to clear the deadline clock as well as the attempt counter.
+    // A `now` at or past the original deadline is the case that separates
+    // them: with the clock left running the presenter's retry button is a
+    // permanent no-op once thirty seconds have elapsed.
+    const restarted = policy.next(TERMINAL_AFTER_MS);
+    expect(restarted.retry).toBe(true);
+    expect(restarted.elapsedMs).toBe(0);
+    expect(restarted.attempt).toBe(1);
     expect(policy.attempts).toBe(1);
   });
 });

@@ -6,6 +6,8 @@ import {
   type CreateRoomResponse,
   type JoinRoomResponse,
   MAX_SIMULATED_PARTICIPANTS,
+  REJOIN_WINDOW_MS,
+  ROOM_LIFETIME_MS,
   type RoomSnapshot,
 } from "../src/shared/contracts";
 import type { Room } from "../src/worker/room";
@@ -64,6 +66,39 @@ async function addAi(created: CreateRoomResponse, displayName: string): Promise<
   expect(status).toBe(201);
   return value;
 }
+
+/** The shareable projection anyone with the room code can read. */
+async function publicSnapshot(code: string): Promise<RoomSnapshot> {
+  const response = await SELF.fetch(`${BASE}/api/rooms/${code}`);
+  expect(response.status).toBe(200);
+  return (await response.json()) as RoomSnapshot;
+}
+
+/** The creator's own authenticated projection, including their routing rows. */
+async function ownerSnapshot(created: CreateRoomResponse): Promise<RoomSnapshot> {
+  const { status, value } = await call<RoomSnapshot>(
+    `/api/rooms/${created.room.code}/snapshot`,
+    credential(created),
+  );
+  expect(status).toBe(200);
+  return value;
+}
+
+describe("FR1 — the room's hard stop is the pinned lifetime", () => {
+  it("expires exactly ROOM_LIFETIME_MS after it is created", async () => {
+    // FR1 fixes the hard stop at twenty minutes. Comparing the room against the
+    // constant alone would let both move together, so the value is pinned too.
+    expect(ROOM_LIFETIME_MS).toBe(20 * 60_000);
+
+    const created = await createRoom();
+    expect(created.room.expiresAt - created.room.createdAt).toBe(ROOM_LIFETIME_MS);
+
+    // The shareable snapshot publishes the same window, so a lifetime widened
+    // anywhere in the room service cannot hide behind the create response.
+    const shared = await publicSnapshot(created.room.code);
+    expect(shared.expiresAt - shared.createdAt).toBe(ROOM_LIFETIME_MS);
+  });
+});
 
 describe("H1 — transport is never claimed before it is traced", () => {
   it("attempts the configured draft without claiming it has been traced", async () => {
@@ -204,14 +239,25 @@ describe("H9 and §8 — consent is per human and AI pair", () => {
     const created = await createRoom();
     const room = await addAi(created, "Atlas");
     const atlas = room.participants.find((participant) => participant.role === "ai");
-    const { status } = await call(`/api/rooms/${created.room.code}/routing`, {
+    if (!atlas) throw new Error("Expected Atlas to be present.");
+    const { status, value } = await call<ApiError>(`/api/rooms/${created.room.code}/routing`, {
       participantId: created.participant.id,
       rejoinToken: "not-the-token",
-      aiId: atlas?.id,
+      aiId: atlas.id,
       hearsMe: true,
-      iHearIt: true,
+      iHearIt: false,
     });
     expect(status).toBe(401);
+    expect(value.error?.code).toBe("participant_auth_failed");
+
+    // §8: the refusal has to precede the write, so re-read the row rather than
+    // trust the status. Consent is still withheld and outbound is untouched.
+    const after = await ownerSnapshot(created);
+    const row = after.routing.find((entry) => entry.aiId === atlas.id);
+    expect(row?.hearsMe).toBe(false);
+    expect(row?.iHearIt).toBe(true);
+    // H9's anonymous badge still reports the AI as short of context.
+    expect(after.partialContextAiIds).toEqual([atlas.id]);
   });
 
   it("keeps detailed routing out of public snapshots while exposing anonymous partial context (SEC-04)", async () => {
@@ -288,6 +334,43 @@ describe("H9 and §8 — consent is per human and AI pair", () => {
     expect(graceSnapshot.value.routing[0]?.humanId).toBe(joinedGrace.value.participant.id);
   });
 
+  it("refuses an authenticated snapshot forged from a publicly listed participant id (SEC-04)", async () => {
+    const created = await createRoom();
+    const room = await addAi(created, "Atlas");
+    const atlas = room.participants.find((participant) => participant.role === "ai");
+    if (!atlas) throw new Error("Expected Atlas to be present.");
+
+    await call<RoomSnapshot>(`/api/rooms/${created.room.code}/routing`, {
+      ...credential(created),
+      aiId: atlas.id,
+      hearsMe: true,
+      iHearIt: false,
+    });
+
+    // Anyone holding the room code can read participant ids, so a forged
+    // snapshot request needs nothing beyond a guess at the rejoin token.
+    const shared = await publicSnapshot(created.room.code);
+    const victimId = shared.participants.find((participant) => participant.role === "human")?.id;
+    if (!victimId) throw new Error("Expected the victim's id to be publicly listed.");
+    expect(victimId).toBe(created.participant.id);
+
+    const forged = await call<ApiError & Partial<RoomSnapshot>>(
+      `/api/rooms/${created.room.code}/snapshot`,
+      { participantId: victimId, rejoinToken: "not-the-token" },
+    );
+    expect(forged.status).toBe(401);
+    expect(forged.value.error?.code).toBe("participant_auth_failed");
+
+    // The refusal must carry no projection at all: a snapshot that skipped the
+    // human assertion would hand the victim's private rows to the forger.
+    expect(forged.value.routing).toBeUndefined();
+    expect(forged.value.participants).toBeUndefined();
+    const serialised = JSON.stringify(forged.value);
+    expect(serialised).not.toContain(atlas.id);
+    expect(serialised).not.toContain(victimId);
+    expect(serialised).not.toContain("hearsMe");
+  });
+
   it("refuses presenter and AI lifecycle controls to a second joined human (SEC-02)", async () => {
     const created = await createRoom();
     const joined = await call<JoinRoomResponse>(`/api/rooms/${created.room.code}/join`, {
@@ -307,6 +390,15 @@ describe("H9 and §8 — consent is per human and AI pair", () => {
     expect(addAiRes.status).toBe(403);
     expect(addAiRes.value.error?.code).toBe("presenter_only");
 
+    // A refused presenter action must not have written before it authorised:
+    // the rogue AI is absent from the room, not merely absent from the reply.
+    const afterAddAi = await publicSnapshot(created.room.code);
+    expect(afterAddAi.participants.map((participant) => participant.displayName)).not.toContain(
+      "Rogue AI",
+    );
+    expect(afterAddAi.participants.some((participant) => participant.role === "ai")).toBe(false);
+    expect(afterAddAi.participants).toHaveLength(2);
+
     const presenterRes = await call<ApiError>(`/api/rooms/${created.room.code}/presenter`, {
       participantId: secondHumanId,
       rejoinToken: secondHumanToken,
@@ -316,6 +408,15 @@ describe("H9 and §8 — consent is per human and AI pair", () => {
     });
     expect(presenterRes.status).toBe(403);
     expect(presenterRes.value.error?.code).toBe("presenter_only");
+
+    const afterPresenter = await publicSnapshot(created.room.code);
+    expect(afterPresenter.presenter).toEqual({
+      simulatedHumans: 0,
+      simulatedAis: 0,
+      scriptedResponses: false,
+    });
+    expect(afterPresenter.participants.some((participant) => participant.simulated)).toBe(false);
+    expect(afterPresenter.participants).toHaveLength(2);
 
     // Room owner / presenter can successfully perform presenter actions
     const ownerAddAiRes = await call(`/api/rooms/${created.room.code}/ai`, {
@@ -433,26 +534,31 @@ describe("FR4 — floor control serialises AI speech", () => {
   it("rejects floor requests and releases for invalid or non-AI targets", async () => {
     const created = await createRoom();
 
-    const nonExistent = await call(`/api/rooms/${created.room.code}/floor`, {
+    // The status alone would not distinguish "no such AI" from "no such room",
+    // and the client renders the specific §10 failure from the code.
+    const nonExistent = await call<ApiError>(`/api/rooms/${created.room.code}/floor`, {
       ...credential(created),
       aiId: "non-existent-ai",
       operation: "request",
     });
     expect(nonExistent.status).toBe(404);
+    expect(nonExistent.value.error?.code).toBe("ai_not_found");
 
-    const humanTarget = await call(`/api/rooms/${created.room.code}/floor`, {
+    const humanTarget = await call<ApiError>(`/api/rooms/${created.room.code}/floor`, {
       ...credential(created),
       aiId: created.participant.id,
       operation: "request",
     });
     expect(humanTarget.status).toBe(404);
+    expect(humanTarget.value.error?.code).toBe("ai_not_found");
 
-    const releaseNonExistent = await call(`/api/rooms/${created.room.code}/floor`, {
+    const releaseNonExistent = await call<ApiError>(`/api/rooms/${created.room.code}/floor`, {
       ...credential(created),
       aiId: "non-existent-ai",
       operation: "release",
     });
     expect(releaseNonExistent.status).toBe(404);
+    expect(releaseNonExistent.value.error?.code).toBe("ai_not_found");
   });
 });
 
@@ -506,15 +612,52 @@ describe("H11 — presenter simulation is configurable and labelled", () => {
     expect(reduced.value.composition.ais).toBe(0);
   });
 
+  it("accepts the cap itself and creates every simulated participant", async () => {
+    const created = await createRoom();
+    const configured = await call<RoomSnapshot>(`/api/rooms/${created.room.code}/presenter`, {
+      ...credential(created),
+      simulatedHumans: MAX_SIMULATED_PARTICIPANTS,
+      simulatedAis: MAX_SIMULATED_PARTICIPANTS,
+      scriptedResponses: false,
+    });
+    expect(configured.status).toBe(200);
+    expect(configured.value.presenter).toEqual({
+      simulatedHumans: MAX_SIMULATED_PARTICIPANTS,
+      simulatedAis: MAX_SIMULATED_PARTICIPANTS,
+      scriptedResponses: false,
+    });
+
+    // The cap is a count the room honours, not merely a number it records: a
+    // narrower accepted range would refuse this, and a lower internal clamp
+    // would leave the participants missing.
+    const simulated = configured.value.participants.filter((participant) => participant.simulated);
+    expect(simulated.filter((participant) => participant.role === "human")).toHaveLength(
+      MAX_SIMULATED_PARTICIPANTS,
+    );
+    expect(simulated.filter((participant) => participant.role === "ai")).toHaveLength(
+      MAX_SIMULATED_PARTICIPANTS,
+    );
+  });
+
   it("rejects a simulated count outside the accepted range", async () => {
     const created = await createRoom();
-    const { status } = await call(`/api/rooms/${created.room.code}/presenter`, {
+    const humans = await call<ApiError>(`/api/rooms/${created.room.code}/presenter`, {
       ...credential(created),
       simulatedHumans: MAX_SIMULATED_PARTICIPANTS + 1,
       simulatedAis: 0,
       scriptedResponses: false,
     });
-    expect(status).toBe(400);
+    expect(humans.status).toBe(400);
+    expect(humans.value.error?.code).toBe("invalid_request");
+
+    const ais = await call<ApiError>(`/api/rooms/${created.room.code}/presenter`, {
+      ...credential(created),
+      simulatedHumans: 0,
+      simulatedAis: MAX_SIMULATED_PARTICIPANTS + 1,
+      scriptedResponses: false,
+    });
+    expect(ais.status).toBe(400);
+    expect(ais.value.error?.code).toBe("invalid_request");
   });
 });
 
@@ -548,6 +691,48 @@ describe("H12 — the rejoin token reclaims one identity, not two", () => {
     expect(row?.iHearIt).toBe(false);
   });
 
+  it("stops reclaiming once the rejoin window has passed", async () => {
+    // H12's window is sixty seconds, not an open-ended grace period.
+    expect(REJOIN_WINDOW_MS).toBe(60_000);
+
+    const created = await createRoom();
+    await call<RoomSnapshot>(`/api/rooms/${created.room.code}/leave`, credential(created));
+
+    const rooms = env.ROOMS;
+    if (!rooms) throw new Error("The ROOMS binding is required.");
+    const stub = rooms.getByName(created.room.code);
+    await runInDurableObject(stub, async (_instance: Room, state: DurableObjectState) => {
+      const row = state.storage.sql
+        .exec<{ reconnect_until: number | null }>(
+          "SELECT reconnect_until FROM participants WHERE id = ?",
+          created.participant.id,
+        )
+        .toArray()[0];
+      // Leaving opens a bounded window, not an open-ended one. Both bounds are
+      // read against the room's own clock, so no cross-isolate skew is involved.
+      expect(row?.reconnect_until).not.toBeNull();
+      expect(row?.reconnect_until).toBeGreaterThan(Date.now());
+      expect(row?.reconnect_until).toBeLessThanOrEqual(Date.now() + REJOIN_WINDOW_MS);
+
+      // Push the deadline 1ms into the past. Only a widened reclaim predicate
+      // would still hand the identity back.
+      state.storage.sql.exec(
+        "UPDATE participants SET reconnect_until = ? WHERE id = ?",
+        Date.now() - 1,
+        created.participant.id,
+      );
+    });
+
+    const rejoined = await call<CreateRoomResponse>(`/api/rooms/${created.room.code}/join`, {
+      displayName: "Ada Lovelace",
+      rejoinToken: created.rejoinToken,
+    });
+    expect(rejoined.status).toBe(200);
+    expect(rejoined.value.participant.id).not.toBe(created.participant.id);
+    // A fresh identity comes with a fresh credential, never the expired one.
+    expect(rejoined.value.rejoinToken).not.toBe(created.rejoinToken);
+  });
+
   it("does not reclaim an identity with an unknown token", async () => {
     const created = await createRoom();
     const joined = await call<CreateRoomResponse>(`/api/rooms/${created.room.code}/join`, {
@@ -562,18 +747,27 @@ describe("H12 — the rejoin token reclaims one identity, not two", () => {
 describe("Presenter actions require credentials", () => {
   it("refuses to add an AI without a valid token", async () => {
     const created = await createRoom();
-    const { status } = await call(`/api/rooms/${created.room.code}/ai`, {
+    const { status, value } = await call<ApiError>(`/api/rooms/${created.room.code}/ai`, {
       participantId: created.participant.id,
       rejoinToken: "not-the-token",
       displayName: "Rogue",
       simulated: false,
     });
     expect(status).toBe(401);
+    expect(value.error?.code).toBe("participant_auth_failed");
+
+    // Authorisation has to come before the insert, so re-read the room: the
+    // rogue AI is absent from the membership, not just from the reply.
+    const after = await publicSnapshot(created.room.code);
+    expect(after.participants.map((participant) => participant.displayName)).not.toContain("Rogue");
+    expect(after.participants.some((participant) => participant.role === "ai")).toBe(false);
+    expect(after.participants).toHaveLength(1);
+    expect(after.composition).toEqual({ humans: 1, ais: 0, valid: true });
   });
 
   it("refuses to reshape the simulation without a valid token", async () => {
     const created = await createRoom();
-    const { status } = await call(`/api/rooms/${created.room.code}/presenter`, {
+    const { status, value } = await call<ApiError>(`/api/rooms/${created.room.code}/presenter`, {
       participantId: created.participant.id,
       rejoinToken: "not-the-token",
       simulatedHumans: 3,
@@ -581,6 +775,17 @@ describe("Presenter actions require credentials", () => {
       scriptedResponses: true,
     });
     expect(status).toBe(401);
+    expect(value.error?.code).toBe("participant_auth_failed");
+
+    // Neither the stored configuration nor the membership moved.
+    const after = await ownerSnapshot(created);
+    expect(after.presenter).toEqual({
+      simulatedHumans: 0,
+      simulatedAis: 0,
+      scriptedResponses: false,
+    });
+    expect(after.participants.some((participant) => participant.simulated)).toBe(false);
+    expect(after.participants).toHaveLength(1);
   });
 });
 

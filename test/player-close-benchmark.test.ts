@@ -59,9 +59,13 @@ describe("TrackPlayer and RoomSession close performance benchmark", () => {
     );
 
     expect(playersMap.size).toBe(0);
+    // Clearing the map is not closing the players. TrackPlayer.close() releases
+    // its mixer track, so this is what distinguishes real teardown from a
+    // forgotten reference that leaves every track summed into the output.
+    expect(mockMixer.removeTrack).toHaveBeenCalledTimes(runs * numPlayers);
   });
 
-  it("measures RoomSession.close when players map is empty (early exit case)", async () => {
+  it("stays closed and player-free when closed repeatedly with nothing to release", async () => {
     const session = new RoomSession({
       session: {
         code: "BENCHMARK_ROOM_CODE",
@@ -86,5 +90,13 @@ describe("TrackPlayer and RoomSession close performance benchmark", () => {
     console.log(
       `[BENCHMARK] RoomSession.close with 0 players: avg ${avgUs.toFixed(2)} µs per call across ${runs} runs`,
     );
+
+    // Previously this case asserted nothing at all, so it could not fail. A
+    // final close, this time without resetting the flag, has to leave the
+    // session terminally closed and player-free — proving close() ran through
+    // rather than returning early before doing any of its work.
+    await session.close();
+    expect((session as unknown as { closed: boolean }).closed).toBe(true);
+    expect((session as unknown as { players: Map<string, unknown> }).players.size).toBe(0);
   });
 });

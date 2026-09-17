@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { PINNED_MOQT_DRAFT } from "../src/shared/contracts";
 import {
   type BrowserCapabilityEvidence,
   CONFIGURATION_TARGETS,
@@ -13,6 +14,12 @@ import {
   type PinnedConfiguration,
   type UserAgentFacts,
 } from "../src/shared/pinnedConfiguration";
+// `node:fs` resolves under the Workers pool but reads workerd's virtual
+// filesystem, which does not contain the repository, so every path to
+// `wrangler.jsonc` is ENOENT there. Vite's `?raw` loader reads the real file
+// from disk at transform time, which is the only way to compare the shipped
+// deployment config against the pinned constant from inside this pool.
+import wranglerConfigSource from "../wrangler.jsonc?raw";
 
 const READY_CAPABILITIES: BrowserCapabilityEvidence = {
   state: "ready",
@@ -154,6 +161,35 @@ describe("pinnedConfiguration", () => {
       const match = matchConfiguration({
         userAgent: MACOS_SAFARI_27,
         maxTouchPoints: 5,
+      });
+      expect(match.status).toBe("readOnly");
+      expect(match.device).toBe("iPad");
+      expect(match.liveAudioEligible).toBe(false);
+      expect(match.reasons[0]).toContain("iPadOS Safari in desktop mode");
+    });
+
+    // The iPadOS cut-off sits between one touch point and two. Macs with a
+    // trackpad can report a single point, so only two or more is iPadOS.
+    it("keeps a Macintosh user agent reporting one touch point as a desktop Mac", () => {
+      const match = matchConfiguration({
+        userAgent: MACOS_SAFARI_27,
+        maxTouchPoints: 1,
+      });
+      expect(match).toMatchObject({
+        status: "provisional",
+        liveAudioEligible: true,
+        browser: "Safari 27",
+        browserMajorVersion: 27,
+        platform: "macOS",
+        device: "desktop",
+        target: MACOS_SAFARI_CONFIGURATION,
+      });
+    });
+
+    it("flags a Macintosh user agent reporting two touch points as iPadOS", () => {
+      const match = matchConfiguration({
+        userAgent: MACOS_SAFARI_27,
+        maxTouchPoints: 2,
       });
       expect(match.status).toBe("readOnly");
       expect(match.device).toBe("iPad");
@@ -460,5 +496,48 @@ describe("pinnedConfiguration", () => {
         });
       }
     });
+  });
+});
+
+/**
+ * `PINNED_MOQT_DRAFT` is only meaningful if it names the draft the deployed
+ * Worker is actually configured for. Asserting it against a literal would be a
+ * tautology, so these read the shipped `wrangler.jsonc` and compare against
+ * every place the draft is encoded there: the `MOQT_DRAFT` var in each
+ * environment and the `draft-<n>` hostname of each relay URL.
+ */
+describe("PINNED_MOQT_DRAFT versus wrangler.jsonc", () => {
+  function capturesFrom(pattern: RegExp): string[] {
+    const captures: string[] = [];
+    for (const match of wranglerConfigSource.matchAll(pattern)) {
+      const captured = match[1];
+      if (captured !== undefined) captures.push(captured);
+    }
+    return captures;
+  }
+
+  const draftBindings = capturesFrom(/"MOQT_DRAFT"\s*:\s*"([^"]*)"/g);
+  const relayHostnameDrafts = capturesFrom(/"MOQ_RELAY_URL"\s*:\s*"https?:\/\/draft-([^."]*)\./g);
+
+  it("loaded the real wrangler.jsonc rather than an empty or stub source", () => {
+    expect(wranglerConfigSource).toContain('"name": "real-fabric"');
+    expect(wranglerConfigSource).toContain('"main": "src/worker/index.ts"');
+    expect(wranglerConfigSource.length).toBeGreaterThan(500);
+  });
+
+  it("pins every MOQT_DRAFT binding in wrangler.jsonc to PINNED_MOQT_DRAFT", () => {
+    // Guards against a regex that silently matches nothing: production and
+    // staging each declare the binding.
+    expect(draftBindings.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(draftBindings)).toEqual(new Set<string>([PINNED_MOQT_DRAFT]));
+  });
+
+  it("pins every MOQ_RELAY_URL draft hostname in wrangler.jsonc to PINNED_MOQT_DRAFT", () => {
+    expect(relayHostnameDrafts.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(relayHostnameDrafts)).toEqual(new Set<string>([PINNED_MOQT_DRAFT]));
+  });
+
+  it("keeps the relay hostnames and the MOQT_DRAFT bindings on the same draft", () => {
+    expect(new Set(relayHostnameDrafts)).toEqual(new Set(draftBindings));
   });
 });

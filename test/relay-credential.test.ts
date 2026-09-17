@@ -43,6 +43,9 @@ describe("inspectRelayCredential & configuredRelayCredential", () => {
         status: "invalid",
         credential: null,
       });
+      // An invalid token must never be handed on to the transport either.
+      expect(configuredRelayCredential("single-segment")).toBeNull();
+      expect(configuredRelayCredential("four.segments.here.now")).toBeNull();
     });
 
     it("returns status invalid when segments contain invalid JWT characters", () => {
@@ -158,6 +161,20 @@ describe("inspectRelayCredential & configuredRelayCredential", () => {
         status: "invalid",
         credential: null,
       });
+    });
+
+    it("returns status invalid when exp claim is a non-finite number", () => {
+      // `makeJwt` cannot express this: JSON.stringify(Infinity) is "null", which
+      // lands on the typeof guard instead. A raw payload reaches it, because
+      // JSON.parse overflows 1e999 to Infinity — a number that passes both the
+      // typeof and the `<= 0` guards and would otherwise fail open as a
+      // credential that never expires.
+      const infiniteExp = `header.${encodeRawPayload('{"exp":1e999}')}.signature`;
+      expect(inspectRelayCredential(infiniteExp)).toEqual({
+        status: "invalid",
+        credential: null,
+      });
+      expect(configuredRelayCredential(infiniteExp)).toBeNull();
     });
   });
 
