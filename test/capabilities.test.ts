@@ -3,6 +3,7 @@ import type { HealthReport } from "../src/client/api";
 import {
   evaluateCapabilities,
   evaluateRequiredBrowserCapabilities,
+  groupAudioDevices,
 } from "../src/client/hooks/useCapabilities";
 
 const healthyRelay: HealthReport = {
@@ -191,5 +192,37 @@ describe("Capabilities Evaluation", () => {
     expect(internal.captureMode.failure).toBe("microphone_no_device");
 
     await session.close();
+  });
+
+  describe("groupAudioDevices", () => {
+    it("groups audioinput and audiooutput devices and ignores non-audio devices", () => {
+      const mockDevices = [
+        { deviceId: "mic1", kind: "audioinput", label: "Mic 1", groupId: "g1" },
+        { deviceId: "speaker1", kind: "audiooutput", label: "Speaker 1", groupId: "g1" },
+        { deviceId: "cam1", kind: "videoinput", label: "Cam 1", groupId: "g2" },
+        { deviceId: "mic2", kind: "audioinput", label: "Mic 2", groupId: "g3" },
+      ] as MediaDeviceInfo[];
+
+      const grouped = groupAudioDevices(mockDevices);
+
+      expect(grouped).toEqual({
+        audioinput: [
+          { deviceId: "mic1", kind: "audioinput", label: "Mic 1", groupId: "g1" },
+          { deviceId: "mic2", kind: "audioinput", label: "Mic 2", groupId: "g3" },
+        ],
+        audiooutput: [
+          { deviceId: "speaker1", kind: "audiooutput", label: "Speaker 1", groupId: "g1" },
+        ],
+      });
+    });
+
+    it("returns an empty object when given an empty list or devices with no audio kinds", () => {
+      expect(groupAudioDevices([])).toEqual({});
+      expect(
+        groupAudioDevices([
+          { deviceId: "cam1", kind: "videoinput", label: "Cam 1", groupId: "g2" },
+        ] as MediaDeviceInfo[]),
+      ).toEqual({});
+    });
   });
 });
