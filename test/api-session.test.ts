@@ -23,6 +23,7 @@ import {
   storeSession,
   updateRouting,
 } from "../src/client/api";
+import { REJOIN_WINDOW_MS } from "../src/shared/contracts";
 
 class MemoryStorage implements Storage {
   private store = new Map<string, string>();
@@ -217,11 +218,13 @@ describe("client API session management", () => {
       expect(stored.storedAt).toBeGreaterThanOrEqual(before);
       expect(stored.storedAt).toBeLessThanOrEqual(after);
 
-      const raw = sessionStorage.getItem("real-fabric:room-123");
+      // Normalised, so loadSession and clearSession reach the same entry.
+      const raw = sessionStorage.getItem("real-fabric:ROOM123");
       expect(raw).not.toBeNull();
       if (raw) {
         expect(JSON.parse(raw)).toEqual(stored);
       }
+      expect(loadSession("room-123")).toEqual(stored);
     });
   });
 
@@ -232,7 +235,7 @@ describe("client API session management", () => {
         participantId: "p-1",
         rejoinToken: "token-abc",
         displayName: "Bob",
-        storedAt: 123456789,
+        storedAt: Date.now(),
       };
       sessionStorage.setItem("real-fabric:ROOM123", JSON.stringify(session));
 
@@ -274,8 +277,7 @@ describe("client API session management", () => {
       expect(loadSession("room-123")).toBeNull();
     });
 
-    it("defaults storedAt to Date.now() if missing in loaded session", () => {
-      const before = Date.now();
+    it("returns null when storedAt is missing rather than stamping a fresh one", () => {
       sessionStorage.setItem(
         "real-fabric:ROOM123",
         JSON.stringify({
@@ -285,12 +287,25 @@ describe("client API session management", () => {
           displayName: "Charlie",
         }),
       );
-      const loaded = loadSession("room-123");
-      const after = Date.now();
 
-      expect(loaded).not.toBeNull();
-      expect(loaded?.storedAt).toBeGreaterThanOrEqual(before);
-      expect(loaded?.storedAt).toBeLessThanOrEqual(after);
+      // Stamping Date.now() here would make the H12 window check pass forever.
+      expect(loadSession("room-123")).toBeNull();
+    });
+
+    it("returns null once the stored session falls outside the rejoin window", () => {
+      const storedAt = Date.now() - REJOIN_WINDOW_MS - 1;
+      sessionStorage.setItem(
+        "real-fabric:ROOM123",
+        JSON.stringify({
+          code: "ROOM123",
+          participantId: "p-1",
+          rejoinToken: "token-abc",
+          displayName: "Bob",
+          storedAt,
+        }),
+      );
+
+      expect(loadSession("room-123")).toBeNull();
     });
   });
 

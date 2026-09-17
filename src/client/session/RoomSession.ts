@@ -1701,22 +1701,23 @@ export class RoomSession {
     const subscribed = players.map((player) => player.participantId);
     const counts = fanOut(subscribed, this.publishing);
     const objectStats = players.map((player) => player.objectStats());
-    const lateDrops = objectStats.reduce(
-      (sum, entry) => sum + (entry.lateDrops.exposed ? entry.lateDrops.value : 0),
-      0,
+    // H15: a sum across nothing observable is not zero. Collect the exposed
+    // contributors, as the buffer depths below do, so that an empty list stays
+    // "Not exposed" instead of rendering a confident 0.
+    const lateDropCounts = objectStats.flatMap((entry) =>
+      entry.lateDrops.exposed ? [entry.lateDrops.value] : [],
     );
-    const cancelled = objectStats.reduce(
-      (sum, entry) => sum + (entry.cancelledDrops.exposed ? entry.cancelledDrops.value : 0),
-      0,
+    const cancelledCounts = objectStats.flatMap((entry) =>
+      entry.cancelledDrops.exposed ? [entry.cancelledDrops.value] : [],
     );
-    const concealed = objectStats.reduce(
-      (sum, entry) => sum + (entry.concealedFrames.exposed ? entry.concealedFrames.value : 0),
-      0,
+    const concealedCounts = objectStats.flatMap((entry) =>
+      entry.concealedFrames.exposed ? [entry.concealedFrames.value] : [],
     );
-    const comfortNoise = objectStats.reduce(
-      (sum, entry) => sum + (entry.comfortNoiseFrames.exposed ? entry.comfortNoiseFrames.value : 0),
-      0,
+    const comfortNoiseCounts = objectStats.flatMap((entry) =>
+      entry.comfortNoiseFrames.exposed ? [entry.comfortNoiseFrames.value] : [],
     );
+    const total = (values: number[]): number => values.reduce((sum, value) => sum + value, 0);
+    const lateDrops = total(lateDropCounts);
     const playableObjects = objectStats.reduce(
       (sum, entry) => sum + (entry.objects.exposed ? entry.objects.value : 0),
       0,
@@ -1743,6 +1744,16 @@ export class RoomSession {
     const unavailable = "Live transport has not been established, so this is not observable.";
     const noObjects = "No subscribed audio object has arrived yet.";
     const transportEstablished = this.transportReadyAt !== null;
+    /**
+     * H15: with no track subscribed, zero really is the count. With tracks
+     * subscribed but none of them reporting, a sum over nothing is an absence
+     * of evidence, and must read "Not exposed" rather than a confident 0.
+     */
+    const aggregate = (counts: number[]): Measurement<number> => {
+      if (!transportEstablished) return notExposed(unavailable);
+      if (players.length > 0 && counts.length === 0) return notExposed(noObjects);
+      return measured(total(counts));
+    };
     return {
       transportReadyMs:
         this.transportReadyAt === null
@@ -1794,10 +1805,10 @@ export class RoomSession {
         typeof stats.subscribeSetupMs === "number"
           ? measured(stats.subscribeSetupMs)
           : notExposed("No explicit track subscription request has completed yet."),
-      lateDrops: transportEstablished ? measured(lateDrops) : notExposed(unavailable),
-      cancelledDrops: transportEstablished ? measured(cancelled) : notExposed(unavailable),
-      concealedFrames: transportEstablished ? measured(concealed) : notExposed(unavailable),
-      comfortNoiseFrames: transportEstablished ? measured(comfortNoise) : notExposed(unavailable),
+      lateDrops: aggregate(lateDropCounts),
+      cancelledDrops: aggregate(cancelledCounts),
+      concealedFrames: aggregate(concealedCounts),
+      comfortNoiseFrames: aggregate(comfortNoiseCounts),
       lastBargeInMs:
         this.lastBargeIn === null
           ? notExposed("No barge-in has occurred in this session.")

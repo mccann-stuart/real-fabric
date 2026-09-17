@@ -935,6 +935,52 @@ describe("AC-14 — the sanitised export carries no identifying content", () => 
     expect(serialised).not.toContain("secret");
     expect(serialised).not.toContain("hello");
   });
+
+  it("strips identifying content nested inside an unlisted key", () => {
+    const telemetry = new SessionTelemetry();
+    telemetry.record({
+      type: "routing_change",
+      participantId: "opaque-id",
+      // A deny-list over top-level keys lets this through untouched.
+      ...({
+        meta: { transcript: "hello there", deviceLabel: "MacBook Pro Microphone" },
+      } as object),
+    });
+
+    const serialised = JSON.stringify(telemetry.report("ROOM"));
+    expect(serialised).toContain("opaque-id");
+    expect(serialised).not.toContain("hello there");
+    expect(serialised).not.toContain("MacBook Pro Microphone");
+    expect(serialised).not.toContain("meta");
+  });
+
+  it("carries protocol values but refuses free text smuggled through value", () => {
+    const telemetry = new SessionTelemetry();
+    telemetry.record({ type: "degradation_step", value: 2 });
+    telemetry.record({ type: "failure", value: "relay_request_refused" });
+    telemetry.record({ type: "routing_change", value: "Ada Lovelace" });
+
+    const report = telemetry.report("ROOM") as { events: Array<Record<string, unknown>> };
+    expect(report.events.map((event) => event.value)).toEqual([
+      2,
+      "relay_request_refused",
+      undefined,
+    ]);
+    expect(JSON.stringify(report)).not.toContain("Ada Lovelace");
+  });
+
+  it("filters again on export, so a retained event cannot leave unsanitised", () => {
+    const telemetry = new SessionTelemetry();
+    telemetry.record({ type: "routing_change", participantId: "opaque-id" });
+
+    // Reach past record() the way a future caller or a direct push would.
+    const retained = (telemetry as unknown as { events: Array<Record<string, unknown>> }).events;
+    retained[0] = { ...retained[0], displayName: "Ada Lovelace" };
+
+    const serialised = JSON.stringify(telemetry.report("ROOM"));
+    expect(serialised).toContain("opaque-id");
+    expect(serialised).not.toContain("Ada Lovelace");
+  });
 });
 
 describe("FR5 — bounded reconnection with a terminal state", () => {

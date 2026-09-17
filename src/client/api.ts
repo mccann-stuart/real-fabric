@@ -7,6 +7,7 @@ import type {
   RelayCredentialStatus,
   RoomSnapshot,
 } from "../shared/contracts";
+import { REJOIN_WINDOW_MS } from "../shared/contracts";
 
 export interface StoredSession {
   code: string;
@@ -200,26 +201,36 @@ export function roomEventsUrl(session: StoredSession): string {
   return url.toString();
 }
 
+/** Store, load and clear must agree on one key, so they all normalise the code. */
+function sessionKey(code: string): string {
+  return `real-fabric:${normaliseCode(code)}`;
+}
+
 export function storeSession(session: Omit<StoredSession, "storedAt">): StoredSession {
   const stored: StoredSession = { ...session, storedAt: Date.now() };
-  sessionStorage.setItem(`real-fabric:${session.code}`, JSON.stringify(stored));
+  sessionStorage.setItem(sessionKey(session.code), JSON.stringify(stored));
   return stored;
 }
 
 export function loadSession(code: string): StoredSession | null {
-  const raw = sessionStorage.getItem(`real-fabric:${normaliseCode(code)}`);
+  const raw = sessionStorage.getItem(sessionKey(code));
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as StoredSession;
     if (!parsed.participantId || !parsed.rejoinToken) return null;
-    return { ...parsed, storedAt: parsed.storedAt ?? Date.now() };
+    // H12: past the window the room service refuses the token anyway, so fail
+    // closed rather than reloading into a rejoin that cannot succeed. An entry
+    // carrying no usable timestamp cannot be shown to be inside the window.
+    if (!Number.isFinite(parsed.storedAt)) return null;
+    if (Date.now() - parsed.storedAt > REJOIN_WINDOW_MS) return null;
+    return parsed;
   } catch {
     return null;
   }
 }
 
 export function clearSession(code: string): void {
-  sessionStorage.removeItem(`real-fabric:${normaliseCode(code)}`);
+  sessionStorage.removeItem(sessionKey(code));
 }
 
 export function normaliseCode(code: string): string {

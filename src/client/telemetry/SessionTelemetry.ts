@@ -21,20 +21,19 @@ export interface TelemetryEvent {
   value?: number | string;
 }
 
-/** Fields that must never appear in an export, whatever a caller passes. */
-const FORBIDDEN_KEYS = [
-  "displayName",
-  "display_name",
-  "name",
-  "token",
-  "rejoinToken",
-  "credential",
-  "transcript",
-  "text",
-  "deviceLabel",
-  "label",
-  "audio",
-];
+/**
+ * The only fields that may reach an export. An allow-list, not a deny-list: a
+ * deny-list can exclude only the key names someone anticipated, and it read
+ * top-level keys alone, so an unlisted or nested payload carried identifying
+ * content straight through.
+ */
+const PERMITTED_KEYS: ReadonlySet<string> = new Set([
+  "at",
+  "type",
+  "participantId",
+  "trackId",
+  "value",
+]);
 
 const RETAINED_EVENTS = 2_000;
 
@@ -70,7 +69,9 @@ export class SessionTelemetry {
           measurement.exposed ? measurement.value : NOT_EXPOSED,
         ]),
       ),
-      events: this.events,
+      // Filtered again on the way out, so an event retained before a change to
+      // the permitted set cannot leave in an export.
+      events: this.events.map((event) => sanitiseEvent(event)),
     };
   }
 
@@ -86,7 +87,19 @@ export class SessionTelemetry {
   }
 }
 
-function sanitiseEvent(event: Omit<TelemetryEvent, "at">): Omit<TelemetryEvent, "at"> {
-  const entries = Object.entries(event).filter(([key]) => !FORBIDDEN_KEYS.includes(key));
-  return Object.fromEntries(entries) as Omit<TelemetryEvent, "at">;
+function sanitiseEvent<Event extends Partial<TelemetryEvent>>(event: Event): Event {
+  const entries = Object.entries(event).filter(
+    ([key, value]) => PERMITTED_KEYS.has(key) && isProtocolValue(value),
+  );
+  return Object.fromEntries(entries) as Event;
+}
+
+/**
+ * A value rides along only when it is plainly protocol data. Display names,
+ * device labels and transcripts arrive as free text, and whitespace is what
+ * separates that from a code, an opaque id or a number.
+ */
+function isProtocolValue(value: unknown): boolean {
+  if (typeof value === "number" || typeof value === "boolean") return true;
+  return typeof value === "string" && !/\s/.test(value);
 }
