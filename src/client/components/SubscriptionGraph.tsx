@@ -62,6 +62,13 @@ export function buildEdges(
   return edges;
 }
 
+const GRAPH_SIZE = 260;
+const NODE_ORBIT_PADDING = 30;
+const RELAY_BOX_WIDTH = 52;
+const RELAY_BOX_HEIGHT = 26;
+const NODE_RADIUS = 11;
+const LABEL_Y_OFFSET = 4;
+
 export const SubscriptionGraph = memo(function SubscriptionGraph({
   participants,
   routing,
@@ -75,9 +82,9 @@ export const SubscriptionGraph = memo(function SubscriptionGraph({
   publishing: boolean;
   subscribedIds: readonly string[];
 }) {
-  const size = 260;
+  const size = GRAPH_SIZE;
   const centre = size / 2;
-  const radius = size / 2 - 30;
+  const radius = centre - NODE_ORBIT_PADDING;
 
   // Performance optimization (⚡ Bolt): Memoize active participant filtering, edge building, and trigonometric node positioning
   const { active, edges, positions } = useMemo(() => {
@@ -129,14 +136,19 @@ export const SubscriptionGraph = memo(function SubscriptionGraph({
           );
         })}
         <rect
-          x={centre - 26}
-          y={centre - 13}
-          width={52}
-          height={26}
+          x={centre - RELAY_BOX_WIDTH / 2}
+          y={centre - RELAY_BOX_HEIGHT / 2}
+          width={RELAY_BOX_WIDTH}
+          height={RELAY_BOX_HEIGHT}
           className="graph-relay"
           rx={1}
         />
-        <text x={centre} y={centre + 4} className="graph-relay-label" textAnchor="middle">
+        <text
+          x={centre}
+          y={centre + LABEL_Y_OFFSET}
+          className="graph-relay-label"
+          textAnchor="middle"
+        >
           relay
         </text>
         {active.map((participant) => {
@@ -147,12 +159,17 @@ export const SubscriptionGraph = memo(function SubscriptionGraph({
               <circle
                 cx={point.x}
                 cy={point.y}
-                r={11}
+                r={NODE_RADIUS}
                 className={`graph-node graph-node--${participant.role}${
                   participant.simulated ? " graph-node--simulated" : ""
                 }`}
               />
-              <text x={point.x} y={point.y + 4} className="graph-node-label" textAnchor="middle">
+              <text
+                x={point.x}
+                y={point.y + LABEL_Y_OFFSET}
+                className="graph-node-label"
+                textAnchor="middle"
+              >
                 {participant.displayName.at(0)?.toUpperCase()}
               </text>
             </g>
