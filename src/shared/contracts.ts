@@ -199,18 +199,9 @@ export function aiDisplayActivity(
 
   // The detailed projection contains only this viewer's rows. The aggregate
   // partial-context flag is calculated server-side without naming other humans.
-  let viewerHearsMe: boolean | undefined;
+  const viewerRow = routing.find((row) => row.aiId === ai.id && row.humanId === viewerId);
 
-  for (let index = 0; index < routing.length; index += 1) {
-    const row = routing[index];
-    if (row && row.aiId === ai.id) {
-      if (row.humanId === viewerId) {
-        viewerHearsMe = row.hearsMe;
-      }
-    }
-  }
-
-  if (viewerHearsMe === false) return "Not listening to you";
+  if (viewerRow?.hearsMe === false) return "Not listening to you";
   if (partialContext) return "Partial context";
 
   switch (ai.pipeline) {

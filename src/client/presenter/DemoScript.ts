@@ -147,10 +147,80 @@ export const DEMO_STEPS: DemoStep[] = [
 /** H16 release gate: the script must run end to end, twice, clean. */
 export const REQUIRED_CLEAN_RUNS = 2;
 
-export function evaluateStep(
-  stepId: string,
-  context: DemoContext,
-): { outcome: Exclude<StepOutcome, "pending">; detail: string } {
+type EvaluatedStep = { outcome: Exclude<StepOutcome, "pending">; detail: string };
+
+function evaluateFanOut(context: DemoContext): EvaluatedStep {
+  const { publishedTracks, subscribedTracks } = context;
+  if (!publishedTracks.exposed || !subscribedTracks.exposed) {
+    return {
+      outcome: "skipped",
+      detail: "Uplink and downlink counts are not observable without live transport",
+    };
+  }
+  const expected = Math.max(0, context.participantCount - 1);
+  if (publishedTracks.value === 1 && subscribedTracks.value === expected) {
+    return {
+      outcome: "passed",
+      detail: `1 track out, ${subscribedTracks.value} in at ${context.participantCount} participants`,
+    };
+  }
+  return {
+    outcome: "failed",
+    detail: `Expected 1 out and ${expected} in; saw ${publishedTracks.value} out and ${subscribedTracks.value} in`,
+  };
+}
+
+function evaluateBargeIn(context: DemoContext): EvaluatedStep {
+  if (!context.lastBargeInMs.exposed) {
+    return { outcome: "skipped", detail: "No barge-in was measured in this run" };
+  }
+  const latency = context.lastBargeInMs.value;
+  if (latency <= BARGE_IN_BUDGET_MS) {
+    return { outcome: "passed", detail: `Silent in ${latency} ms` };
+  }
+  return {
+    outcome: "failed",
+    detail: `Took ${latency} ms, over the ${BARGE_IN_BUDGET_MS} ms budget`,
+  };
+}
+
+function evaluateRoutingOff(context: DemoContext): EvaluatedStep {
+  if (!context.lastRoutingChangeMs.exposed) {
+    return { outcome: "skipped", detail: "No routing change was measured in this run" };
+  }
+  const elapsed = context.lastRoutingChangeMs.value;
+  if (elapsed > ROUTING_CHANGE_BUDGET_MS) {
+    return {
+      outcome: "failed",
+      detail: `Routing change took ${elapsed} ms, over the ${ROUTING_CHANGE_BUDGET_MS} ms budget`,
+    };
+  }
+  if (context.partialContextAiIds.length > 0) {
+    return {
+      outcome: "passed",
+      detail: `Applied in ${elapsed} ms and the card reads Partial context`,
+    };
+  }
+  return {
+    outcome: "failed",
+    detail: "Routing changed but no AI card reads Partial context",
+  };
+}
+
+function evaluateReload(context: DemoContext): EvaluatedStep {
+  if (!context.identityReclaimed) {
+    return { outcome: "failed", detail: "Identity was not reclaimed inside the 60 s window" };
+  }
+  if (context.duplicatePlaybackDetected) {
+    return { outcome: "failed", detail: "An object played twice after the reload" };
+  }
+  return {
+    outcome: "passed",
+    detail: "Identity and routing reclaimed with no duplicate playback",
+  };
+}
+
+export function evaluateStep(stepId: string, context: DemoContext): EvaluatedStep {
   switch (stepId) {
     case "open":
       return context.msSinceRoomOpen <= 5_000
@@ -165,60 +235,14 @@ export function evaluateStep(
             detail: `${context.aisSpeaking} AI published unaddressed, which breaks H5`,
           };
 
-    case "fan_out": {
-      const { publishedTracks, subscribedTracks } = context;
-      if (!publishedTracks.exposed || !subscribedTracks.exposed) {
-        return {
-          outcome: "skipped",
-          detail: "Uplink and downlink counts are not observable without live transport",
-        };
-      }
-      const expected = Math.max(0, context.participantCount - 1);
-      return publishedTracks.value === 1 && subscribedTracks.value === expected
-        ? {
-            outcome: "passed",
-            detail: `1 track out, ${subscribedTracks.value} in at ${context.participantCount} participants`,
-          }
-        : {
-            outcome: "failed",
-            detail: `Expected 1 out and ${expected} in; saw ${publishedTracks.value} out and ${subscribedTracks.value} in`,
-          };
-    }
+    case "fan_out":
+      return evaluateFanOut(context);
 
-    case "barge_in": {
-      if (!context.lastBargeInMs.exposed) {
-        return { outcome: "skipped", detail: "No barge-in was measured in this run" };
-      }
-      const latency = context.lastBargeInMs.value;
-      return latency <= BARGE_IN_BUDGET_MS
-        ? { outcome: "passed", detail: `Silent in ${latency} ms` }
-        : {
-            outcome: "failed",
-            detail: `Took ${latency} ms, over the ${BARGE_IN_BUDGET_MS} ms budget`,
-          };
-    }
+    case "barge_in":
+      return evaluateBargeIn(context);
 
-    case "routing_off": {
-      if (!context.lastRoutingChangeMs.exposed) {
-        return { outcome: "skipped", detail: "No routing change was measured in this run" };
-      }
-      const elapsed = context.lastRoutingChangeMs.value;
-      if (elapsed > ROUTING_CHANGE_BUDGET_MS) {
-        return {
-          outcome: "failed",
-          detail: `Routing change took ${elapsed} ms, over the ${ROUTING_CHANGE_BUDGET_MS} ms budget`,
-        };
-      }
-      return context.partialContextAiIds.length > 0
-        ? {
-            outcome: "passed",
-            detail: `Applied in ${elapsed} ms and the card reads Partial context`,
-          }
-        : {
-            outcome: "failed",
-            detail: "Routing changed but no AI card reads Partial context",
-          };
-    }
+    case "routing_off":
+      return evaluateRoutingOff(context);
 
     case "floor_control":
       return context.aisSpeaking <= 1
@@ -232,15 +256,7 @@ export function evaluateStep(
           };
 
     case "reload":
-      if (!context.identityReclaimed) {
-        return { outcome: "failed", detail: "Identity was not reclaimed inside the 60 s window" };
-      }
-      return context.duplicatePlaybackDetected
-        ? { outcome: "failed", detail: "An object played twice after the reload" }
-        : {
-            outcome: "passed",
-            detail: "Identity and routing reclaimed with no duplicate playback",
-          };
+      return evaluateReload(context);
 
     case "measurements":
       return context.unobservablesLabelled
@@ -259,8 +275,30 @@ export class DemoRunner {
   private runs: DemoRun[] = [];
   private active: DemoRun | null = null;
   private cursor = 0;
+  script: Array<() => Promise<void>> = [];
+  onError?: (e: unknown) => void;
 
   constructor(private readonly now: () => number = Date.now) {}
+
+  private async delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private async executeStep(step: () => Promise<void>): Promise<void> {
+    try {
+      await step();
+    } catch (e) {
+      this.onError?.(e);
+    }
+  }
+
+  async run(): Promise<void> {
+    for (const step of this.script) {
+      if (!this.running) break;
+      await this.executeStep(step);
+      await this.delay(100);
+    }
+  }
 
   begin(): DemoRun {
     const run: DemoRun = {

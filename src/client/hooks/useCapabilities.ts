@@ -397,3 +397,16 @@ export function inspectPlayoutSupport(): { available: boolean; reason: string } 
         reason: `Playback is missing ${missing.join(", ")}.`,
       };
 }
+
+export function groupAudioDevices(devices: MediaDeviceInfo[]): Record<string, MediaDeviceInfo[]> {
+  const result: Record<string, MediaDeviceInfo[]> = {};
+  for (const device of devices) {
+    if (device.kind !== "audioinput" && device.kind !== "audiooutput") {
+      continue;
+    }
+    const list = result[device.kind] ?? [];
+    list.push(device);
+    result[device.kind] = list;
+  }
+  return result;
+}

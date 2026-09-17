@@ -17,15 +17,6 @@ export async function readJsonObject(request: Request): Promise<Record<string, u
     throw new HttpError(415, "unsupported_media_type", "Expected an application/json request.");
   }
 
-  // Security: Check Content-Length header to reject oversized payloads before buffering
-  const contentLengthHeader = request.headers.get("content-length");
-  if (contentLengthHeader) {
-    const contentLength = Number.parseInt(contentLengthHeader, 10);
-    if (!Number.isNaN(contentLength) && contentLength > MAX_BODY_BYTES) {
-      throw new HttpError(413, "payload_too_large", "Request body exceeds maximum allowed size.");
-    }
-  }
-
   let text: string;
   if (request.body) {
     const reader = request.body.getReader();
@@ -35,18 +26,18 @@ export async function readJsonObject(request: Request): Promise<Record<string, u
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        if (value) {
-          totalBytes += value.byteLength;
-          if (totalBytes > MAX_BODY_BYTES) {
-            await reader.cancel("payload_too_large");
-            throw new HttpError(
-              413,
-              "payload_too_large",
-              "Request body exceeds maximum allowed size.",
-            );
-          }
-          chunks.push(value);
+        if (!value) continue;
+
+        totalBytes += value.byteLength;
+        if (totalBytes > MAX_BODY_BYTES) {
+          await reader.cancel("payload_too_large");
+          throw new HttpError(
+            413,
+            "payload_too_large",
+            "Request body exceeds maximum allowed size.",
+          );
         }
+        chunks.push(value);
       }
     } finally {
       reader.releaseLock();

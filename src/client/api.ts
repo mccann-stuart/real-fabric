@@ -245,27 +245,27 @@ async function send<T>(input: string, method: string, body: unknown): Promise<T>
   });
 }
 
+async function throwApiError(response: Response): Promise<never> {
+  let problem: ApiError | undefined;
+  try {
+    problem = (await response.json()) as ApiError;
+  } catch {
+    throw new ApiClientError(
+      "http_error",
+      `Request failed with HTTP ${response.status}.`,
+      "not-exposed",
+    );
+  }
+  throw new ApiClientError(problem.error.code, problem.error.message, problem.error.correlationId);
+}
+
 async function request<T>(input: string, init?: RequestInit): Promise<T> {
   const response = await fetch(input, {
     ...init,
     headers: { ...init?.headers, "x-correlation-id": crypto.randomUUID() },
   });
   if (!response.ok) {
-    let problem: ApiError | undefined;
-    try {
-      problem = (await response.json()) as ApiError;
-    } catch {
-      throw new ApiClientError(
-        "http_error",
-        `Request failed with HTTP ${response.status}.`,
-        "not-exposed",
-      );
-    }
-    throw new ApiClientError(
-      problem.error.code,
-      problem.error.message,
-      problem.error.correlationId,
-    );
+    await throwApiError(response);
   }
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;

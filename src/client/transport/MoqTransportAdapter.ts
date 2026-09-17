@@ -497,19 +497,7 @@ export class MoqTransportAdapter {
 
   async publish(track: TrackAddress, object: MediaObject): Promise<void> {
     const key = trackKey(track);
-    let publication = this.publications.get(key);
-    if (!publication) {
-      let pending = this.pendingPublications.get(key);
-      if (!pending) {
-        pending = this.openPublication(track);
-        this.pendingPublications.set(key, pending);
-      }
-      try {
-        publication = await pending;
-      } finally {
-        if (this.pendingPublications.get(key) === pending) this.pendingPublications.delete(key);
-      }
-    }
+    const publication = await this.getOrCreatePublication(key, track);
 
     publication.controller.enqueue(
       MoqtObject.newWithPayload(
@@ -529,6 +517,24 @@ export class MoqTransportAdapter {
       lastPublishedObjectId: object.objectId,
       lastPublishedObjectAt: Date.now(),
     };
+  }
+
+  private async getOrCreatePublication(key: string, track: TrackAddress): Promise<Publication> {
+    const existing = this.publications.get(key);
+    if (existing) return existing;
+
+    let pending = this.pendingPublications.get(key);
+    if (!pending) {
+      pending = this.openPublication(track);
+      this.pendingPublications.set(key, pending);
+    }
+    try {
+      return await pending;
+    } finally {
+      if (this.pendingPublications.get(key) === pending) {
+        this.pendingPublications.delete(key);
+      }
+    }
   }
 
   private async openPublication(track: TrackAddress): Promise<Publication> {

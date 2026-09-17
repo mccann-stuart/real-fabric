@@ -29,3 +29,31 @@ export function decodeRoomError(error: unknown): DecodedRoomError | null {
   if (!match?.[1] || !match[2] || match[3] === undefined) return null;
   return { status: Number(match[1]), code: match[2], message: match[3] };
 }
+
+export interface Waiter {
+  resolve: () => void;
+  reject: (error: Error) => void;
+}
+
+export class RoomWaiters {
+  private waiters: Waiter[] = [];
+
+  public add(waiter: Waiter): void {
+    this.waiters.push(waiter);
+  }
+
+  public get count(): number {
+    return this.waiters.length;
+  }
+
+  public resolveWaiters(error?: Error): void {
+    const waiters = this.waiters.splice(0);
+    for (const waiter of waiters) {
+      if (error) {
+        waiter.reject(error);
+      } else {
+        waiter.resolve();
+      }
+    }
+  }
+}
