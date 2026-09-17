@@ -35,7 +35,7 @@ export function FailureBanner({
             aria-label={`Dismiss ${failure.title}`}
             title={`Dismiss ${failure.title}`}
           >
-            ×
+            <span aria-hidden="true">×</span>
           </button>
         ) : null}
       </div>
