@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   HttpError,
   optionalString,
+  parseAuthPayload,
   readJsonObject,
   requiredBoolean,
   requiredEnum,
@@ -229,6 +230,63 @@ describe("request validation", () => {
           code: "invalid_request",
           message: "Field 'name' must be at most 10 characters.",
         } satisfies Partial<HttpError>);
+      }
+    });
+  });
+
+  describe("parseAuthPayload", () => {
+    it("returns success for valid auth payloads", () => {
+      const valid = parseAuthPayload({
+        type: "auth",
+        participantId: "p-123456",
+        token: "tok-7890123",
+      });
+      expect(valid).toEqual({
+        success: true,
+        data: {
+          type: "auth",
+          participantId: "p-123456",
+          token: "tok-7890123",
+        },
+      });
+    });
+
+    it("returns failure authentication_required for missing or non-auth payload structures", () => {
+      const invalidPayloads = [
+        null,
+        undefined,
+        123,
+        "string",
+        [],
+        {},
+        { type: "other" },
+        { type: null },
+      ];
+
+      for (const payload of invalidPayloads) {
+        expect(parseAuthPayload(payload)).toEqual({
+          success: false,
+          error: "authentication_required",
+        });
+      }
+    });
+
+    it("returns failure invalid_credentials for bad participantId or token types/lengths", () => {
+      const invalidCredentials = [
+        { type: "auth", participantId: "", token: "token123" },
+        { type: "auth", participantId: "a".repeat(65), token: "token123" },
+        { type: "auth", participantId: 123, token: "token123" },
+        { type: "auth", participantId: "p-1", token: "" },
+        { type: "auth", participantId: "p-1", token: "t".repeat(129) },
+        { type: "auth", participantId: "p-1", token: 123 },
+        { type: "auth" },
+      ];
+
+      for (const payload of invalidCredentials) {
+        expect(parseAuthPayload(payload)).toEqual({
+          success: false,
+          error: "invalid_credentials",
+        });
       }
     });
   });
