@@ -221,6 +221,23 @@ describe("client API session management", () => {
       expect(loadSession("room-123")).toBeNull();
     });
 
+    it("returns null when parsed JSON is null or a non-object primitive", () => {
+      sessionStorage.setItem("real-fabric:ROOM123", "null");
+      expect(loadSession("room-123")).toBeNull();
+
+      sessionStorage.setItem("real-fabric:ROOM123", JSON.stringify("just a string"));
+      expect(loadSession("room-123")).toBeNull();
+
+      sessionStorage.setItem("real-fabric:ROOM123", JSON.stringify(12345));
+      expect(loadSession("room-123")).toBeNull();
+
+      sessionStorage.setItem("real-fabric:ROOM123", JSON.stringify(true));
+      expect(loadSession("room-123")).toBeNull();
+
+      sessionStorage.setItem("real-fabric:ROOM123", JSON.stringify(["array"]));
+      expect(loadSession("room-123")).toBeNull();
+    });
+
     it("defaults storedAt to Date.now() if missing in loaded session", () => {
       const before = Date.now();
       sessionStorage.setItem(
