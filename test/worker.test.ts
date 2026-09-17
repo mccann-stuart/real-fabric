@@ -4,6 +4,84 @@ import type { CreateRoomResponse, RoomSnapshot } from "../src/shared/contracts";
 import worker from "../src/worker/index";
 
 describe("Real Fabric Worker", () => {
+  it("handles unexpected generic errors with HTTP 500 internal_error, correlation ID, and security headers", async () => {
+    const customCorrelationId = "test-correlation-id-12345";
+    const mockEnv = new Proxy(env, {
+      get(target, prop, receiver) {
+        if (prop === "ROOMS") {
+          throw new Error("Unexpected database explosion");
+        }
+        return Reflect.get(target, prop, receiver);
+      },
+    });
+    const request = new Request("https://real-fabric.test/api/rooms", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-correlation-id": customCorrelationId,
+      },
+      body: JSON.stringify({ displayName: "Tester" }),
+    });
+    const ctx = {
+      waitUntil: () => {},
+      passThroughOnException: () => {},
+    } as unknown as ExecutionContext;
+
+    const response = await worker.fetch(request, mockEnv, ctx);
+    expect(response.status).toBe(500);
+    expect(response.headers.get("x-correlation-id")).toBe(customCorrelationId);
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(response.headers.get("x-frame-options")).toBe("DENY");
+
+    const body = (await response.json()) as {
+      error: { code: string; message: string; correlationId: string };
+    };
+    expect(body.error.code).toBe("internal_error");
+    expect(body.error.message).toBe(
+      "The request could not be completed. No room state was changed after the failure.",
+    );
+    expect(body.error.correlationId).toBe(customCorrelationId);
+  });
+
+  it("returns 503 when the room service binding is missing", async () => {
+    const request = new Request("https://real-fabric.test/api/rooms/UNKNOWNROOMCODE12345");
+    const ctx = {
+      waitUntil: () => {},
+      passThroughOnException: () => {},
+    } as unknown as ExecutionContext;
+
+    const response = await worker.fetch(
+      request,
+      {
+        ...env,
+        ROOMS: undefined as unknown as DurableObjectNamespace<import("../src/worker/room").Room>,
+      } as Env,
+      ctx,
+    );
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as {
+      error: { code: string; message: string };
+    };
+    expect(body.error.code).toBe("room_service_unavailable");
+    expect(body.error.message).toBe("The room service binding is unavailable.");
+  });
+
+  it("returns 404 for unknown API routes", async () => {
+    const response = await SELF.fetch("https://real-fabric.test/api/non-existent-endpoint");
+    expect(response.status).toBe(404);
+    const body = (await response.json()) as { error: { code: string; message: string } };
+    expect(body.error.code).toBe("not_found");
+    expect(body.error.message).toBe("API route not found.");
+  });
+
+  it("returns 426 when calling events endpoint without WebSocket upgrade header", async () => {
+    const code = "ROOMCODE123456789012";
+    const response = await SELF.fetch(`https://real-fabric.test/api/rooms/${code}/events`);
+    expect(response.status).toBe(426);
+    const body = (await response.json()) as { error: { code: string; message: string } };
+    expect(body.error.code).toBe("websocket_required");
+    expect(body.error.message).toBe("This control-plane endpoint requires WebSocket upgrade.");
+  });
   it("reports the room service without claiming transport verification", async () => {
     const response = await SELF.fetch("https://real-fabric.test/api/health");
     expect(response.status).toBe(200);
