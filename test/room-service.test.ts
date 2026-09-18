@@ -454,6 +454,37 @@ describe("FR4 — floor control serialises AI speech", () => {
     });
     expect(releaseNonExistent.status).toBe(404);
   });
+
+  it("excludes left or removed AIs from the floor queue (SEC-03)", async () => {
+    const created = await createRoom();
+    const first = await addAi(created, "Atlas");
+    const second = await addAi(created, "Sage");
+    const atlas = first.participants.find((p) => p.role === "ai");
+    const sage = second.participants.find((p) => p.role === "ai" && p.id !== atlas?.id);
+
+    await call(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: atlas?.id,
+      operation: "request",
+    });
+    const queued = await call<{ room: RoomSnapshot }>(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: sage?.id,
+      operation: "request",
+    });
+    expect(queued.value.room.floor.queue).toEqual([sage?.id]);
+
+    // Remove the queued AI and verify it is excluded from floor.queue
+    const removedRoom = await call<RoomSnapshot>(
+      `/api/rooms/${created.room.code}/ai`,
+      {
+        ...credential(created),
+        aiId: sage?.id,
+      },
+      "DELETE",
+    );
+    expect(removedRoom.value.floor.queue).toEqual([]);
+  });
 });
 
 describe("H11 — presenter simulation is configurable and labelled", () => {

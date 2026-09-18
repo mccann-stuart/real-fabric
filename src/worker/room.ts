@@ -1054,7 +1054,13 @@ export class Room extends DurableObject<Env> {
 
   private floorQueue(): string[] {
     return this.ctx.storage.sql
-      .exec<{ ai_id: string }>("SELECT ai_id FROM floor_queue ORDER BY queued_at")
+      .exec<{ ai_id: string }>(
+        `SELECT f.ai_id
+         FROM floor_queue f
+         JOIN participants p ON p.id = f.ai_id
+         WHERE p.role = 'ai' AND p.state != 'left'
+         ORDER BY f.queued_at`,
+      )
       .toArray()
       .map((row) => row.ai_id);
   }

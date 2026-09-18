@@ -11,15 +11,15 @@ This document turns the completed Codex Security review into an implementation b
 - Validated findings: 13 — 2 high, 10 medium and 1 low
 - Canonical sources: [`report.md`](./report.md), [`findings.json`](./findings.json), [`coverage.json`](./coverage.json) and [`scan-manifest.json`](./scan-manifest.json)
 
-The line numbers and excerpts below are pinned to the scanned revision (`a784122aa18c6b7fbee1ae53d34b054a24d71f0b`). As reconciled on 17 September 2026, ten findings have been remediated in code and validated by automated tests (SEC-02, SEC-04–SEC-12), while three findings remain open as forward-looking engineering backlog items (SEC-01, SEC-03, SEC-13).
+The line numbers and excerpts below are pinned to the scanned revision (`a784122aa18c6b7fbee1ae53d34b054a24d71f0b`). As reconciled on 18 September 2026, eleven findings have been remediated in code and validated by automated tests (SEC-02–SEC-12), while two findings remain open as forward-looking engineering backlog items (SEC-01, SEC-13).
 
 ## Priority summary
 
-| Priority | Issue | Severity | Confidence | Status (17 Sep 2026) | Primary boundary |
+| Priority | Issue | Severity | Confidence | Status (18 Sep 2026) | Primary boundary |
 | --- | --- | --- | --- | --- | --- |
 | P1 | [SEC-01 — Relay-wide browser bearer](#sec-01--room-creation-and-joining-disclose-a-relay-wide-publishsubscribe-bearer) | High | Medium | **Open (Known P1)** | Relay authorisation |
 | P1 | [SEC-02 — Any human receives presenter authority](#sec-02--any-joined-human-can-execute-presenter-and-ai-lifecycle-controls) | High | High | **Remediated** | Room authorisation |
-| P2 | [SEC-03 — Unvalidated AI floor target](#sec-03--unvalidated-ai-identifiers-can-wedge-or-pre-empt-the-global-floor) | Medium | High | **Open** | Shared floor integrity |
+| P2 | [SEC-03 — Unvalidated AI floor target](#sec-03--unvalidated-ai-identifiers-can-wedge-or-pre-empt-the-global-floor) | Medium | High | **Remediated** | Shared floor integrity |
 | P2 | [SEC-04 — Routing preference disclosure](#sec-04--public-room-snapshots-disclose-every-humans-per-ai-routing-preferences) | Medium | High | **Remediated** | Participant privacy |
 | P2 | [SEC-05 — Reusable bearer in WebSocket URL](#sec-05--a-reusable-participant-bearer-is-placed-in-the-websocket-query-string) | Medium | Medium | **Remediated** | Credential handling |
 | P2 | [SEC-06 — Unbounded control sockets](#sec-06--one-participant-token-can-open-unbounded-concurrent-control-sockets) | Medium | High | **Remediated** | Durable Object availability |
@@ -182,7 +182,7 @@ Trade-off: gives stronger least privilege and avoids a broad role, but introduce
 - **Rule:** `input-validation.ai-floor-target`
 - **Taxonomy:** CWE-20
 - **Severity / confidence:** Medium / High
-- **Status:** Open.
+- **Status:** Remediated in codebase (18 September 2026). Floor targets are validated against active AI participants (`role = 'ai' AND state != 'left'`) via `assertAiParticipant`, and `floorQueue()` queries only active AI rows. Validated by automated tests in `test/room-service.test.ts`.
 
 ### Evidence
 
@@ -869,9 +869,10 @@ Trade-off: produces shared authoritative recency, but depends on a trusted trans
 
 ## Remediation progress and Next steps / vision statements
 
-### Remediated controls (as of 16 September 2026)
+### Remediated controls (as of 18 September 2026)
 
 - **SEC-02:** Persisted room creator as `owner_id` in `room_meta` and enforced `assertPresenter` in `src/worker/room.ts` to restrict AI lifecycle, floor administration and presenter simulation to the room presenter.
+- **SEC-03:** Validated AI floor targets against active AI participants in `assertAiParticipant` and `floorQueue()`, ensuring left or non-existent AIs cannot occupy or wedge the floor queue.
 - **SEC-04:** Projected detailed routing rows to the authenticated viewer across HTTP, join and WebSocket snapshots; public snapshots retain only anonymous `partialContextAiIds` state, and shared routing-change events omit the human ID.
 - **SEC-05 & SEC-06:** Replaced query-string WebSocket credentials with initial in-socket `{ type: "auth" }` authentication, and enforced at most 1 active control socket per participant in Durable Object storage.
 - **SEC-07 & SEC-08:** Enforced IP-based rate limiting on room joins (`enforceJoinRateLimit`) and bounded JSON request bodies to 32 KiB using a streaming reader (`readJsonObject`).
@@ -883,10 +884,8 @@ Trade-off: produces shared authoritative recency, but depends on a trusted trans
 
 ### Next steps and vision statements (Remaining backlog order)
 
-1. **SEC-03 (Next step):** Validate AI floor targets against active participants and make floor ownership transitions deterministic under concurrent requests.
-2. **SEC-12 (Next step):** Implement explicit session capability gating so narrow read-only clients never invoke `getUserMedia`.
-3. **SEC-13 (Next step):** Bind activity reporting to locally observed or otherwise trusted publication events.
-4. **SEC-01 (Vision target / Gate 1):** Replace the shared relay-wide token with participant- and room-scoped credentials once supported by the relay API, verifying enforcement with a live trace.
+1. **SEC-13 (Next step):** Bind activity reporting to locally observed or otherwise trusted publication events.
+2. **SEC-01 (Vision target / Gate 1):** Replace the shared relay-wide token with participant- and room-scoped credentials once supported by the relay API, verifying enforcement with a live trace.
 
 ## Closure checklist
 
