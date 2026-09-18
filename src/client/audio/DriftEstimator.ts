@@ -171,6 +171,10 @@ function correctionForSkew(skewPpm: number): number {
   return 1 / (1 + skewPpm / 1_000_000);
 }
 
+// ⚡ Bolt Optimization: Reuse Float64Array buffer for slopes calculation to eliminate
+// array allocations and GC thrashing on high-frequency (50Hz / 250ms) drift estimation paths.
+let slopesBuffer = new Float64Array(4096);
+
 function robustSkewPpm(samples: ClockObservation[]): number | null {
   const first = samples[0];
   const last = samples[samples.length - 1];
@@ -178,27 +182,46 @@ function robustSkewPpm(samples: ClockObservation[]): number | null {
     return null;
   }
 
-  const slopes: number[] = [];
-  for (let leftIndex = 0; leftIndex < samples.length; leftIndex += 1) {
+  const sampleCount = samples.length;
+  // Maximum possible pair combinations: N * (N - 1) / 2
+  const maxPairs = (sampleCount * (sampleCount - 1)) / 2;
+  if (slopesBuffer.length < maxPairs) {
+    let newCap = slopesBuffer.length * 2;
+    while (newCap < maxPairs) {
+      newCap *= 2;
+    }
+    slopesBuffer = new Float64Array(newCap);
+  }
+
+  let slopeCount = 0;
+  for (let leftIndex = 0; leftIndex < sampleCount; leftIndex += 1) {
     const left = samples[leftIndex];
     if (!left) continue;
-    for (let rightIndex = leftIndex + 1; rightIndex < samples.length; rightIndex += 1) {
+    const leftMediaMs = left.mediaTimestampMs;
+    const leftOutputMs = left.outputTimeMs;
+
+    for (let rightIndex = leftIndex + 1; rightIndex < sampleCount; rightIndex += 1) {
       const right = samples[rightIndex];
       if (!right) continue;
-      const mediaElapsed = right.mediaTimestampMs - left.mediaTimestampMs;
+      const mediaElapsed = right.mediaTimestampMs - leftMediaMs;
       if (mediaElapsed < MINIMUM_PAIR_SPAN_MS) continue;
-      const outputElapsed = right.outputTimeMs - left.outputTimeMs;
+      const outputElapsed = right.outputTimeMs - leftOutputMs;
       if (outputElapsed <= 0) continue;
-      slopes.push(outputElapsed / mediaElapsed);
+      slopesBuffer[slopeCount++] = outputElapsed / mediaElapsed;
     }
   }
-  if (slopes.length < MINIMUM_SLOPES) return null;
-  slopes.sort((left, right) => left - right);
-  const middle = Math.floor(slopes.length / 2);
+  if (slopeCount < MINIMUM_SLOPES) return null;
+
+  // ⚡ Bolt Optimization: Native Float64Array sort without JS comparator callback overhead
+  // runs in C++ pdqsort/std::sort, dramatically speeding up median calculation over 2000+ slopes.
+  const view = slopesBuffer.subarray(0, slopeCount);
+  view.sort();
+
+  const middle = Math.floor(slopeCount / 2);
   const median =
-    slopes.length % 2 === 0
-      ? ((slopes[middle - 1] ?? 1) + (slopes[middle] ?? 1)) / 2
-      : (slopes[middle] ?? 1);
+    slopeCount % 2 === 0
+      ? ((view[middle - 1] ?? 1) + (view[middle] ?? 1)) / 2
+      : (view[middle] ?? 1);
   return (median - 1) * 1_000_000;
 }
 
