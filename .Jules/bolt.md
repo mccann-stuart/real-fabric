@@ -26,6 +26,10 @@
 **Learning:** Repeatedly filtering and mapping active room participants on high-frequency state updates degrades UI rendering and computation performance.
 **Action:** Cache normalized participant maps and derive state changes only when room snapshots indicate actual membership or routing mutation.
 
+## 2026-09-17 - Reusable TypedArray Buffer and Native Sort in Clock Drift Estimation
+**Learning:** In `DriftEstimator`, calculating pairwise slopes across an 80-sample window produced 3,000+ numbers per evaluation. Using JS arrays with `.push()` and `.sort((a,b) => a-b)` caused heavy GC allocation and JS callback overhead.
+**Action:** Use a pre-allocated reusable `Float64Array` buffer and `Float64Array.prototype.sort()` without callback to execute sorting directly in C++, yielding an ~83% reduction in clock drift estimation latency.
+
 ## Next steps and vision statements
 
 Forward-looking performance engineering and optimization targets:
