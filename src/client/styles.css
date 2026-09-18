@@ -1285,10 +1285,20 @@ input::placeholder {
   display: grid;
   place-items: center;
   border: 0;
+  border-radius: 2px;
   background: none;
   color: var(--muted);
   font-size: 16px;
   cursor: pointer;
+  transition: color 0.15s ease;
+}
+.failure-banner__head button:hover {
+  color: var(--fg, #f4f5f3);
+}
+.failure-banner__head button:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: -2px;
+  color: var(--fg, #f4f5f3);
 }
 .failure-banner p {
   margin: 6px 0 0;
