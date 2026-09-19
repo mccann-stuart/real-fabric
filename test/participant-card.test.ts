@@ -49,6 +49,11 @@ describe("ParticipantCard component", () => {
     expect(html).toContain("Hold to ask Ada AI");
     expect(html).toContain('aria-label="Hears me (Ada AI)"');
     expect(html).toContain('aria-pressed="false"');
+    expect(html).toContain('aria-describedby="ask-desc-ai-1"');
+    expect(html).toContain('id="ask-desc-ai-1"');
+    expect(html).toContain(
+      "Press and hold Space, Enter, or primary pointer to address Ada AI. Release to stop.",
+    );
   });
 
   it("invokes onAddressDown and onAddressUp on keyboard Space/Enter events", () => {
