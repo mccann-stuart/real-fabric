@@ -155,6 +155,21 @@ export function estimatePitchPeriod(samples: Float32Array): number {
 
 function rootMeanSquare(samples: Float32Array): number {
   let sum = 0;
-  for (const sample of samples) sum += sample * sample;
-  return Math.sqrt(sum / samples.length);
+  const len = samples.length;
+  let index = 0;
+  // ⚡ Bolt Optimization: Replace `for (const sample of samples)` iterator with unrolled indexed access
+  // on Float32Array to eliminate iterator allocation and speed up RMS calculation on 50 Hz decoded audio path.
+  const limit = len - (len % 4);
+  for (; index < limit; index += 4) {
+    const s0 = samples[index] as number;
+    const s1 = samples[index + 1] as number;
+    const s2 = samples[index + 2] as number;
+    const s3 = samples[index + 3] as number;
+    sum += s0 * s0 + s1 * s1 + s2 * s2 + s3 * s3;
+  }
+  for (; index < len; index += 1) {
+    const sample = samples[index] as number;
+    sum += sample * sample;
+  }
+  return len === 0 ? 0 : Math.sqrt(sum / len);
 }
