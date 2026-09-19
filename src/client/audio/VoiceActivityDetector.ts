@@ -41,8 +41,18 @@ export class VoiceActivityDetector {
   observe(samples: Float32Array): VoiceActivityEvent {
     let sum = 0;
     const sampleCount = samples.length;
-    for (let index = 0; index < sampleCount; index += 1) {
-      // The loop bound makes Float32Array indexing safe under noUncheckedIndexedAccess.
+    let index = 0;
+    // ⚡ Bolt Optimization: 4x loop unrolling on Float32Array energy sum calculation
+    // reduces loop indexing overhead and improves CPU instruction pipelining on 50 Hz audio capture path.
+    const limit = sampleCount - (sampleCount % 4);
+    for (; index < limit; index += 4) {
+      const s0 = samples[index] as number;
+      const s1 = samples[index + 1] as number;
+      const s2 = samples[index + 2] as number;
+      const s3 = samples[index + 3] as number;
+      sum += s0 * s0 + s1 * s1 + s2 * s2 + s3 * s3;
+    }
+    for (; index < sampleCount; index += 1) {
       const sample = samples[index] as number;
       sum += sample * sample;
     }
