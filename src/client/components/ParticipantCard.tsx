@@ -143,6 +143,7 @@ export const ParticipantCard = memo(function ParticipantCard({
             className="ask-button"
             type="button"
             aria-pressed={isAddressing}
+            aria-describedby={`ask-desc-${participant.id}`}
             aria-label={
               isAddressing
                 ? `Asking ${participant.displayName}; release to stop`
@@ -171,6 +172,10 @@ export const ParticipantCard = memo(function ParticipantCard({
               ? `Asking ${participant.displayName}…`
               : `Hold to ask ${participant.displayName}`}
           </button>
+          <span id={`ask-desc-${participant.id}`} className="sr-only">
+            Press and hold Space, Enter, or primary pointer to address {participant.displayName}.
+            Release to stop.
+          </span>
           {/* FR8: say which form is in effect rather than implying a guarantee
               the transport is not providing. */}
           <small className={`enforcement enforcement--${row?.enforcement ?? "cooperative"}`}>
