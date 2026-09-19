@@ -454,6 +454,63 @@ describe("FR4 — floor control serialises AI speech", () => {
     });
     expect(releaseNonExistent.status).toBe(404);
   });
+
+  it("removes a removed AI from floor queue and floor holder selection (SEC-03)", async () => {
+    const created = await createRoom();
+    const first = await addAi(created, "Atlas");
+    const second = await addAi(created, "Sage");
+    const third = await addAi(created, "Pilot");
+    const atlas = first.participants.find((p) => p.role === "ai" && p.displayName === "Atlas");
+    const sage = second.participants.find((p) => p.role === "ai" && p.displayName === "Sage");
+    const pilot = third.participants.find((p) => p.role === "ai" && p.displayName === "Pilot");
+
+    // Atlas holds floor
+    await call(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: atlas?.id,
+      operation: "request",
+    });
+
+    // Sage queues
+    await call(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: sage?.id,
+      operation: "request",
+    });
+
+    // Pilot queues
+    const pilotQueued = await call<{ granted: boolean; room: RoomSnapshot }>(
+      `/api/rooms/${created.room.code}/floor`,
+      { ...credential(created), aiId: pilot?.id, operation: "request" },
+    );
+    expect(pilotQueued.value.room.floor.queue).toEqual([sage?.id, pilot?.id]);
+
+    // Remove Sage (the first queued AI) from room
+    await call(
+      `/api/rooms/${created.room.code}/ai`,
+      {
+        ...credential(created),
+        aiId: sage?.id,
+      },
+      "DELETE",
+    );
+
+    // Check room snapshot: Sage is no longer in floor queue
+    const snapRes = await call<RoomSnapshot>(
+      `/api/rooms/${created.room.code}/snapshot`,
+      credential(created),
+    );
+    expect(snapRes.value.floor.queue).toEqual([pilot?.id]);
+
+    // When Atlas releases floor, Pilot (not Sage) acquires the floor
+    const released = await call<RoomSnapshot>(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: atlas?.id,
+      operation: "release",
+    });
+    expect(released.value.floor.holderId).toBe(pilot?.id);
+    expect(released.value.floor.queue).toEqual([]);
+  });
 });
 
 describe("H11 — presenter simulation is configurable and labelled", () => {
