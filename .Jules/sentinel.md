@@ -27,3 +27,8 @@
 **Vulnerability:** Top-level key deny-listing in telemetry sanitisation allowed arbitrary nested payloads and free-text strings (such as display names or transcripts) to pass into reports without scrubbing.
 **Learning:** Deny-list filtering on unstructured event objects fails when object schemas evolve or nesting is introduced.
 **Prevention:** Use an explicit allow-list of permitted keys (`at`, `type`, `participantId`, `trackId`, `value`) with strict type validation, reject free-text strings, and re-filter upon export.
+
+## 2026-09-17 - Floor Queue Active AI Participant Validation
+**Vulnerability:** AI participants removed or disconnected from a room could remain in the Durable Object `floor_queue` table and be granted floor speaking holder status upon floor release (SEC-03 / CWE-20).
+**Learning:** Secondary state tables (such as `floor_queue`) lack foreign key constraints or automatic cascade deletion when participant state changes, allowing stale or departed participant IDs to persist in queue operations.
+**Prevention:** Always JOIN secondary queue/state tables with the primary `participants` table filtering on active status (`state != 'left' AND role = 'ai'`) when querying queue order or assigning resource holders.

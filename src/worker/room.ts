@@ -791,7 +791,11 @@ export class Room extends DurableObject<Env> {
       return;
     }
     const next = this.ctx.storage.sql
-      .exec<{ ai_id: string }>("SELECT ai_id FROM floor_queue ORDER BY queued_at LIMIT 1")
+      .exec<{ ai_id: string }>(
+        `SELECT f.ai_id FROM floor_queue f
+         JOIN participants p ON p.id = f.ai_id AND p.role = 'ai' AND p.state != 'left'
+         ORDER BY f.queued_at LIMIT 1`,
+      )
       .toArray()[0];
     if (next) {
       this.ctx.storage.sql.exec("DELETE FROM floor_queue WHERE ai_id = ?", next.ai_id);
@@ -1054,7 +1058,11 @@ export class Room extends DurableObject<Env> {
 
   private floorQueue(): string[] {
     return this.ctx.storage.sql
-      .exec<{ ai_id: string }>("SELECT ai_id FROM floor_queue ORDER BY queued_at")
+      .exec<{ ai_id: string }>(
+        `SELECT f.ai_id FROM floor_queue f
+         JOIN participants p ON p.id = f.ai_id AND p.role = 'ai' AND p.state != 'left'
+         ORDER BY f.queued_at`,
+      )
       .toArray()
       .map((row) => row.ai_id);
   }
