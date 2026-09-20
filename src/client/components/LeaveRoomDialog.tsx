@@ -39,7 +39,10 @@ export function LeaveRoomDialog({
           className="button button--compact"
           type="button"
           disabled={leaving}
-          onClick={() => dialogRef.current?.close()}
+          onClick={() => {
+            onCancel();
+            dialogRef.current?.close();
+          }}
         >
           Stay
         </button>

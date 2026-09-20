@@ -224,7 +224,7 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(html).toContain("Leaving…");
   });
 
-  it("renders RoomTopBar live audio button with aria-busy when starting/disabled", () => {
+  it("renders RoomTopBar live audio button with aria-busy when starting/disabled and leave button with aria-haspopup", () => {
     const html = renderToStaticMarkup(
       React.createElement(RoomTopBar, {
         code: "TEST1234567890123456",
@@ -241,6 +241,8 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(html).toContain('aria-label="Starting audio… (please wait)"');
     expect(html).toContain('title="Starting audio… (please wait)"');
     expect(html).toContain("Starting audio…");
+    expect(html).toContain('aria-haspopup="dialog"');
+    expect(html).toContain("Leave room");
   });
 
   it("renders styled retry button in RoomStatusStack terminal phase", () => {
