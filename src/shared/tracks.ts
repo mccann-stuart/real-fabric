@@ -41,9 +41,17 @@ export function trackKey(track: TrackAddress): string {
 }
 
 export function parseTrackName(name: string): { kind: TrackKind; participantId: string } | null {
-  const match = name.match(/^(audio|presence)\/(.+)$/);
-  if (!match?.[1] || !match[2]) return null;
-  return { kind: match[1] as TrackKind, participantId: match[2] };
+  // ⚡ Bolt Optimization: Use fast prefix checking and slicing instead of regex
+  // to eliminate RegExp object instantiation and match array allocations on track validation paths.
+  if (name.startsWith("audio/")) {
+    const participantId = name.slice(6);
+    return participantId ? { kind: "audio", participantId } : null;
+  }
+  if (name.startsWith("presence/")) {
+    const participantId = name.slice(9);
+    return participantId ? { kind: "presence", participantId } : null;
+  }
+  return null;
 }
 
 /**
