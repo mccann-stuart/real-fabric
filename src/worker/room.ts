@@ -572,10 +572,25 @@ export class Room extends DurableObject<Env> {
       return;
     }
 
+    const expiredAis = this.ctx.storage.sql
+      .exec<{ id: string }>(
+        "SELECT id FROM participants WHERE role = 'ai' AND state = 'reconnecting' AND reconnect_until <= ?",
+        now,
+      )
+      .toArray();
+
     this.ctx.storage.sql.exec(
       "UPDATE participants SET state = 'left', reconnect_until = NULL WHERE state = 'reconnecting' AND reconnect_until <= ?",
       now,
     );
+
+    for (let i = 0; i < expiredAis.length; i++) {
+      const expired = expiredAis[i];
+      if (expired) {
+        await this.releaseFloorInternal(expired.id, now);
+      }
+    }
+
     this.noteEmptiness(now);
     await this.rescheduleAlarm();
   }
@@ -780,8 +795,24 @@ export class Room extends DurableObject<Env> {
   private async releaseFloorInternal(aiId: string, now: number): Promise<void> {
     const meta = this.meta();
     if (!meta) return;
+
+    this.ctx.storage.sql.exec(
+      `DELETE FROM floor_queue WHERE ai_id NOT IN (
+         SELECT id FROM participants WHERE role = 'ai' AND state != 'left'
+       )`,
+    );
     this.ctx.storage.sql.exec("DELETE FROM floor_queue WHERE ai_id = ?", aiId);
-    if (meta.floor_holder !== aiId) {
+
+    const isHolderActive = meta.floor_holder
+      ? this.ctx.storage.sql
+          .exec<{ id: string }>(
+            "SELECT id FROM participants WHERE id = ? AND role = 'ai' AND state != 'left' LIMIT 1",
+            meta.floor_holder,
+          )
+          .toArray()[0] !== undefined
+      : false;
+
+    if (meta.floor_holder !== aiId && isHolderActive) {
       this.broadcast({
         type: "floor_changed",
         holderId: meta.floor_holder,
@@ -790,9 +821,16 @@ export class Room extends DurableObject<Env> {
       });
       return;
     }
+
     const next = this.ctx.storage.sql
-      .exec<{ ai_id: string }>("SELECT ai_id FROM floor_queue ORDER BY queued_at LIMIT 1")
+      .exec<{ ai_id: string }>(
+        `SELECT f.ai_id FROM floor_queue f
+         JOIN participants p ON p.id = f.ai_id
+         WHERE p.role = 'ai' AND p.state != 'left'
+         ORDER BY f.queued_at LIMIT 1`,
+      )
       .toArray()[0];
+
     if (next) {
       this.ctx.storage.sql.exec("DELETE FROM floor_queue WHERE ai_id = ?", next.ai_id);
       this.ctx.storage.sql.exec(

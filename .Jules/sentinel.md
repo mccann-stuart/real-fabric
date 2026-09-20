@@ -27,3 +27,8 @@
 **Vulnerability:** Top-level key deny-listing in telemetry sanitisation allowed arbitrary nested payloads and free-text strings (such as display names or transcripts) to pass into reports without scrubbing.
 **Learning:** Deny-list filtering on unstructured event objects fails when object schemas evolve or nesting is introduced.
 **Prevention:** Use an explicit allow-list of permitted keys (`at`, `type`, `participantId`, `trackId`, `value`) with strict type validation, reject free-text strings, and re-filter upon export.
+
+## 2026-09-17 - Floor State Cleanup and Stale AI Target Disconnection
+**Vulnerability:** Disconnected or expired AI participants remained in `floor_holder` or `floor_queue`, wedging global floor control indefinitely (SEC-03 / CWE-20).
+**Learning:** Updating participant state to `left` in timers or lifecycle handlers without transactionally purging relational queue structures or advancing floor ownership leaves dangling references in singleton room metadata.
+**Prevention:** Purge stale/left participant references in queue release transitions, verify active target status (`state != 'left'`) before granting floor ownership, and invoke floor release routines when participant sessions expire in `alarm()`.
