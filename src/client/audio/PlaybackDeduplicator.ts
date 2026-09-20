@@ -56,6 +56,8 @@ export class PlaybackDeduplicator {
   }
 
   private prune(groups: Map<number, Set<number>>): void {
+    // ⚡ Bolt Optimization: Evict numerically smallest group ID (oldest sequence window)
+    // in a single bounded pass over the small group map (max 5 items) without extra allocations.
     while (groups.size > RETAINED_GROUPS_PER_PARTICIPANT) {
       let oldestGroup = Number.POSITIVE_INFINITY;
       for (const groupId of groups.keys()) {
