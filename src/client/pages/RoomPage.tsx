@@ -409,6 +409,7 @@ export function RoomPage({
           <button
             className="mobile-audio-rail__danger"
             type="button"
+            aria-haspopup="dialog"
             onClick={() => {
               setLeaveError(null);
               leaveDialog.current?.showModal();

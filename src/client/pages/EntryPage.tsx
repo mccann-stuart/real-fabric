@@ -1,3 +1,4 @@
+import type { KeyboardEvent } from "react";
 import { MAX_SIMULATED_PARTICIPANTS, PINNED_MOQT_DRAFT } from "../../shared/contracts";
 import type { ConfigurationMatch } from "../../shared/pinnedConfiguration";
 import { Brand } from "../components/Brand";
@@ -35,6 +36,14 @@ export function EntryPage({
     enterRoom,
   } = useEntryForm({ navigate, initialCode, stopMicrophone });
 
+  const handleInputKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Enter" && !busy) {
+      event.preventDefault();
+      const trimmedCode = roomCode.trim();
+      void enterRoom(trimmedCode.length > 0 ? "join" : "create");
+    }
+  };
+
   return (
     <main className="entry-page">
       <header className="topbar">
@@ -57,6 +66,7 @@ export function EntryPage({
                 maxLength={80}
                 value={displayName}
                 onChange={(event) => setDisplayName(event.target.value)}
+                onKeyDown={handleInputKeyDown}
                 placeholder="Ada Lovelace"
               />
             </label>
@@ -68,6 +78,7 @@ export function EntryPage({
                 maxLength={20}
                 value={roomCode}
                 onChange={(event) => setRoomCode(event.target.value)}
+                onKeyDown={handleInputKeyDown}
                 placeholder="20-character code"
               />
             </label>
