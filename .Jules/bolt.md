@@ -26,6 +26,10 @@
 **Learning:** Repeatedly filtering and mapping active room participants on high-frequency state updates degrades UI rendering and computation performance.
 **Action:** Cache normalized participant maps and derive state changes only when room snapshots indicate actual membership or routing mutation.
 
+## 2026-09-24 - TypedArray Block Copy in AudioWorklet Ring Buffer
+**Learning:** Writing audio frame quanta sample-by-sample with JS loops and modulo arithmetic in an AudioWorklet ring buffer introduces unnecessary CPU overhead and loop iterations on real-time 50 Hz audio paths.
+**Action:** Use chunked `TypedArray.prototype.set()` block copies (splitting at ring buffer boundary wraparound) to leverage native memcpy and eliminate per-sample loop iterations and modulo calculations.
+
 ## Next steps and vision statements
 
 Forward-looking performance engineering and optimization targets:
