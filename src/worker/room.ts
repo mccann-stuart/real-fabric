@@ -781,6 +781,10 @@ export class Room extends DurableObject<Env> {
     const meta = this.meta();
     if (!meta) return;
     this.ctx.storage.sql.exec("DELETE FROM floor_queue WHERE ai_id = ?", aiId);
+    // Security (SEC-03): Clean up any stale floor queue entries for left or non-existent AIs.
+    this.ctx.storage.sql.exec(
+      "DELETE FROM floor_queue WHERE ai_id NOT IN (SELECT id FROM participants WHERE role = 'ai' AND state != 'left')",
+    );
     if (meta.floor_holder !== aiId) {
       this.broadcast({
         type: "floor_changed",
