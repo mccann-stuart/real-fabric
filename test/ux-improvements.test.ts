@@ -9,6 +9,7 @@ import { ParticipantCard } from "../src/client/components/ParticipantCard";
 import { PreflightPanel } from "../src/client/components/PreflightPanel";
 import { RoomStatusStack } from "../src/client/components/RoomStatusStack";
 import { RoomTopBar } from "../src/client/components/RoomTopBar";
+import { SubscriptionGraph } from "../src/client/components/SubscriptionGraph";
 import { EntryPage } from "../src/client/pages/EntryPage";
 import { PreflightPage } from "../src/client/pages/PreflightPage";
 import type { Participant, RoomSnapshot, RoutingPreference } from "../src/shared/contracts";
@@ -410,5 +411,70 @@ describe("Micro-UX & Accessibility Improvements", () => {
 
     expect(html).toContain("Required capabilities");
     expect(html).toContain("Optional enhancements");
+  });
+
+  it("renders SubscriptionGraph with accessible sr-only connection details table", () => {
+    const mockParticipants: Participant[] = [
+      {
+        id: "human-1",
+        displayName: "Alice",
+        role: "human",
+        state: "connected",
+        address: null,
+        simulated: false,
+        pipeline: null,
+        joinedAt: 1000,
+        reconnectUntil: null,
+        wakeName: null,
+        lastActiveAt: 1000,
+      },
+      {
+        id: "ai-1",
+        displayName: "Bob AI",
+        role: "ai",
+        state: "connected",
+        address: "ai/bob",
+        simulated: false,
+        pipeline: "listening",
+        joinedAt: 1000,
+        reconnectUntil: null,
+        wakeName: "bob",
+        lastActiveAt: 1000,
+      },
+    ];
+
+    const mockRouting: RoutingPreference[] = [
+      {
+        humanId: "human-1",
+        aiId: "ai-1",
+        hearsMe: true,
+        iHearIt: true,
+        enforcement: "cooperative",
+        updatedAt: 1000,
+      },
+    ];
+
+    const html = renderToStaticMarkup(
+      React.createElement(SubscriptionGraph, {
+        participants: mockParticipants,
+        routing: mockRouting,
+        viewerId: "human-1",
+        publishing: true,
+        subscribedIds: ["ai-1"],
+      }),
+    );
+
+    expect(html).toContain("Subscription connection details");
+    expect(html).toContain('<th scope="col">From</th>');
+    expect(html).toContain('<th scope="col">To</th>');
+    expect(html).toContain('<th scope="col">Type</th>');
+    expect(html).toContain('<th scope="col">Status</th>');
+
+    // Check publication edge from You to Relay
+    expect(html).toContain("<td>You</td><td>Relay</td><td>Publication</td><td>Active</td>");
+    // Check subscription edge from Relay to You
+    expect(html).toContain("<td>Relay</td><td>You</td><td>Subscription</td><td>Active</td>");
+    // Check AI inbound routing edge from You to Bob AI
+    expect(html).toContain("<td>You</td><td>Bob AI</td><td>AI Inbound</td><td>Active</td>");
   });
 });

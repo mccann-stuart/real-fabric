@@ -109,11 +109,44 @@ export const SubscriptionGraph = memo(function SubscriptionGraph({
     publishing ? "You are publishing to relay." : "You are not publishing."
   }`;
 
+  const resolveEntityName = (id: string): string => {
+    if (id === "relay") return "Relay";
+    if (id === viewerId) return "You";
+    return active.find((p) => p.id === id)?.displayName ?? id;
+  };
+
   return (
     <div className="graph-view">
       <div id="subscription-graph-desc" className="sr-only">
         {graphSummary}
       </div>
+      <table className="sr-only">
+        <caption>Subscription connection details</caption>
+        <thead>
+          <tr>
+            <th scope="col">From</th>
+            <th scope="col">To</th>
+            <th scope="col">Type</th>
+            <th scope="col">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {edges.map((edge) => (
+            <tr key={edge.id}>
+              <td>{resolveEntityName(edge.from)}</td>
+              <td>{resolveEntityName(edge.to)}</td>
+              <td>
+                {edge.kind === "publication"
+                  ? "Publication"
+                  : edge.kind === "subscription"
+                    ? "Subscription"
+                    : "AI Inbound"}
+              </td>
+              <td>{edge.live ? "Active" : "Dormant"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
       <svg
         viewBox={`0 0 ${size} ${size}`}
         role="img"
