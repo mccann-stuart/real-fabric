@@ -206,6 +206,8 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(html).toContain('aria-label="Signal path (Shortcut: 1)"');
     expect(html).toContain('title="Signal path (Shortcut: 1)"');
     expect(html).toContain('aria-keyshortcuts="5"');
+    expect(html).toContain('aria-label="Close inspector"');
+    expect(html).toContain('title="Close inspector"');
   });
 
   it("announces the pending leave action", () => {
