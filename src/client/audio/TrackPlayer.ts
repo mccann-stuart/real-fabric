@@ -243,8 +243,15 @@ export class TrackPlayer {
   /** H6: barge-in. Returns how many objects were discarded. */
   cancelGroup(groupId: number): number {
     this.cancelledGroups.add(groupId);
+    // ⚡ Bolt Optimization: Loop to find numerically lowest group ID without Array spread allocation [...].
     if (this.cancelledGroups.size > 8) {
-      this.cancelledGroups.delete(Math.min(...this.cancelledGroups));
+      let oldestGroup = Number.POSITIVE_INFINITY;
+      for (const id of this.cancelledGroups) {
+        if (id < oldestGroup) oldestGroup = id;
+      }
+      if (oldestGroup !== Number.POSITIVE_INFINITY) {
+        this.cancelledGroups.delete(oldestGroup);
+      }
     }
     const dropped = this.buffer.cancelGroup(groupId);
     // Drop what the worklet already holds too, or the tail still plays.
