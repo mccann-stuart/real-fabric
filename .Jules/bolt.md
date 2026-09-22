@@ -26,6 +26,10 @@
 **Learning:** Repeatedly filtering and mapping active room participants on high-frequency state updates degrades UI rendering and computation performance.
 **Action:** Cache normalized participant maps and derive state changes only when room snapshots indicate actual membership or routing mutation.
 
+## 2026-09-18 - Zero-Allocation Set Eviction in TrackPlayer
+**Learning:** Using `Math.min(...set)` on `Set<number>` instances on real-time media paths creates temporary array allocations and function argument spreading overhead during high-frequency events like group cancellations.
+**Action:** Iterate directly over Set collections (`for..of`) to find extrema without array spread allocations (`[...]`).
+
 ## Next steps and vision statements
 
 Forward-looking performance engineering and optimization targets:
