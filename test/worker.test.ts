@@ -32,6 +32,10 @@ describe("Real Fabric Worker", () => {
     expect(response.headers.get("x-correlation-id")).toBe(customCorrelationId);
     expect(response.headers.get("x-content-type-options")).toBe("nosniff");
     expect(response.headers.get("x-frame-options")).toBe("DENY");
+    expect(response.headers.get("strict-transport-security")).toBe(
+      "max-age=63072000; includeSubDomains; preload",
+    );
+    expect(response.headers.get("x-permitted-cross-domain-policies")).toBe("none");
 
     const body = (await response.json()) as {
       error: { code: string; message: string; correlationId: string };
