@@ -132,7 +132,12 @@ export function Inspector({
     <aside className={`inspector${open ? " inspector--open" : ""}`} aria-label="Protocol inspector">
       <div className="inspector__mobile-heading">
         <h2>Inspector</h2>
-        <button type="button" onClick={onClose} aria-label="Close inspector">
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close inspector"
+          title="Close inspector"
+        >
           ×
         </button>
       </div>
