@@ -46,7 +46,13 @@ export class PacketLossConcealer {
   /** Called for every genuinely decoded frame. Resets the loss run. */
   observe(samples: Float32Array): void {
     if (samples.length === 0) return;
-    this.last = samples.slice();
+    // ⚡ Bolt Optimization: Reuse pre-allocated Float32Array buffer when frame length
+    // matches, eliminating per-frame 3.8KB heap allocations on every 20ms audio frame (50Hz).
+    if (this.last && this.last.length === samples.length) {
+      this.last.set(samples);
+    } else {
+      this.last = samples.slice();
+    }
     // Invalidated rather than recomputed: the period is only needed on loss,
     // and loss is the rare case.
     this.pitchPeriod = null;
@@ -155,6 +161,11 @@ export function estimatePitchPeriod(samples: Float32Array): number {
 
 function rootMeanSquare(samples: Float32Array): number {
   let sum = 0;
-  for (const sample of samples) sum += sample * sample;
-  return Math.sqrt(sum / samples.length);
+  const sampleCount = samples.length;
+  // ⚡ Bolt Optimization: Direct index loop avoids JS iterator allocations per 20ms frame.
+  for (let index = 0; index < sampleCount; index += 1) {
+    const sample = samples[index] as number;
+    sum += sample * sample;
+  }
+  return sampleCount === 0 ? 0 : Math.sqrt(sum / sampleCount);
 }
