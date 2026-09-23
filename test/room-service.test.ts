@@ -454,6 +454,41 @@ describe("FR4 — floor control serialises AI speech", () => {
     });
     expect(releaseNonExistent.status).toBe(404);
   });
+
+  it("handles left or stale AI floor holders gracefully and clears floor state (SEC-03)", async () => {
+    const created = await createRoom();
+    const first = await addAi(created, "Atlas");
+    const second = await addAi(created, "Sage");
+    const atlas = first.participants.find((p) => p.role === "ai" && p.displayName === "Atlas");
+    const sage = second.participants.find((p) => p.role === "ai" && p.displayName === "Sage");
+    if (!atlas || !sage) throw new Error("AIs missing");
+
+    // Grant floor to Atlas
+    await call(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: atlas.id,
+      operation: "request",
+    });
+
+    // Remove Atlas (which marks state = 'left')
+    await call(
+      `/api/rooms/${created.room.code}/ai`,
+      {
+        ...credential(created),
+        aiId: atlas.id,
+      },
+      "DELETE",
+    );
+
+    // Request floor for Sage; stale floor_holder (Atlas) should be ignored and Sage should get the floor
+    const sageFloor = await call<{ granted: boolean; room: RoomSnapshot }>(
+      `/api/rooms/${created.room.code}/floor`,
+      { ...credential(created), aiId: sage.id, operation: "request" },
+    );
+
+    expect(sageFloor.value.granted).toBe(true);
+    expect(sageFloor.value.room.floor.holderId).toBe(sage.id);
+  });
 });
 
 describe("H11 — presenter simulation is configurable and labelled", () => {
