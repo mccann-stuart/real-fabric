@@ -26,6 +26,10 @@
 **Learning:** Repeatedly filtering and mapping active room participants on high-frequency state updates degrades UI rendering and computation performance.
 **Action:** Cache normalized participant maps and derive state changes only when room snapshots indicate actual membership or routing mutation.
 
+## 2026-09-24 - Zero-allocation Float32Array Buffer Reuse in PacketLossConcealer
+**Learning:** Re-allocating TypedArrays with `.slice()` on 50 Hz real-time audio paths creates heap thrashing and garbage collection latency spikes during continuous voice streams.
+**Action:** Reuse pre-allocated `Float32Array` instances using `.set()` and replace `for...of` iteration over TypedArrays with indexed `for` loops to eliminate per-frame allocations.
+
 ## Next steps and vision statements
 
 Forward-looking performance engineering and optimization targets:
