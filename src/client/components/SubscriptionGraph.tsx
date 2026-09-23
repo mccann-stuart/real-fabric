@@ -181,6 +181,49 @@ export const SubscriptionGraph = memo(function SubscriptionGraph({
         <li className="graph-key--subscription">Subscription — n−1 tracks in</li>
         <li className="graph-key--ai">AI inbound — dashed when consent is off</li>
       </ul>
+      <table className="sr-only" aria-label="Subscription graph connection breakdown">
+        <caption>Connection breakdown</caption>
+        <thead>
+          <tr>
+            <th scope="col">From</th>
+            <th scope="col">To</th>
+            <th scope="col">Type</th>
+            <th scope="col">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {edges.map((edge) => (
+            <tr key={edge.id}>
+              <td>{nodeDisplayName(edge.from, viewerId, participants)}</td>
+              <td>{nodeDisplayName(edge.to, viewerId, participants)}</td>
+              <td>{edgeKindLabel(edge.kind)}</td>
+              <td>{edge.live ? "Active" : "Dormant"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 });
+
+function nodeDisplayName(
+  id: string,
+  viewerId: string,
+  participants: readonly Participant[],
+): string {
+  if (id === viewerId) return "You";
+  if (id === "relay") return "Relay";
+  const found = participants.find((participant) => participant.id === id);
+  return found ? found.displayName : id;
+}
+
+function edgeKindLabel(kind: GraphEdge["kind"]): string {
+  switch (kind) {
+    case "publication":
+      return "Publication";
+    case "subscription":
+      return "Subscription";
+    case "ai_inbound":
+      return "AI inbound";
+  }
+}
