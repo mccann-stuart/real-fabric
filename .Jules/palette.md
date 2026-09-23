@@ -18,9 +18,12 @@
 **Learning:** Adding direct numeric shortcut key handlers (`1`..`5`) to modal tablists provides rapid keyboard navigation, but must pair with `aria-keyshortcuts` attributes and explicit focus movement onto the activated tab button so assistive technologies announce both the tab switch and shortcut availability.
 **Action:** Pair numeric shortcut listeners with `aria-keyshortcuts` and programmatic `.focus()` calls on target tab buttons while ignoring active text input targets.
 
+## 2026-09-11 - Accessible Screen Reader Connection Breakdown for Canvas Graphs
+**Learning:** Visual SVG graph representations of complex network topographies (such as MOQT publisher/subscriber subscription graphs) are inaccessible to screen reader users beyond high-level summary strings unless accompanied by structured, semantic HTML data tables (`<table className="sr-only">`) enumerating nodes, connection types, and live/dormant statuses.
+**Action:** Always complement canvas or SVG topology graphs with an `sr-only` semantic table breakdown so screen readers can navigate individual connection edges.
+
 ## Next steps and vision statements
 
 Forward-looking user experience and accessibility roadmap targets:
 
-1. **Accessible SVG subscription graph (Vision target):** Provide an accessible hierarchical table or tree view alternative for the live publisher/subscriber canvas graph.
-2. **Real-time captions and transcript display (Vision statement):** Design a WCAG 2.2 AA compliant live captioning container that scales cleanly without obscuring participant cards or inspector telemetry.
+1. **Real-time captions and transcript display (Vision statement):** Design a WCAG 2.2 AA compliant live captioning container that scales cleanly without obscuring participant cards or inspector telemetry.

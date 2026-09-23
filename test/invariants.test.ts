@@ -729,6 +729,18 @@ describe("H9 — per-AI routing, honestly labelled", () => {
     expect(withoutConsent.find((edge) => edge.kind === "ai_inbound")?.live).toBe(false);
   });
 
+  it("builds structured edges for publication, subscription, and AI inbound connections", () => {
+    const participants = [human("h1"), ai("a1")];
+    const routingRows = [routing({ humanId: "h1", aiId: "a1", hearsMe: true })];
+    const edges = buildEdges(participants, routingRows, "h1", true, ["a1"]);
+
+    expect(edges).toEqual([
+      { id: "pub:h1", from: "h1", to: "relay", kind: "publication", live: true },
+      { id: "sub:a1", from: "relay", to: "h1", kind: "subscription", live: true },
+      { id: "ai:a1:h1", from: "h1", to: "a1", kind: "ai_inbound", live: true },
+    ]);
+  });
+
   it("lets an AI answer only what it actually received", () => {
     const responder = new ScriptedResponder();
     expect(responder.respond({ aiId: "a1", askedBy: "h1", now: 0 }).canAnswer).toBe(false);
