@@ -171,34 +171,49 @@ function correctionForSkew(skewPpm: number): number {
   return 1 / (1 + skewPpm / 1_000_000);
 }
 
+// ⚡ Bolt Optimization: Reusable Float64Array buffer for slope calculation
+// avoids allocating new Array objects and thousands of heap numbers on every sample addition (~4Hz).
+// TypedArray.prototype.sort() sorts numerically by default in C++ without comparator callback overhead.
+let sharedSlopesBuffer = new Float64Array(3200);
+
 function robustSkewPpm(samples: ClockObservation[]): number | null {
+  const sampleCount = samples.length;
   const first = samples[0];
-  const last = samples[samples.length - 1];
+  const last = samples[sampleCount - 1];
   if (!first || !last || last.outputTimeMs - first.outputTimeMs < MINIMUM_DRIFT_SPAN_MS) {
     return null;
   }
 
-  const slopes: number[] = [];
-  for (let leftIndex = 0; leftIndex < samples.length; leftIndex += 1) {
+  const maxPairs = (sampleCount * (sampleCount - 1)) / 2;
+  if (sharedSlopesBuffer.length < maxPairs) {
+    sharedSlopesBuffer = new Float64Array(Math.max(maxPairs, sharedSlopesBuffer.length * 2));
+  }
+
+  let count = 0;
+  for (let leftIndex = 0; leftIndex < sampleCount; leftIndex += 1) {
     const left = samples[leftIndex];
     if (!left) continue;
-    for (let rightIndex = leftIndex + 1; rightIndex < samples.length; rightIndex += 1) {
+    for (let rightIndex = leftIndex + 1; rightIndex < sampleCount; rightIndex += 1) {
       const right = samples[rightIndex];
       if (!right) continue;
       const mediaElapsed = right.mediaTimestampMs - left.mediaTimestampMs;
       if (mediaElapsed < MINIMUM_PAIR_SPAN_MS) continue;
       const outputElapsed = right.outputTimeMs - left.outputTimeMs;
       if (outputElapsed <= 0) continue;
-      slopes.push(outputElapsed / mediaElapsed);
+      sharedSlopesBuffer[count++] = outputElapsed / mediaElapsed;
     }
   }
-  if (slopes.length < MINIMUM_SLOPES) return null;
-  slopes.sort((left, right) => left - right);
-  const middle = Math.floor(slopes.length / 2);
+
+  if (count < MINIMUM_SLOPES) return null;
+
+  const activeSlopes = sharedSlopesBuffer.subarray(0, count);
+  activeSlopes.sort();
+
+  const middle = Math.floor(count / 2);
   const median =
-    slopes.length % 2 === 0
-      ? ((slopes[middle - 1] ?? 1) + (slopes[middle] ?? 1)) / 2
-      : (slopes[middle] ?? 1);
+    count % 2 === 0
+      ? ((activeSlopes[middle - 1] ?? 1) + (activeSlopes[middle] ?? 1)) / 2
+      : (activeSlopes[middle] ?? 1);
   return (median - 1) * 1_000_000;
 }
 
