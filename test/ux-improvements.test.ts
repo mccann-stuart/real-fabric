@@ -9,6 +9,7 @@ import { ParticipantCard } from "../src/client/components/ParticipantCard";
 import { PreflightPanel } from "../src/client/components/PreflightPanel";
 import { RoomStatusStack } from "../src/client/components/RoomStatusStack";
 import { RoomTopBar } from "../src/client/components/RoomTopBar";
+import { SubscriptionGraph } from "../src/client/components/SubscriptionGraph";
 import { EntryPage } from "../src/client/pages/EntryPage";
 import { PreflightPage } from "../src/client/pages/PreflightPage";
 import type { Participant, RoomSnapshot, RoutingPreference } from "../src/shared/contracts";
@@ -410,5 +411,64 @@ describe("Micro-UX & Accessibility Improvements", () => {
 
     expect(html).toContain("Required capabilities");
     expect(html).toContain("Optional enhancements");
+  });
+
+  it("renders SubscriptionGraph with title tooltips for relay, nodes, and edges", () => {
+    const participants: Participant[] = [
+      {
+        id: "human-1",
+        displayName: "Ada Lovelace",
+        role: "human",
+        state: "connected",
+        joinedAt: 1000,
+        reconnectUntil: null,
+        simulated: false,
+        address: null,
+        wakeName: null,
+        pipeline: null,
+        lastActiveAt: 1000,
+      },
+      {
+        id: "ai-1",
+        displayName: "Claude AI",
+        role: "ai",
+        state: "connected",
+        address: "ai/claude",
+        simulated: true,
+        pipeline: "listening",
+        joinedAt: 1000,
+        reconnectUntil: null,
+        wakeName: "claude",
+        lastActiveAt: 1000,
+      },
+    ];
+
+    const routing: RoutingPreference[] = [
+      {
+        humanId: "human-1",
+        aiId: "ai-1",
+        hearsMe: true,
+        iHearIt: true,
+        enforcement: "cooperative",
+        updatedAt: 1000,
+      },
+    ];
+
+    const html = renderToStaticMarkup(
+      React.createElement(SubscriptionGraph, {
+        participants,
+        routing,
+        viewerId: "human-1",
+        publishing: true,
+        subscribedIds: ["ai-1"],
+      }),
+    );
+
+    expect(html).toContain("<title>MoQ Relay</title>");
+    expect(html).toContain("<title>Ada Lovelace (Human, you)</title>");
+    expect(html).toContain("<title>Claude AI (AI, simulated)</title>");
+    expect(html).toContain("<title>Publication: Ada Lovelace → Relay</title>");
+    expect(html).toContain("<title>Subscription: Relay → Claude AI (Subscribed)</title>");
+    expect(html).toContain("<title>AI Inbound: Ada Lovelace → Claude AI (Consent active)</title>");
   });
 });
