@@ -16,6 +16,7 @@ export interface GraphEdge {
   to: string;
   kind: "publication" | "subscription" | "ai_inbound";
   live: boolean;
+  label?: string;
 }
 
 export function buildEdges(
@@ -26,6 +27,10 @@ export function buildEdges(
   subscribedIds: readonly string[],
 ): GraphEdge[] {
   const edges: GraphEdge[] = [];
+  const participantMap = new Map<string, Participant>(participants.map((p) => [p.id, p]));
+  const viewer = participantMap.get(viewerId);
+  const viewerName = viewer ? viewer.displayName : "You";
+
   if (publishing) {
     edges.push({
       id: `pub:${viewerId}`,
@@ -33,30 +38,36 @@ export function buildEdges(
       to: "relay",
       kind: "publication",
       live: true,
+      label: `Publication: ${viewerName} → Relay`,
     });
   }
   // Performance optimization (⚡ Bolt): Use Set for O(1) subscription checks instead of O(M) array lookup inside loop
   const subscribedSet = new Set(subscribedIds);
   for (const participant of participants) {
     if (participant.id === viewerId || participant.state === "left") continue;
+    const isSubbed = subscribedSet.has(participant.id);
     edges.push({
       id: `sub:${participant.id}`,
       from: "relay",
       to: viewerId,
       kind: "subscription",
-      live: subscribedSet.has(participant.id),
+      live: isSubbed,
+      label: `Subscription: Relay → ${participant.displayName} (${isSubbed ? "Subscribed" : "Unsubscribed"})`,
     });
   }
   // Inbound routing: which humans each AI is subscribed to. Only the viewer's
   // own rows are theirs to see, so only those are drawn as owned edges.
   for (const row of routing) {
     if (row.humanId !== viewerId) continue;
+    const ai = participantMap.get(row.aiId);
+    const aiName = ai ? ai.displayName : "AI";
     edges.push({
       id: `ai:${row.aiId}:${row.humanId}`,
       from: row.humanId,
       to: row.aiId,
       kind: "ai_inbound",
       live: row.hearsMe,
+      label: `AI Inbound: ${viewerName} → ${aiName} (${row.hearsMe ? "Consent active" : "Consent off"})`,
     });
   }
   return edges;
@@ -132,30 +143,40 @@ export const SubscriptionGraph = memo(function SubscriptionGraph({
               x2={to.x}
               y2={to.y}
               className={`graph-edge graph-edge--${edge.kind}${edge.live ? "" : " graph-edge--dormant"}`}
-            />
+            >
+              {edge.label ? <title>{edge.label}</title> : null}
+            </line>
           );
         })}
-        <rect
-          x={centre - RELAY_BOX_WIDTH / 2}
-          y={centre - RELAY_BOX_HEIGHT / 2}
-          width={RELAY_BOX_WIDTH}
-          height={RELAY_BOX_HEIGHT}
-          className="graph-relay"
-          rx={1}
-        />
-        <text
-          x={centre}
-          y={centre + LABEL_Y_OFFSET}
-          className="graph-relay-label"
-          textAnchor="middle"
-        >
-          relay
-        </text>
+        <g>
+          <title>MoQ Relay</title>
+          <rect
+            x={centre - RELAY_BOX_WIDTH / 2}
+            y={centre - RELAY_BOX_HEIGHT / 2}
+            width={RELAY_BOX_WIDTH}
+            height={RELAY_BOX_HEIGHT}
+            className="graph-relay"
+            rx={1}
+          />
+          <text
+            x={centre}
+            y={centre + LABEL_Y_OFFSET}
+            className="graph-relay-label"
+            textAnchor="middle"
+          >
+            relay
+          </text>
+        </g>
         {active.map((participant) => {
           const point = positions.get(participant.id);
           if (!point) return null;
+          const roleLabel = participant.role === "ai" ? "AI" : "Human";
+          const simLabel = participant.simulated ? ", simulated" : "";
+          const selfLabel = participant.id === viewerId ? ", you" : "";
+          const nodeTitle = `${participant.displayName} (${roleLabel}${simLabel}${selfLabel})`;
           return (
             <g key={participant.id}>
+              <title>{nodeTitle}</title>
               <circle
                 cx={point.x}
                 cy={point.y}
