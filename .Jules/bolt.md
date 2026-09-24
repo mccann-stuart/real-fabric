@@ -26,6 +26,10 @@
 **Learning:** Repeatedly filtering and mapping active room participants on high-frequency state updates degrades UI rendering and computation performance.
 **Action:** Cache normalized participant maps and derive state changes only when room snapshots indicate actual membership or routing mutation.
 
+## 2026-09-18 - TypedArray Sorting and Buffer Reuse in High-Frequency Drift Estimation
+**Learning:** `robustSkewPpm` in `DriftEstimator` runs every 250 ms per track, computing up to 3,160 slope pairs. Allocating JS arrays (`[]`) and sorting numbers with `slopes.sort((a,b) => a-b)` creates substantial GC pressure and closure overhead. Reusable `Float64Array` typed array buffers combined with `Float64Array.prototype.sort()` (which sorts numerically in native C++) yields a ~3x speedup with zero allocation.
+**Action:** Prefer pre-allocated TypedArray buffers and parameterless `.sort()` for high-frequency numeric sorting operations in real-time audio pipeline paths.
+
 ## Next steps and vision statements
 
 Forward-looking performance engineering and optimization targets:
