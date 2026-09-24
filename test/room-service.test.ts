@@ -454,6 +454,43 @@ describe("FR4 — floor control serialises AI speech", () => {
     });
     expect(releaseNonExistent.status).toBe(404);
   });
+
+  it("purges left AIs from floor queue and clears stale floor holder on request (SEC-03)", async () => {
+    const created = await createRoom();
+    await addAi(created, "Atlas");
+    const withSecond = await addAi(created, "Sage");
+
+    const atlas = withSecond.participants.find((p) => p.displayName === "Atlas");
+    const sage = withSecond.participants.find((p) => p.displayName === "Sage");
+
+    // Atlas gets floor, Sage gets queued
+    await call(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: atlas?.id,
+      operation: "request",
+    });
+    await call(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: sage?.id,
+      operation: "request",
+    });
+
+    // Remove queued AI (Sage) using DELETE /api/rooms/:code/ai
+    await call(
+      `/api/rooms/${created.room.code}/ai`,
+      { ...credential(created), aiId: sage?.id },
+      "DELETE",
+    );
+
+    // Releasing Atlas's floor turn should not grant floor to removed Sage
+    const released = await call<RoomSnapshot>(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: atlas?.id,
+      operation: "release",
+    });
+    expect(released.value.floor.holderId).toBeNull();
+    expect(released.value.floor.queue).toEqual([]);
+  });
 });
 
 describe("H11 — presenter simulation is configurable and labelled", () => {

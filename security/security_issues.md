@@ -19,7 +19,7 @@ The line numbers and excerpts below are pinned to the scanned revision (`a784122
 | --- | --- | --- | --- | --- | --- |
 | P1 | [SEC-01 — Relay-wide browser bearer](#sec-01--room-creation-and-joining-disclose-a-relay-wide-publishsubscribe-bearer) | High | Medium | **Open (Known P1)** | Relay authorisation |
 | P1 | [SEC-02 — Any human receives presenter authority](#sec-02--any-joined-human-can-execute-presenter-and-ai-lifecycle-controls) | High | High | **Remediated** | Room authorisation |
-| P2 | [SEC-03 — Unvalidated AI floor target](#sec-03--unvalidated-ai-identifiers-can-wedge-or-pre-empt-the-global-floor) | Medium | High | **Open** | Shared floor integrity |
+| P2 | [SEC-03 — Unvalidated AI floor target](#sec-03--unvalidated-ai-identifiers-can-wedge-or-pre-empt-the-global-floor) | Medium | High | **Remediated** | Shared floor integrity |
 | P2 | [SEC-04 — Routing preference disclosure](#sec-04--public-room-snapshots-disclose-every-humans-per-ai-routing-preferences) | Medium | High | **Remediated** | Participant privacy |
 | P2 | [SEC-05 — Reusable bearer in WebSocket URL](#sec-05--a-reusable-participant-bearer-is-placed-in-the-websocket-query-string) | Medium | Medium | **Remediated** | Credential handling |
 | P2 | [SEC-06 — Unbounded control sockets](#sec-06--one-participant-token-can-open-unbounded-concurrent-control-sockets) | Medium | High | **Remediated** | Durable Object availability |
@@ -182,7 +182,7 @@ Trade-off: gives stronger least privilege and avoids a broad role, but introduce
 - **Rule:** `input-validation.ai-floor-target`
 - **Taxonomy:** CWE-20
 - **Severity / confidence:** Medium / High
-- **Status:** Open.
+- **Status:** Remediated in codebase (17 September 2026). Floor requests, releases, and queue queries strictly filter targets against active AI participants (`role = 'ai'` and `state != 'left'`), and stale floor holders/queue items are purged automatically (`src/worker/room.ts`). Validated by automated tests in `test/room-service.test.ts`.
 
 ### Evidence
 
