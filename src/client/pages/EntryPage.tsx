@@ -153,9 +153,15 @@ export function EntryPage({
             onClick={() => void testMicrophone()}
           >
             <span>◉ Mic level test</span>
-            <output className="sr-only" aria-live="polite" aria-atomic="true">
-              Microphone level {Math.round(level * 100)} percent
-            </output>
+            <meter
+              min={0}
+              max={100}
+              value={Math.round(level * 100)}
+              aria-label="Microphone level"
+              className="sr-only"
+            >
+              {Math.round(level * 100)}%
+            </meter>
             <span className="mic-test__wave" aria-hidden="true">
               {MIC_BARS.map((bar) => (
                 <i
