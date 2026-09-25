@@ -145,6 +145,26 @@ describe("M2 — drift estimation and silence rebuilding", () => {
     // H15: an unconverged estimator must not read as zero drift.
     expect(new DriftEstimator("track").skewPpm().exposed).toBe(false);
   });
+
+  it("efficiently computes robust slope estimates under high-frequency observations", () => {
+    const estimator = new DriftEstimator("benchmark-track");
+    const sampleCount = 80;
+    const start = performance.now();
+    for (let run = 0; run < 1000; run += 1) {
+      estimator.reset();
+      for (let index = 0; index < sampleCount; index += 1) {
+        const media = index * 250;
+        const output = media * 1.002 + ((index % 5) - 2) * 0.5;
+        estimator.observe(media, output);
+      }
+    }
+    const duration = performance.now() - start;
+    expect(estimator.health()).toBe("correcting");
+    expect(estimator.skewPpm().exposed).toBe(true);
+    console.log(
+      `[BENCHMARK] DriftEstimator observe (1000 runs x 80 samples): ${duration.toFixed(2)} ms`,
+    );
+  });
 });
 
 describe("M2 — the drift rebuild waits for a pause", () => {

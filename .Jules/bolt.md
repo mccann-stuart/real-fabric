@@ -26,6 +26,10 @@
 **Learning:** Repeatedly filtering and mapping active room participants on high-frequency state updates degrades UI rendering and computation performance.
 **Action:** Cache normalized participant maps and derive state changes only when room snapshots indicate actual membership or routing mutation.
 
+## 2026-09-18 - Zero-Allocation Native TypedArray Sorting for Clock Drift Slope Estimation
+**Learning:** In high-frequency clock drift estimation paths (runs every 250ms per track across up to 80 observations), allocating JS Arrays and running `Array.prototype.sort((a,b) => a - b)` triggers tens of thousands of JS comparison callback invocations and frequent GC garbage creation per second.
+**Action:** Use a pre-allocated module-level `Float64Array` buffer and `TypedArray.prototype.sort()` on subarray slices, which performs numeric sorting natively in C++ with zero JS callback overhead and zero heap allocations (~3.7x faster slope median sorting).
+
 ## Next steps and vision statements
 
 Forward-looking performance engineering and optimization targets:
