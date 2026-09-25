@@ -454,6 +454,49 @@ describe("FR4 — floor control serialises AI speech", () => {
     });
     expect(releaseNonExistent.status).toBe(404);
   });
+
+  it("clears stale floor holder and purges left AIs from floor queue (SEC-03)", async () => {
+    const created = await createRoom();
+    const first = await addAi(created, "Atlas");
+    const second = await addAi(created, "Sage");
+    const atlas = first.participants.find(
+      (p) => p.role === "ai" && p.displayName.includes("Atlas"),
+    );
+    const sage = second.participants.find((p) => p.role === "ai" && p.displayName.includes("Sage"));
+    if (!atlas || !sage) throw new Error("Expected Atlas and Sage to be present.");
+
+    // Atlas requests floor -> granted
+    await call(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: atlas.id,
+      operation: "request",
+    });
+
+    // Sage requests floor -> queued
+    await call(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: sage.id,
+      operation: "request",
+    });
+
+    // Remove Atlas (holder) from room
+    await call(
+      `/api/rooms/${created.room.code}/ai`,
+      {
+        ...credential(created),
+        aiId: atlas.id,
+      },
+      "DELETE",
+    );
+
+    // After removing Atlas, floor_holder should be automatically released or transferred to Sage
+    const snapshotRes = await call<RoomSnapshot>(
+      `/api/rooms/${created.room.code}/snapshot`,
+      credential(created),
+    );
+    expect(snapshotRes.value.floor.holderId).toBe(sage.id);
+    expect(snapshotRes.value.floor.queue).toEqual([]);
+  });
 });
 
 describe("H11 — presenter simulation is configurable and labelled", () => {

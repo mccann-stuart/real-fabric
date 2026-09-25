@@ -384,9 +384,24 @@ export class Room extends DurableObject<Env> {
     const meta = this.meta();
     if (!meta) throw roomError(404, "room_not_found", "Room is not initialised.");
 
-    if (meta.floor_holder === aiId)
+    // Security (SEC-03 / CWE-20): Verify holder is an active AI participant; clear if stale/left.
+    let currentHolder = meta.floor_holder;
+    if (currentHolder !== null) {
+      const activeHolder =
+        this.ctx.storage.sql
+          .exec<{ count: number }>(
+            "SELECT COUNT(*) AS count FROM participants WHERE id = ? AND role = 'ai' AND state != 'left'",
+            currentHolder,
+          )
+          .one().count > 0;
+      if (!activeHolder) {
+        currentHolder = null;
+      }
+    }
+
+    if (currentHolder === aiId)
       return { granted: true, room: this.snapshot(credential.participantId) };
-    if (meta.floor_holder === null) {
+    if (currentHolder === null) {
       this.ctx.storage.sql.exec(
         "UPDATE room_meta SET floor_holder = ?, floor_since = ? WHERE singleton = 1",
         aiId,
@@ -780,8 +795,21 @@ export class Room extends DurableObject<Env> {
   private async releaseFloorInternal(aiId: string, now: number): Promise<void> {
     const meta = this.meta();
     if (!meta) return;
+    // Security (SEC-03 / CWE-20): Purge inactive AI participants from floor queue and validate holder.
     this.ctx.storage.sql.exec("DELETE FROM floor_queue WHERE ai_id = ?", aiId);
-    if (meta.floor_holder !== aiId) {
+    this.ctx.storage.sql.exec(
+      "DELETE FROM floor_queue WHERE ai_id NOT IN (SELECT id FROM participants WHERE role = 'ai' AND state != 'left')",
+    );
+    const holderActive =
+      meta.floor_holder !== null &&
+      this.ctx.storage.sql
+        .exec<{ count: number }>(
+          "SELECT COUNT(*) AS count FROM participants WHERE id = ? AND role = 'ai' AND state != 'left'",
+          meta.floor_holder,
+        )
+        .one().count > 0;
+
+    if (meta.floor_holder !== aiId && holderActive) {
       this.broadcast({
         type: "floor_changed",
         holderId: meta.floor_holder,
@@ -791,7 +819,12 @@ export class Room extends DurableObject<Env> {
       return;
     }
     const next = this.ctx.storage.sql
-      .exec<{ ai_id: string }>("SELECT ai_id FROM floor_queue ORDER BY queued_at LIMIT 1")
+      .exec<{ ai_id: string }>(
+        `SELECT f.ai_id FROM floor_queue f
+         JOIN participants p ON f.ai_id = p.id
+         WHERE p.role = 'ai' AND p.state != 'left'
+         ORDER BY f.queued_at LIMIT 1`,
+      )
       .toArray()[0];
     if (next) {
       this.ctx.storage.sql.exec("DELETE FROM floor_queue WHERE ai_id = ?", next.ai_id);
@@ -1053,8 +1086,14 @@ export class Room extends DurableObject<Env> {
   }
 
   private floorQueue(): string[] {
+    // Security (SEC-03 / CWE-20): Only return active AI participants in the floor queue.
     return this.ctx.storage.sql
-      .exec<{ ai_id: string }>("SELECT ai_id FROM floor_queue ORDER BY queued_at")
+      .exec<{ ai_id: string }>(
+        `SELECT f.ai_id FROM floor_queue f
+         JOIN participants p ON f.ai_id = p.id
+         WHERE p.role = 'ai' AND p.state != 'left'
+         ORDER BY f.queued_at`,
+      )
       .toArray()
       .map((row) => row.ai_id);
   }
