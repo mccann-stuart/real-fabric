@@ -22,7 +22,7 @@ const TEST_CONFIGURATION = matchConfiguration({
 });
 
 describe("Micro-UX & Accessibility Improvements", () => {
-  it("renders EntryPage action buttons with accessible labels and attributes", () => {
+  it("renders EntryPage action buttons and microphone meter with accessible labels and attributes", () => {
     const html = renderToStaticMarkup(
       React.createElement(EntryPage, {
         configuration: TEST_CONFIGURATION,
@@ -35,6 +35,10 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(html).toContain("Solo presenter mode");
     expect(html).toContain("button--primary");
     expect(html).toContain('aria-label="Mic level test"');
+    expect(html).toContain("<meter");
+    expect(html).toContain('aria-label="Microphone level"');
+    expect(html).toContain('min="0"');
+    expect(html).toContain('max="100"');
   });
 
   it("renders accessible toggle switches inside participant card", () => {
