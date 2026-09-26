@@ -775,6 +775,14 @@ input::placeholder {
 .graph-node--simulated {
   stroke-dasharray: 2 2;
 }
+.graph-view g:focus-visible {
+  outline: none;
+}
+.graph-view g:focus-visible .graph-node,
+.graph-view g:focus-visible .graph-relay {
+  stroke: var(--cyan);
+  stroke-width: 2.5px;
+}
 .graph-key {
   margin: 14px 0 0;
   padding: 0;
