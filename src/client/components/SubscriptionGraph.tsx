@@ -124,6 +124,15 @@ export const SubscriptionGraph = memo(function SubscriptionGraph({
           const from = positions.get(edge.from);
           const to = positions.get(edge.to);
           if (!from || !to) return null;
+          const fromName =
+            edge.from === "relay"
+              ? "Relay"
+              : (active.find((p) => p.id === edge.from)?.displayName ?? edge.from);
+          const toName =
+            edge.to === "relay"
+              ? "Relay"
+              : (active.find((p) => p.id === edge.to)?.displayName ?? edge.to);
+          const edgeTitle = `${edge.kind.replace("_", " ")}: ${fromName} → ${toName} (${edge.live ? "active" : "inactive"})`;
           return (
             <line
               key={edge.id}
@@ -132,30 +141,39 @@ export const SubscriptionGraph = memo(function SubscriptionGraph({
               x2={to.x}
               y2={to.y}
               className={`graph-edge graph-edge--${edge.kind}${edge.live ? "" : " graph-edge--dormant"}`}
-            />
+            >
+              <title>{edgeTitle}</title>
+            </line>
           );
         })}
-        <rect
-          x={centre - RELAY_BOX_WIDTH / 2}
-          y={centre - RELAY_BOX_HEIGHT / 2}
-          width={RELAY_BOX_WIDTH}
-          height={RELAY_BOX_HEIGHT}
-          className="graph-relay"
-          rx={1}
-        />
-        <text
-          x={centre}
-          y={centre + LABEL_Y_OFFSET}
-          className="graph-relay-label"
-          textAnchor="middle"
-        >
-          relay
-        </text>
+        <g tabIndex={0} aria-label="MoQ Relay">
+          <title>MoQ Relay</title>
+          <rect
+            x={centre - RELAY_BOX_WIDTH / 2}
+            y={centre - RELAY_BOX_HEIGHT / 2}
+            width={RELAY_BOX_WIDTH}
+            height={RELAY_BOX_HEIGHT}
+            className="graph-relay"
+            rx={1}
+          />
+          <text
+            x={centre}
+            y={centre + LABEL_Y_OFFSET}
+            className="graph-relay-label"
+            textAnchor="middle"
+          >
+            relay
+          </text>
+        </g>
         {active.map((participant) => {
           const point = positions.get(participant.id);
           if (!point) return null;
+          const nodeLabel = `${participant.displayName} (${
+            participant.role === "ai" ? "AI" : "Human"
+          }${participant.simulated ? ", Simulated" : ""})`;
           return (
-            <g key={participant.id}>
+            <g key={participant.id} tabIndex={0} aria-label={nodeLabel}>
+              <title>{nodeLabel}</title>
               <circle
                 cx={point.x}
                 cy={point.y}

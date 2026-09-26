@@ -18,6 +18,10 @@
 **Learning:** Adding direct numeric shortcut key handlers (`1`..`5`) to modal tablists provides rapid keyboard navigation, but must pair with `aria-keyshortcuts` attributes and explicit focus movement onto the activated tab button so assistive technologies announce both the tab switch and shortcut availability.
 **Action:** Pair numeric shortcut listeners with `aria-keyshortcuts` and programmatic `.focus()` calls on target tab buttons while ignoring active text input targets.
 
+## 2026-09-11 - Accessible SVG Canvas Graphs with Titles and Keyboard Focus
+**Learning:** Custom interactive SVG canvas graphs (such as `SubscriptionGraph`) that rely on visual circle nodes and connecting lines exclude screen reader users and keyboard navigators unless node groups are given explicit `tabIndex={0}`, descriptive `aria-label`s, and child `<title>` tags for browser tooltips.
+**Action:** Add `tabIndex={0}`, descriptive `aria-label` attributes, `<title>` tooltips, and explicit CSS `:focus-visible` outline rings to interactive or dynamic SVG nodes.
+
 ## Next steps and vision statements
 
 Forward-looking user experience and accessibility roadmap targets:
