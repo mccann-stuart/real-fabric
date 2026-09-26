@@ -45,14 +45,18 @@ export function decodeAudioObject(value: Uint8Array): {
   if (value.byteLength !== AUDIO_OBJECT_HEADER_BYTES + payloadLength)
     throw new Error("Audio object payload length does not match its header.");
   const flags = view.getUint8(1);
+  // Performance optimization (⚡ Bolt): Conditional property assignment instead of object spread
+  // eliminates intermediate object allocations on every 20ms audio frame decode path.
+  const metadata: AudioFrameMetadata = {
+    participantHash: view.getUint32(2),
+    mediaTimestamp: Number(view.getBigUint64(6)),
+    sequence: view.getUint32(14),
+  };
+  if (flags & 1) metadata.endOfTurn = true;
+  if (flags & 2) metadata.cancelled = true;
+
   return {
-    metadata: {
-      participantHash: view.getUint32(2),
-      mediaTimestamp: Number(view.getBigUint64(6)),
-      sequence: view.getUint32(14),
-      ...(flags & 1 ? { endOfTurn: true } : {}),
-      ...(flags & 2 ? { cancelled: true } : {}),
-    },
+    metadata,
     // Performance optimization (⚡ Bolt): Use zero-copy subarray view instead of .slice()
     // to avoid allocating a new memory copy for every incoming 20ms audio frame.
     opusFrame: value.subarray(AUDIO_OBJECT_HEADER_BYTES),
