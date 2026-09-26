@@ -781,6 +781,10 @@ export class Room extends DurableObject<Env> {
     const meta = this.meta();
     if (!meta) return;
     this.ctx.storage.sql.exec("DELETE FROM floor_queue WHERE ai_id = ?", aiId);
+    // Security (SEC-03 / CWE-20): Purge stale queue entries for participants that have left or are non-AI.
+    this.ctx.storage.sql.exec(
+      "DELETE FROM floor_queue WHERE ai_id NOT IN (SELECT id FROM participants WHERE role = 'ai' AND state != 'left')",
+    );
     if (meta.floor_holder !== aiId) {
       this.broadcast({
         type: "floor_changed",
@@ -1053,8 +1057,14 @@ export class Room extends DurableObject<Env> {
   }
 
   private floorQueue(): string[] {
+    // Security (SEC-03 / CWE-20): Validate floor queue targets against active AI participants.
     return this.ctx.storage.sql
-      .exec<{ ai_id: string }>("SELECT ai_id FROM floor_queue ORDER BY queued_at")
+      .exec<{ ai_id: string }>(
+        `SELECT f.ai_id FROM floor_queue f
+         JOIN participants p ON f.ai_id = p.id
+         WHERE p.role = 'ai' AND p.state != 'left'
+         ORDER BY f.queued_at`,
+      )
       .toArray()
       .map((row) => row.ai_id);
   }
