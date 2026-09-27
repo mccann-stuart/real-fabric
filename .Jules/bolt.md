@@ -26,6 +26,10 @@
 **Learning:** Repeatedly filtering and mapping active room participants on high-frequency state updates degrades UI rendering and computation performance.
 **Action:** Cache normalized participant maps and derive state changes only when room snapshots indicate actual membership or routing mutation.
 
+## 2026-09-17 - Native Float64Array Sorting in Audio Clock Drift Estimation
+**Learning:** Calling `Array.prototype.sort((a, b) => a - b)` on high-frequency telemetry paths (e.g. 250ms audio clock drift robust regression over 3000+ pair slopes) invokes tens of thousands of JS comparison callbacks across the V8 boundary.
+**Action:** Pre-allocate a contiguous `Float64Array` and call `Float64Array.prototype.sort()`, which sorts numeric elements in place natively in C++ without JS callback overhead.
+
 ## Next steps and vision statements
 
 Forward-looking performance engineering and optimization targets:

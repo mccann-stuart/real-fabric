@@ -178,27 +178,37 @@ function robustSkewPpm(samples: ClockObservation[]): number | null {
     return null;
   }
 
-  const slopes: number[] = [];
-  for (let leftIndex = 0; leftIndex < samples.length; leftIndex += 1) {
+  // ⚡ Bolt Optimization: Pre-allocate a contiguous Float64Array based on sample count
+  // to avoid dynamic array reallocations, and use Float64Array.prototype.sort()
+  // which sorts numbers natively in C++ without thousands of JS comparison callbacks.
+  const sampleCount = samples.length;
+  const maxPairs = (sampleCount * (sampleCount - 1)) / 2;
+  const slopes = new Float64Array(maxPairs);
+  let slopeCount = 0;
+
+  for (let leftIndex = 0; leftIndex < sampleCount; leftIndex += 1) {
     const left = samples[leftIndex];
     if (!left) continue;
-    for (let rightIndex = leftIndex + 1; rightIndex < samples.length; rightIndex += 1) {
+    for (let rightIndex = leftIndex + 1; rightIndex < sampleCount; rightIndex += 1) {
       const right = samples[rightIndex];
       if (!right) continue;
       const mediaElapsed = right.mediaTimestampMs - left.mediaTimestampMs;
       if (mediaElapsed < MINIMUM_PAIR_SPAN_MS) continue;
       const outputElapsed = right.outputTimeMs - left.outputTimeMs;
       if (outputElapsed <= 0) continue;
-      slopes.push(outputElapsed / mediaElapsed);
+      slopes[slopeCount++] = outputElapsed / mediaElapsed;
     }
   }
-  if (slopes.length < MINIMUM_SLOPES) return null;
-  slopes.sort((left, right) => left - right);
-  const middle = Math.floor(slopes.length / 2);
+  if (slopeCount < MINIMUM_SLOPES) return null;
+
+  const activeSlopes = slopes.subarray(0, slopeCount);
+  activeSlopes.sort();
+
+  const middle = Math.floor(slopeCount / 2);
   const median =
-    slopes.length % 2 === 0
-      ? ((slopes[middle - 1] ?? 1) + (slopes[middle] ?? 1)) / 2
-      : (slopes[middle] ?? 1);
+    slopeCount % 2 === 0
+      ? ((activeSlopes[middle - 1] ?? 1) + (activeSlopes[middle] ?? 1)) / 2
+      : (activeSlopes[middle] ?? 1);
   return (median - 1) * 1_000_000;
 }
 
