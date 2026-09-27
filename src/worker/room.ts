@@ -576,6 +576,7 @@ export class Room extends DurableObject<Env> {
       "UPDATE participants SET state = 'left', reconnect_until = NULL WHERE state = 'reconnecting' AND reconnect_until <= ?",
       now,
     );
+    await this.releaseFloorInternal("", now);
     this.noteEmptiness(now);
     await this.rescheduleAlarm();
   }
@@ -781,7 +782,23 @@ export class Room extends DurableObject<Env> {
     const meta = this.meta();
     if (!meta) return;
     this.ctx.storage.sql.exec("DELETE FROM floor_queue WHERE ai_id = ?", aiId);
-    if (meta.floor_holder !== aiId) {
+    // Security (SEC-03 / CWE-20): Purge left or non-existent AI participants from floor_queue.
+    this.ctx.storage.sql.exec(
+      `DELETE FROM floor_queue WHERE ai_id NOT IN (
+         SELECT id FROM participants WHERE role = 'ai' AND state != 'left'
+       )`,
+    );
+
+    const isHolderActive = meta.floor_holder
+      ? this.ctx.storage.sql
+          .exec<{ count: number }>(
+            "SELECT COUNT(*) AS count FROM participants WHERE id = ? AND role = 'ai' AND state != 'left'",
+            meta.floor_holder,
+          )
+          .one().count > 0
+      : false;
+
+    if (meta.floor_holder !== aiId && isHolderActive) {
       this.broadcast({
         type: "floor_changed",
         holderId: meta.floor_holder,
@@ -790,6 +807,7 @@ export class Room extends DurableObject<Env> {
       });
       return;
     }
+
     const next = this.ctx.storage.sql
       .exec<{ ai_id: string }>("SELECT ai_id FROM floor_queue ORDER BY queued_at LIMIT 1")
       .toArray()[0];
@@ -799,6 +817,10 @@ export class Room extends DurableObject<Env> {
         "UPDATE room_meta SET floor_holder = ?, floor_since = ? WHERE singleton = 1",
         next.ai_id,
         now,
+      );
+      this.ctx.storage.sql.exec(
+        "UPDATE participants SET pipeline = 'speaking' WHERE id = ? AND role = 'ai'",
+        next.ai_id,
       );
     } else {
       this.ctx.storage.sql.exec(

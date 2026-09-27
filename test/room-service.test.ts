@@ -454,6 +454,96 @@ describe("FR4 — floor control serialises AI speech", () => {
     });
     expect(releaseNonExistent.status).toBe(404);
   });
+
+  it("cleans up floor holder and advances floor when holder AI is removed (SEC-03)", async () => {
+    const created = await createRoom();
+    const first = await addAi(created, "Atlas");
+    const second = await addAi(created, "Sage");
+    const atlas = first.participants.find(
+      (p) => p.role === "ai" && p.displayName.startsWith("Atlas"),
+    );
+    const sage = second.participants.find(
+      (p) => p.role === "ai" && p.displayName.startsWith("Sage"),
+    );
+
+    await call(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: atlas?.id,
+      operation: "request",
+    });
+    await call(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: sage?.id,
+      operation: "request",
+    });
+
+    const removed = await call<RoomSnapshot>(
+      `/api/rooms/${created.room.code}/ai`,
+      {
+        ...credential(created),
+        aiId: atlas?.id,
+      },
+      "DELETE",
+    );
+
+    expect(removed.status).toBe(200);
+    expect(removed.value.floor.holderId).toBe(sage?.id);
+    expect(removed.value.floor.queue).toEqual([]);
+  });
+
+  it("purges left AIs from floor queue when holder releases floor (SEC-03)", async () => {
+    const created = await createRoom();
+    const first = await addAi(created, "Atlas");
+    const second = await addAi(created, "Sage");
+    const third = await addAi(created, "Pilot");
+
+    const atlas = first.participants.find(
+      (p) => p.role === "ai" && p.displayName.startsWith("Atlas"),
+    );
+    const sage = second.participants.find(
+      (p) => p.role === "ai" && p.displayName.startsWith("Sage"),
+    );
+    const pilot = third.participants.find(
+      (p) => p.role === "ai" && p.displayName.startsWith("Pilot"),
+    );
+
+    await call(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: atlas?.id,
+      operation: "request",
+    });
+    await call(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: sage?.id,
+      operation: "request",
+    });
+    await call(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: pilot?.id,
+      operation: "request",
+    });
+
+    // Remove middle queued AI (Sage)
+    await call(
+      `/api/rooms/${created.room.code}/ai`,
+      {
+        ...credential(created),
+        aiId: sage?.id,
+      },
+      "DELETE",
+    );
+
+    // Release floor for Atlas
+    const released = await call<RoomSnapshot>(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: atlas?.id,
+      operation: "release",
+    });
+
+    expect(released.status).toBe(200);
+    expect(released.value.floor.holderId).toBe(pilot?.id);
+    expect(released.value.floor.queue).toEqual([]);
+  });
 });
 
 describe("H11 — presenter simulation is configurable and labelled", () => {
