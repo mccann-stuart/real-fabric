@@ -109,11 +109,60 @@ export const SubscriptionGraph = memo(function SubscriptionGraph({
     publishing ? "You are publishing to relay." : "You are not publishing."
   }`;
 
+  const subscribedSet = useMemo(() => new Set(subscribedIds), [subscribedIds]);
+
   return (
     <div className="graph-view">
       <div id="subscription-graph-desc" className="sr-only">
         {graphSummary}
       </div>
+      <table className="sr-only">
+        <caption>Subscription graph topology and track status</caption>
+        <thead>
+          <tr>
+            <th scope="col">Participant</th>
+            <th scope="col">Role</th>
+            <th scope="col">Connection / Track</th>
+            <th scope="col">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {active.map((participant) => {
+            const isViewer = participant.id === viewerId;
+            const isSubscribed = subscribedSet.has(participant.id);
+            const aiRow = routing.find((r) => r.humanId === viewerId && r.aiId === participant.id);
+            return (
+              <tr key={participant.id}>
+                <th scope="row">
+                  {participant.displayName}
+                  {isViewer ? " (You)" : ""}
+                </th>
+                <td>
+                  {participant.role === "ai" ? "AI" : "Human"}
+                  {participant.simulated ? " (Simulated)" : ""}
+                </td>
+                <td>
+                  {isViewer
+                    ? "Publication to relay"
+                    : `Inbound track from ${participant.displayName}`}
+                  {participant.role === "ai" && aiRow
+                    ? `; AI consent (${aiRow.hearsMe ? "hears me" : "does not hear me"})`
+                    : ""}
+                </td>
+                <td>
+                  {isViewer
+                    ? publishing
+                      ? "Live"
+                      : "Inactive"
+                    : isSubscribed
+                      ? "Live"
+                      : "Dormant"}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
       <svg
         viewBox={`0 0 ${size} ${size}`}
         role="img"
