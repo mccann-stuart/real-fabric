@@ -77,7 +77,12 @@ export class SessionEventLog {
       detail,
       simulated: options.simulated ?? false,
     };
-    this.events = [event, ...this.events].slice(0, RETAINED_EVENTS);
+    // Performance optimization (⚡ Bolt): In-place array mutation using unshift/pop
+    // avoids allocating and spreading a new 200-element array on every event.
+    this.events.unshift(event);
+    if (this.events.length > RETAINED_EVENTS) {
+      this.events.pop();
+    }
     this.persist();
     return event;
   }
