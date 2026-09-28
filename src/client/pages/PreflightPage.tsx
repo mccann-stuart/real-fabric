@@ -36,6 +36,14 @@ export function PreflightPage({
             type="button"
             disabled={report.microphone === "checking"}
             aria-busy={report.microphone === "checking"}
+            aria-pressed={report.microphone === "ready"}
+            aria-label={
+              report.microphone === "checking"
+                ? "Testing microphone permission…"
+                : report.microphone === "ready"
+                  ? "Microphone test active; re-test microphone permission"
+                  : "Test microphone permission"
+            }
             onClick={() => void testMicrophone()}
           >
             {report.microphone === "checking"

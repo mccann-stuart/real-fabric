@@ -115,12 +115,24 @@ export const ParticipantCard = memo(function ParticipantCard({
         </p>
       </div>
 
-      <div className="waveform" aria-hidden="true">
+      <div className="waveform">
         {current ? (
-          <span
-            className="waveform__level"
-            style={{ transform: `scaleX(${Math.max(0.02, Math.min(1, level))})` }}
-          />
+          <>
+            <span
+              className="waveform__level"
+              aria-hidden="true"
+              style={{ transform: `scaleX(${Math.max(0.02, Math.min(1, level))})` }}
+            />
+            <meter
+              className="sr-only"
+              min={0}
+              max={100}
+              value={Math.round(level * 100)}
+              aria-label={`Your microphone level (${participant.displayName})`}
+            >
+              {Math.round(level * 100)}%
+            </meter>
+          </>
         ) : (
           // H15: another participant's level is not observable without their
           // audio, so it says so rather than drawing a decorative waveform.

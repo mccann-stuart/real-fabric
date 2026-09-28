@@ -7,6 +7,7 @@ import { Inspector } from "../src/client/components/Inspector";
 import { LeaveRoomDialog } from "../src/client/components/LeaveRoomDialog";
 import { ParticipantCard } from "../src/client/components/ParticipantCard";
 import { PreflightPanel } from "../src/client/components/PreflightPanel";
+import { PresenterStrip } from "../src/client/components/PresenterStrip";
 import { RoomStatusStack } from "../src/client/components/RoomStatusStack";
 import { RoomTopBar } from "../src/client/components/RoomTopBar";
 import { EntryPage } from "../src/client/pages/EntryPage";
@@ -22,7 +23,7 @@ const TEST_CONFIGURATION = matchConfiguration({
 });
 
 describe("Micro-UX & Accessibility Improvements", () => {
-  it("renders EntryPage action buttons with accessible labels and attributes", () => {
+  it("renders EntryPage action buttons and meter element with accessible labels and attributes", () => {
     const html = renderToStaticMarkup(
       React.createElement(EntryPage, {
         configuration: TEST_CONFIGURATION,
@@ -35,6 +36,49 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(html).toContain("Solo presenter mode");
     expect(html).toContain("button--primary");
     expect(html).toContain('aria-label="Mic level test"');
+    expect(html).toContain("<meter");
+    expect(html).toContain('aria-label="Microphone level"');
+  });
+
+  it("renders ParticipantCard waveform with meter element for self and legible status for remote", () => {
+    const mockHuman: Participant = {
+      id: "human-1",
+      displayName: "Ada Lovelace",
+      role: "human",
+      state: "connected",
+      address: null,
+      simulated: false,
+      pipeline: "listening",
+      joinedAt: 1000,
+      reconnectUntil: null,
+      wakeName: null,
+      lastActiveAt: 1000,
+    };
+
+    const selfHtml = renderToStaticMarkup(
+      React.createElement(ParticipantCard, {
+        participant: mockHuman,
+        current: true,
+        viewerId: "human-1",
+        routing: [],
+        partialContext: false,
+        level: 0.5,
+      }),
+    );
+    expect(selfHtml).toContain("<meter");
+    expect(selfHtml).toContain('aria-label="Your microphone level (Ada Lovelace)"');
+
+    const remoteHtml = renderToStaticMarkup(
+      React.createElement(ParticipantCard, {
+        participant: mockHuman,
+        current: false,
+        viewerId: "human-2",
+        routing: [],
+        partialContext: false,
+      }),
+    );
+    expect(remoteHtml).toContain("Not exposed");
+    expect(remoteHtml).not.toContain('waveform" aria-hidden="true"');
   });
 
   it("renders accessible toggle switches inside participant card", () => {
@@ -337,7 +381,7 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(html).toContain("Retry now");
   });
 
-  it("renders PreflightPage test microphone button with default text", () => {
+  it("renders PreflightPage test microphone button with default text and ARIA attributes", () => {
     const html = renderToStaticMarkup(
       React.createElement(PreflightPage, {
         configuration: TEST_CONFIGURATION,
@@ -346,6 +390,97 @@ describe("Micro-UX & Accessibility Improvements", () => {
     );
 
     expect(html).toContain("Test microphone permission");
+    expect(html).toContain('aria-label="Test microphone permission"');
+  });
+
+  it("renders PresenterStrip export button with descriptive aria-label and title", () => {
+    const room: RoomSnapshot = {
+      code: "TEST1234",
+      createdAt: 1_000,
+      expiresAt: 100_000,
+      participants: [],
+      routing: [],
+      partialContextAiIds: [],
+      floor: { holderId: null, queue: [], heldSince: null },
+      aiToAi: { enabled: false, turnCap: 6, consecutiveTurns: 0, cappedAt: null },
+      presenter: { simulatedHumans: 0, simulatedAis: 0, scriptedResponses: false },
+      composition: { humans: 1, ais: 0, valid: true },
+      transport: {
+        endpoint: "https://relay.test",
+        endpointName: "relay.test",
+        draft: "16",
+        availability: "available",
+        reason: "Available",
+        failure: null,
+        traceVerified: false,
+        routingEnforcement: "cooperative",
+        discovery: "subscribe_namespace",
+      },
+    };
+    const metrics = {
+      transportReadyMs: notExposed<number>("Not exposed"),
+      firstAudioMs: notExposed<number>("Not exposed"),
+      publishedTracks: notExposed<number>("Not exposed"),
+      subscribedTracks: notExposed<number>("Not exposed"),
+      worstBufferMs: notExposed<number>("Not exposed"),
+      jitterTargetMs: notExposed<number>("Not exposed"),
+      captureFrameMs: notExposed<number>("Not exposed"),
+      encodeCallbackMs: notExposed<number>("Not exposed"),
+      receiverHoldMs: notExposed<number>("Not exposed"),
+      decodeCallbackMs: notExposed<number>("Not exposed"),
+      outputLatencyMs: notExposed<number>("Not exposed"),
+      transportRttMs: notExposed<number>("Not exposed"),
+      transportMinRttMs: notExposed<number>("Not exposed"),
+      transportRttVariationMs: notExposed<number>("Not exposed"),
+      publishSetupMs: notExposed<number>("Not exposed"),
+      subscribeSetupMs: notExposed<number>("Not exposed"),
+      lateDrops: notExposed<number>("Not exposed"),
+      cancelledDrops: notExposed<number>("Not exposed"),
+      concealedFrames: notExposed<number>("Not exposed"),
+      comfortNoiseFrames: notExposed<number>("Not exposed"),
+      lastBargeInMs: notExposed<number>("Not exposed"),
+      lastRoutingChangeMs: notExposed<number>("Not exposed"),
+      reconnects: notExposed<number>("Not exposed"),
+      dtxEnabled: notExposed<boolean>("Not exposed"),
+      capturePath: notExposed<CapturePath>("Not exposed"),
+      publishedObjects: notExposed<number>("Not exposed"),
+      subscribedObjects: notExposed<number>("Not exposed"),
+      publishedObjectsPerSecond: notExposed<number>("Not exposed"),
+      objectsPerSecond: notExposed<number>("Not exposed"),
+      meanPublishedObjectBytes: notExposed<number>("Not exposed"),
+      meanObjectBytes: notExposed<number>("Not exposed"),
+      lastPublishedObjectId: notExposed<number>("Not exposed"),
+      lastSubscribedObjectId: notExposed<number>("Not exposed"),
+      lastPublishedObjectAgeMs: notExposed<number>("Not exposed"),
+      lastSubscribedObjectAgeMs: notExposed<number>("Not exposed"),
+      lateDropRate: notExposed<number>("Not exposed"),
+      aggregateBufferMs: notExposed<number>("Not exposed"),
+      worstDriftPpm: notExposed<number>("Not exposed"),
+      activeDecoders: notExposed<number>("Not exposed"),
+      audioInputs: notExposed<number>("Not exposed"),
+      deviceChanges: notExposed<number>("Not exposed"),
+    };
+    const html = renderToStaticMarkup(
+      React.createElement(PresenterStrip, {
+        room,
+        phase: { name: "live" },
+        metrics,
+        degradation: {
+          step: 0,
+          nominalBufferMs: 60,
+          announcement: null,
+          releasedDecoders: [],
+          unsubscribed: [],
+        },
+        lastError: null,
+        onSimulate: () => {},
+        onAiToAi: () => {},
+        onExport: () => {},
+      }),
+    );
+
+    expect(html).toContain('aria-label="Export sanitised JSON session telemetry"');
+    expect(html).toContain('title="Download sanitised JSON session telemetry log"');
   });
 
   it("renders DemoScriptPanel action buttons with descriptive aria labels when running", () => {

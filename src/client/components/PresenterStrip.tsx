@@ -136,7 +136,12 @@ export function PresenterStrip({
             {room.aiToAi.cappedAt ? " — cap reached, exchange stopped" : ""}
           </span>
         ) : null}
-        <button type="button" onClick={onExport}>
+        <button
+          type="button"
+          aria-label="Export sanitised JSON session telemetry"
+          title="Download sanitised JSON session telemetry log"
+          onClick={onExport}
+        >
           Export sanitised JSON
         </button>
       </div>
