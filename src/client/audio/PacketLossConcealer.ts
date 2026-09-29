@@ -46,7 +46,13 @@ export class PacketLossConcealer {
   /** Called for every genuinely decoded frame. Resets the loss run. */
   observe(samples: Float32Array): void {
     if (samples.length === 0) return;
-    this.last = samples.slice();
+    // Performance optimization (⚡ Bolt): Reuse existing Float32Array buffer if size matches,
+    // avoiding allocating a new 3.8KB Float32Array on every 20ms audio frame (50Hz path).
+    if (this.last && this.last.length === samples.length) {
+      this.last.set(samples);
+    } else {
+      this.last = samples.slice();
+    }
     // Invalidated rather than recomputed: the period is only needed on loss,
     // and loss is the rare case.
     this.pitchPeriod = null;
@@ -143,7 +149,9 @@ export function estimatePitchPeriod(samples: Float32Array): number {
   for (let lag = minimumLag; lag <= maximumLag; lag += SEARCH_DECIMATION) {
     let score = 0;
     for (let index = lag; index < samples.length; index += SEARCH_DECIMATION) {
-      score += (samples[index] ?? 0) * (samples[index - lag] ?? 0);
+      const sample = samples[index] as number;
+      const delayedSample = samples[index - lag] as number;
+      score += sample * delayedSample;
     }
     if (score > bestScore) {
       bestScore = score;
@@ -155,6 +163,10 @@ export function estimatePitchPeriod(samples: Float32Array): number {
 
 function rootMeanSquare(samples: Float32Array): number {
   let sum = 0;
-  for (const sample of samples) sum += sample * sample;
-  return Math.sqrt(sum / samples.length);
+  const length = samples.length;
+  for (let i = 0; i < length; i += 1) {
+    const sample = samples[i] as number;
+    sum += sample * sample;
+  }
+  return length === 0 ? 0 : Math.sqrt(sum / length);
 }

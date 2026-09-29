@@ -244,7 +244,17 @@ export class TrackPlayer {
   cancelGroup(groupId: number): number {
     this.cancelledGroups.add(groupId);
     if (this.cancelledGroups.size > 8) {
-      this.cancelledGroups.delete(Math.min(...this.cancelledGroups));
+      // Performance optimization (⚡ Bolt): Find minimum element with a loop instead of array spread
+      // (Math.min(...this.cancelledGroups)) to avoid temporary array allocation during group cancellation.
+      let oldest = Infinity;
+      for (const id of this.cancelledGroups) {
+        if (id < oldest) {
+          oldest = id;
+        }
+      }
+      if (oldest !== Infinity) {
+        this.cancelledGroups.delete(oldest);
+      }
     }
     const dropped = this.buffer.cancelGroup(groupId);
     // Drop what the worklet already holds too, or the tail still plays.

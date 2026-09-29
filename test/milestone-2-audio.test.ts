@@ -92,6 +92,27 @@ describe("M2 — packet loss concealment", () => {
     concealer.observe(tone(200));
     expect(concealer.stats.consecutive).toBe(0);
   });
+
+  it("reuses internal buffer across observe calls without allocating new Float32Array", () => {
+    const concealer = new PacketLossConcealer();
+    const frame = tone(200);
+    concealer.observe(frame);
+    const internal = concealer as unknown as { last: Float32Array };
+    const firstRef = internal.last;
+
+    const iterations = 10000;
+    const start = performance.now();
+    for (let i = 0; i < iterations; i++) {
+      concealer.observe(frame);
+    }
+    const elapsedUs = ((performance.now() - start) / iterations) * 1000;
+    console.log(
+      `[BENCHMARK] PacketLossConcealer.observe (${iterations} ops): avg ${elapsedUs.toFixed(3)} µs per 20ms frame`,
+    );
+
+    // Buffer reference must remain identical (zero allocation)
+    expect(internal.last).toBe(firstRef);
+  });
 });
 
 describe("M2 — drift estimation and silence rebuilding", () => {

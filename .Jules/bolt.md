@@ -26,6 +26,10 @@
 **Learning:** Repeatedly filtering and mapping active room participants on high-frequency state updates degrades UI rendering and computation performance.
 **Action:** Cache normalized participant maps and derive state changes only when room snapshots indicate actual membership or routing mutation.
 
+## 2026-09-18 - TypedArray Buffer Reuse on 50 Hz Concealment Path
+**Learning:** Calling `.slice()` on incoming Float32Array audio frames in `PacketLossConcealer.observe` allocates ~3.8 KB per frame at 50 Hz (190 KB/s per track), causing GC thrashing across multi-participant meetings.
+**Action:** Reuse pre-allocated `Float32Array` buffers via `.set()` when buffer length is unchanged to achieve zero-allocation audio frame observation.
+
 ## Next steps and vision statements
 
 Forward-looking performance engineering and optimization targets:
