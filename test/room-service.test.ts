@@ -454,6 +454,70 @@ describe("FR4 — floor control serialises AI speech", () => {
     });
     expect(releaseNonExistent.status).toBe(404);
   });
+
+  it("cleans up floor holder and queue when an AI leaves or is removed (SEC-03)", async () => {
+    const created = await createRoom();
+    const first = await addAi(created, "Atlas");
+    const second = await addAi(created, "Sage");
+    const third = await addAi(created, "Ember");
+    const atlas = first.participants.find(
+      (p) => p.role === "ai" && p.displayName.includes("Atlas"),
+    );
+    const sage = second.participants.find((p) => p.role === "ai" && p.displayName.includes("Sage"));
+    const ember = third.participants.find(
+      (p) => p.role === "ai" && p.displayName.includes("Ember"),
+    );
+
+    // Atlas gets floor
+    await call(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: atlas?.id,
+      operation: "request",
+    });
+    // Sage queues
+    await call(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: sage?.id,
+      operation: "request",
+    });
+    // Ember queues
+    const queuedEmber = await call<{ granted: boolean; room: RoomSnapshot }>(
+      `/api/rooms/${created.room.code}/floor`,
+      { ...credential(created), aiId: ember?.id, operation: "request" },
+    );
+    expect(queuedEmber.value.room.floor.holderId).toBe(atlas?.id);
+    expect(queuedEmber.value.room.floor.queue).toEqual([sage?.id, ember?.id]);
+
+    // Remove Atlas (floor holder) -> floor passes to Sage, queue becomes [Ember]
+    const afterAtlasRemoved = await call<RoomSnapshot>(
+      `/api/rooms/${created.room.code}/ai`,
+      { ...credential(created), aiId: atlas?.id },
+      "DELETE",
+    );
+    expect(afterAtlasRemoved.status).toBe(200);
+    expect(afterAtlasRemoved.value.floor.holderId).toBe(sage?.id);
+    expect(afterAtlasRemoved.value.floor.queue).toEqual([ember?.id]);
+
+    // Remove Ember (queued) -> queue becomes []
+    const afterEmberRemoved = await call<RoomSnapshot>(
+      `/api/rooms/${created.room.code}/ai`,
+      { ...credential(created), aiId: ember?.id },
+      "DELETE",
+    );
+    expect(afterEmberRemoved.status).toBe(200);
+    expect(afterEmberRemoved.value.floor.holderId).toBe(sage?.id);
+    expect(afterEmberRemoved.value.floor.queue).toEqual([]);
+
+    // Remove Sage (floor holder) -> floor becomes null
+    const afterSageRemoved = await call<RoomSnapshot>(
+      `/api/rooms/${created.room.code}/ai`,
+      { ...credential(created), aiId: sage?.id },
+      "DELETE",
+    );
+    expect(afterSageRemoved.status).toBe(200);
+    expect(afterSageRemoved.value.floor.holderId).toBeNull();
+    expect(afterSageRemoved.value.floor.queue).toEqual([]);
+  });
 });
 
 describe("H11 — presenter simulation is configurable and labelled", () => {
