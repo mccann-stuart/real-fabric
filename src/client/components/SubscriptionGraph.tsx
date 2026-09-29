@@ -87,9 +87,10 @@ export const SubscriptionGraph = memo(function SubscriptionGraph({
   const radius = centre - NODE_ORBIT_PADDING;
 
   // Performance optimization (⚡ Bolt): Memoize active participant filtering, edge building, and trigonometric node positioning
-  const { active, edges, positions } = useMemo(() => {
+  const { active, edges, positions, subscribedSet } = useMemo(() => {
     const activeParticipants = participants.filter((participant) => participant.state !== "left");
     const computedEdges = buildEdges(participants, routing, viewerId, publishing, subscribedIds);
+    const subSet = new Set(subscribedIds);
     const posMap = new Map<string, { x: number; y: number }>();
     posMap.set("relay", { x: centre, y: centre });
     activeParticipants.forEach((participant, index) => {
@@ -99,7 +100,12 @@ export const SubscriptionGraph = memo(function SubscriptionGraph({
         y: centre + Math.sin(angle) * radius,
       });
     });
-    return { active: activeParticipants, edges: computedEdges, positions: posMap };
+    return {
+      active: activeParticipants,
+      edges: computedEdges,
+      positions: posMap,
+      subscribedSet: subSet,
+    };
   }, [participants, routing, viewerId, publishing, subscribedIds, centre, radius]);
 
   const liveEdgeCount = edges.filter((e) => e.live).length;
@@ -181,6 +187,51 @@ export const SubscriptionGraph = memo(function SubscriptionGraph({
         <li className="graph-key--subscription">Subscription — n−1 tracks in</li>
         <li className="graph-key--ai">AI inbound — dashed when consent is off</li>
       </ul>
+      <details className="graph-details">
+        <summary>Subscription graph tabular view</summary>
+        <table className="comparison-table">
+          <caption>Active participants and connections</caption>
+          <thead>
+            <tr>
+              <th scope="col">Participant</th>
+              <th scope="col">Role</th>
+              <th scope="col">Connection</th>
+            </tr>
+          </thead>
+          <tbody>
+            {active.map((participant) => {
+              const isViewer = participant.id === viewerId;
+              const isSubscribed = subscribedSet.has(participant.id);
+              let conn = isViewer
+                ? publishing
+                  ? "Publishing track"
+                  : "Not publishing"
+                : isSubscribed
+                  ? "Subscribed"
+                  : "Unsubscribed";
+              if (participant.role === "ai" && !isViewer) {
+                const row = routing.find(
+                  (r) => r.humanId === viewerId && r.aiId === participant.id,
+                );
+                if (row) conn += row.hearsMe ? " (Hears you)" : " (Inbound off)";
+              }
+              return (
+                <tr key={participant.id}>
+                  <th scope="row">
+                    {participant.displayName}
+                    {isViewer ? " (You)" : ""}
+                  </th>
+                  <td>
+                    {participant.role === "ai" ? "AI" : "Human"}
+                    {participant.simulated ? " (Simulated)" : ""}
+                  </td>
+                  <td>{conn}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </details>
     </div>
   );
 });

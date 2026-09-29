@@ -9,6 +9,7 @@ import { ParticipantCard } from "../src/client/components/ParticipantCard";
 import { PreflightPanel } from "../src/client/components/PreflightPanel";
 import { RoomStatusStack } from "../src/client/components/RoomStatusStack";
 import { RoomTopBar } from "../src/client/components/RoomTopBar";
+import { SubscriptionGraph } from "../src/client/components/SubscriptionGraph";
 import { EntryPage } from "../src/client/pages/EntryPage";
 import { PreflightPage } from "../src/client/pages/PreflightPage";
 import type { Participant, RoomSnapshot, RoutingPreference } from "../src/shared/contracts";
@@ -410,5 +411,63 @@ describe("Micro-UX & Accessibility Improvements", () => {
 
     expect(html).toContain("Required capabilities");
     expect(html).toContain("Optional enhancements");
+  });
+
+  it("renders accessible tabular alternative in SubscriptionGraph", () => {
+    const participants: Participant[] = [
+      {
+        id: "human-1",
+        displayName: "Ada",
+        role: "human",
+        state: "connected",
+        address: null,
+        wakeName: null,
+        pipeline: null,
+        simulated: false,
+        joinedAt: 1000,
+        reconnectUntil: null,
+        lastActiveAt: 1000,
+      },
+      {
+        id: "ai-1",
+        displayName: "Alan AI",
+        role: "ai",
+        state: "connected",
+        address: "ai/alan",
+        simulated: false,
+        pipeline: "listening",
+        joinedAt: 1000,
+        reconnectUntil: null,
+        wakeName: "alan",
+        lastActiveAt: 1000,
+      },
+    ];
+
+    const html = renderToStaticMarkup(
+      React.createElement(SubscriptionGraph, {
+        participants,
+        routing: [
+          {
+            humanId: "human-1",
+            aiId: "ai-1",
+            hearsMe: true,
+            iHearIt: true,
+            enforcement: "cooperative",
+            updatedAt: 1000,
+          },
+        ],
+        viewerId: "human-1",
+        publishing: true,
+        subscribedIds: ["ai-1"],
+      }),
+    );
+
+    expect(html).toContain('class="graph-details"');
+    expect(html).toContain("Subscription graph tabular view");
+    expect(html).toContain("Active participants and connections");
+    expect(html).toContain("Ada (You)");
+    expect(html).toContain("Publishing track");
+    expect(html).toContain("Alan AI");
+    expect(html).toContain("Subscribed (Hears you)");
   });
 });

@@ -1327,6 +1327,21 @@ input::placeholder {
   border-collapse: collapse;
   font-size: 12px;
 }
+.graph-details {
+  margin-top: 14px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.graph-details summary {
+  color: var(--cyan);
+  cursor: pointer;
+  padding: 4px 0;
+}
+.graph-details .comparison-table {
+  margin-top: 10px;
+}
 .comparison-table + .comparison-table {
   margin-top: 22px;
 }
