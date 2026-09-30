@@ -384,9 +384,16 @@ export class Room extends DurableObject<Env> {
     const meta = this.meta();
     if (!meta) throw roomError(404, "room_not_found", "Room is not initialised.");
 
-    if (meta.floor_holder === aiId)
-      return { granted: true, room: this.snapshot(credential.participantId) };
-    if (meta.floor_holder === null) {
+    this.pruneFloorQueue();
+    if (meta.floor_holder && !this.activeFloorHolder(meta.floor_holder)) {
+      // A departed holder must not leave the floor wedged or let this new
+      // request jump ahead of AIs already waiting in the queue.
+      await this.releaseFloorInternal(meta.floor_holder, now);
+    }
+    const holderId = this.meta()?.floor_holder ?? null;
+
+    if (holderId === aiId) return { granted: true, room: this.snapshot(credential.participantId) };
+    if (holderId === null) {
       this.ctx.storage.sql.exec(
         "UPDATE room_meta SET floor_holder = ?, floor_since = ? WHERE singleton = 1",
         aiId,
@@ -408,7 +415,7 @@ export class Room extends DurableObject<Env> {
     );
     this.broadcast({
       type: "floor_changed",
-      holderId: meta.floor_holder,
+      holderId,
       queue: this.floorQueue(),
       at: now,
     });
@@ -572,10 +579,19 @@ export class Room extends DurableObject<Env> {
       return;
     }
 
+    const expiredAis = this.ctx.storage.sql
+      .exec<{ id: string }>(
+        "SELECT id FROM participants WHERE role = 'ai' AND state = 'reconnecting' AND reconnect_until <= ?",
+        now,
+      )
+      .toArray();
     this.ctx.storage.sql.exec(
       "UPDATE participants SET state = 'left', reconnect_until = NULL WHERE state = 'reconnecting' AND reconnect_until <= ?",
       now,
     );
+    for (const ai of expiredAis) {
+      await this.releaseFloorInternal(ai.id, now);
+    }
     this.noteEmptiness(now);
     await this.rescheduleAlarm();
   }
@@ -781,17 +797,24 @@ export class Room extends DurableObject<Env> {
     const meta = this.meta();
     if (!meta) return;
     this.ctx.storage.sql.exec("DELETE FROM floor_queue WHERE ai_id = ?", aiId);
-    if (meta.floor_holder !== aiId) {
+    this.pruneFloorQueue();
+    const holderId = this.activeFloorHolder(meta.floor_holder);
+    if (holderId !== null && holderId !== aiId) {
       this.broadcast({
         type: "floor_changed",
-        holderId: meta.floor_holder,
+        holderId,
         queue: this.floorQueue(),
         at: now,
       });
       return;
     }
     const next = this.ctx.storage.sql
-      .exec<{ ai_id: string }>("SELECT ai_id FROM floor_queue ORDER BY queued_at LIMIT 1")
+      .exec<{ ai_id: string }>(
+        `SELECT f.ai_id FROM floor_queue f
+         JOIN participants p ON p.id = f.ai_id
+         WHERE p.role = 'ai' AND p.state != 'left'
+         ORDER BY f.queued_at, f.ai_id LIMIT 1`,
+      )
       .toArray()[0];
     if (next) {
       this.ctx.storage.sql.exec("DELETE FROM floor_queue WHERE ai_id = ?", next.ai_id);
@@ -1054,9 +1077,35 @@ export class Room extends DurableObject<Env> {
 
   private floorQueue(): string[] {
     return this.ctx.storage.sql
-      .exec<{ ai_id: string }>("SELECT ai_id FROM floor_queue ORDER BY queued_at")
+      .exec<{ ai_id: string }>(
+        `SELECT f.ai_id FROM floor_queue f
+         JOIN participants p ON p.id = f.ai_id
+         WHERE p.role = 'ai' AND p.state != 'left'
+         ORDER BY f.queued_at, f.ai_id`,
+      )
       .toArray()
       .map((row) => row.ai_id);
+  }
+
+  private activeFloorHolder(holderId: string | null): string | null {
+    if (!holderId) return null;
+    const holder = this.ctx.storage.sql
+      .exec<{ id: string }>(
+        "SELECT id FROM participants WHERE id = ? AND role = 'ai' AND state != 'left' LIMIT 1",
+        holderId,
+      )
+      .toArray()[0];
+    return holder?.id ?? null;
+  }
+
+  private pruneFloorQueue(): void {
+    this.ctx.storage.sql.exec(
+      `DELETE FROM floor_queue
+       WHERE NOT EXISTS (
+         SELECT 1 FROM participants p
+         WHERE p.id = floor_queue.ai_id AND p.role = 'ai' AND p.state != 'left'
+       )`,
+    );
   }
 
   private snapshot(viewerId?: string): RoomSnapshot {
@@ -1092,6 +1141,7 @@ export class Room extends DurableObject<Env> {
       )
       .toArray()
       .map((row) => row.ai_id);
+    const floorHolder = this.activeFloorHolder(meta.floor_holder);
 
     return {
       code: meta.code,
@@ -1108,8 +1158,8 @@ export class Room extends DurableObject<Env> {
         cappedAt: meta.ai_to_ai_capped_at,
       } satisfies AiToAiState,
       floor: {
-        holderId: meta.floor_holder,
-        heldSince: meta.floor_since,
+        holderId: floorHolder,
+        heldSince: floorHolder ? meta.floor_since : null,
         queue: this.floorQueue(),
       } satisfies FloorState,
       presenter: {

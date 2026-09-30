@@ -53,6 +53,12 @@ function credential(created: CreateRoomResponse) {
   return { participantId: created.participant.id, rejoinToken: created.rejoinToken };
 }
 
+function roomStub(code: string) {
+  const rooms = env.ROOMS;
+  if (!rooms) throw new Error("The ROOMS binding is required.");
+  return rooms.getByName(code);
+}
+
 async function addAi(created: CreateRoomResponse, displayName: string): Promise<RoomSnapshot> {
   const { status, value } = await call<RoomSnapshot>(`/api/rooms/${created.room.code}/ai`, {
     ...credential(created),
@@ -453,6 +459,139 @@ describe("FR4 — floor control serialises AI speech", () => {
       operation: "release",
     });
     expect(releaseNonExistent.status).toBe(404);
+  });
+
+  it("filters stale queue entries before handing the floor to the next active AI", async () => {
+    const created = await createRoom();
+    const withAtlas = await addAi(created, "Atlas");
+    const withSage = await addAi(created, "Sage");
+    const atlas = withAtlas.participants.find((participant) => participant.role === "ai");
+    const sage = withSage.participants.find(
+      (participant) => participant.role === "ai" && participant.id !== atlas?.id,
+    );
+    if (!atlas || !sage) throw new Error("Expected two AI participants");
+
+    await call(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: atlas.id,
+      operation: "request",
+    });
+    await call(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: sage.id,
+      operation: "request",
+    });
+
+    const stub = roomStub(created.room.code);
+    await runInDurableObject(stub, async (_instance: Room, state: DurableObjectState) => {
+      state.storage.sql.exec(
+        "INSERT INTO floor_queue (ai_id, queued_at) VALUES (?, ?), (?, ?)",
+        "missing-ai",
+        0,
+        created.participant.id,
+        1,
+      );
+    });
+
+    const publicSnapshot = await SELF.fetch(`${BASE}/api/rooms/${created.room.code}`);
+    const before = (await publicSnapshot.json()) as RoomSnapshot;
+    expect(before.floor.queue).toEqual([sage.id]);
+
+    const released = await call<RoomSnapshot>(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: atlas.id,
+      operation: "release",
+    });
+    expect(released.value.floor.holderId).toBe(sage.id);
+    expect(released.value.floor.queue).toEqual([]);
+
+    await runInDurableObject(stub, async (_instance: Room, state: DurableObjectState) => {
+      expect(state.storage.sql.exec("SELECT ai_id FROM floor_queue").toArray()).toEqual([]);
+    });
+  });
+
+  it("promotes an existing waiter when the stored holder has left", async () => {
+    const created = await createRoom();
+    const withAtlas = await addAi(created, "Atlas");
+    const withSage = await addAi(created, "Sage");
+    const withPilot = await addAi(created, "Pilot");
+    const atlas = withAtlas.participants.find((participant) => participant.role === "ai");
+    const sage = withSage.participants.find(
+      (participant) => participant.role === "ai" && participant.id !== atlas?.id,
+    );
+    const pilot = withPilot.participants.find(
+      (participant) =>
+        participant.role === "ai" && participant.id !== atlas?.id && participant.id !== sage?.id,
+    );
+    if (!atlas || !sage || !pilot) throw new Error("Expected three AI participants");
+
+    await call(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: atlas.id,
+      operation: "request",
+    });
+    await call(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: sage.id,
+      operation: "request",
+    });
+
+    const stub = roomStub(created.room.code);
+    await runInDurableObject(stub, async (_instance: Room, state: DurableObjectState) => {
+      state.storage.sql.exec("UPDATE participants SET state = 'left' WHERE id = ?", atlas.id);
+    });
+
+    const snapshotResponse = await SELF.fetch(`${BASE}/api/rooms/${created.room.code}`);
+    const snapshot = (await snapshotResponse.json()) as RoomSnapshot;
+    expect(snapshot.floor.holderId).toBeNull();
+    expect(snapshot.floor.heldSince).toBeNull();
+    expect(snapshot.floor.queue).toEqual([sage.id]);
+
+    const pilotRequest = await call<{ granted: boolean; room: RoomSnapshot }>(
+      `/api/rooms/${created.room.code}/floor`,
+      { ...credential(created), aiId: pilot.id, operation: "request" },
+    );
+    expect(pilotRequest.value.granted).toBe(false);
+    expect(pilotRequest.value.room.floor.holderId).toBe(sage.id);
+    expect(pilotRequest.value.room.floor.queue).toEqual([pilot.id]);
+  });
+
+  it("releases an AI holder when its reconnect window expires", async () => {
+    const created = await createRoom();
+    const withAtlas = await addAi(created, "Atlas");
+    const withSage = await addAi(created, "Sage");
+    const atlas = withAtlas.participants.find((participant) => participant.role === "ai");
+    const sage = withSage.participants.find(
+      (participant) => participant.role === "ai" && participant.id !== atlas?.id,
+    );
+    if (!atlas || !sage) throw new Error("Expected two AI participants");
+
+    await call(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: atlas.id,
+      operation: "request",
+    });
+    await call(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: sage.id,
+      operation: "request",
+    });
+
+    const stub = roomStub(created.room.code);
+    await runInDurableObject(stub, async (instance: Room, state: DurableObjectState) => {
+      state.storage.sql.exec(
+        "UPDATE participants SET state = 'reconnecting', reconnect_until = ? WHERE id = ?",
+        Date.now() - 1,
+        atlas.id,
+      );
+      await instance.alarm();
+    });
+
+    const response = await SELF.fetch(`${BASE}/api/rooms/${created.room.code}`);
+    const snapshot = (await response.json()) as RoomSnapshot;
+    expect(snapshot.floor.holderId).toBe(sage.id);
+    expect(snapshot.floor.queue).toEqual([]);
+    expect(snapshot.participants.some((participant) => participant.id === atlas.id)).toBe(false);
   });
 });
 
