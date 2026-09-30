@@ -775,6 +775,22 @@ input::placeholder {
 .graph-node--simulated {
   stroke-dasharray: 2 2;
 }
+.graph-details {
+  margin-top: 14px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.graph-details summary {
+  color: var(--cyan);
+  cursor: pointer;
+  padding: 4px 0;
+}
+.graph-details summary:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
 .graph-key {
   margin: 14px 0 0;
   padding: 0;
@@ -1285,10 +1301,19 @@ input::placeholder {
   display: grid;
   place-items: center;
   border: 0;
+  border-radius: 2px;
   background: none;
   color: var(--muted);
   font-size: 16px;
   cursor: pointer;
+}
+.failure-banner__head button:hover {
+  color: var(--fg);
+}
+.failure-banner__head button:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: -2px;
+  color: var(--fg);
 }
 .failure-banner p {
   margin: 6px 0 0;
@@ -1326,6 +1351,9 @@ input::placeholder {
   width: 100%;
   border-collapse: collapse;
   font-size: 12px;
+}
+.graph-details .comparison-table {
+  margin-top: 10px;
 }
 .comparison-table + .comparison-table {
   margin-top: 22px;

@@ -233,6 +233,11 @@ export function RoomPage({
       routing={room?.routing ?? []}
       partialContext={room?.partialContextAiIds.includes(participant.id) ?? false}
       level={participant.id === viewerId && !state?.muted ? (state?.micLevel ?? 0) : 0}
+      levelAvailable={
+        participant.id === viewerId &&
+        !state?.muted &&
+        (state?.capture.name === "opening_publication" || state?.capture.name === "publishing")
+      }
       speaking={participant.id === viewerId && !state?.muted ? (state?.speaking ?? false) : false}
       subscription={subscriptionMap.get(participant.id)}
       onSubscription={changeSubscription}
@@ -409,6 +414,7 @@ export function RoomPage({
           <button
             className="mobile-audio-rail__danger"
             type="button"
+            aria-haspopup="dialog"
             onClick={() => {
               setLeaveError(null);
               leaveDialog.current?.showModal();

@@ -21,6 +21,7 @@ export interface ParticipantCardProps {
   partialContext: boolean;
   /** Live capture level for the viewer's own card, 0 to 1. */
   level?: number;
+  levelAvailable?: boolean;
   speaking?: boolean;
   subscription?: TrackSubscriptionState | undefined;
   onSubscription?: ((participantId: string, enabled: boolean) => void) | undefined;
@@ -36,6 +37,7 @@ export const ParticipantCard = memo(function ParticipantCard({
   routing,
   partialContext,
   level = 0,
+  levelAvailable = false,
   speaking = false,
   subscription,
   onSubscription,
@@ -115,12 +117,24 @@ export const ParticipantCard = memo(function ParticipantCard({
         </p>
       </div>
 
-      <div className="waveform" aria-hidden="true">
-        {current ? (
-          <span
-            className="waveform__level"
-            style={{ transform: `scaleX(${Math.max(0.02, Math.min(1, level))})` }}
-          />
+      <div className="waveform">
+        {current && levelAvailable ? (
+          <>
+            <span
+              className="waveform__level"
+              aria-hidden="true"
+              style={{ transform: `scaleX(${Math.max(0.02, Math.min(1, level))})` }}
+            />
+            <meter
+              className="sr-only"
+              min={0}
+              max={100}
+              value={Math.round(level * 100)}
+              aria-label="Your microphone level"
+            >
+              {Math.round(level * 100)}%
+            </meter>
+          </>
         ) : (
           // H15: another participant's level is not observable without their
           // audio, so it says so rather than drawing a decorative waveform.
@@ -143,6 +157,7 @@ export const ParticipantCard = memo(function ParticipantCard({
             className="ask-button"
             type="button"
             aria-pressed={isAddressing}
+            aria-describedby={`ask-desc-${participant.id}`}
             aria-label={
               isAddressing
                 ? `Asking ${participant.displayName}; release to stop`
@@ -171,6 +186,10 @@ export const ParticipantCard = memo(function ParticipantCard({
               ? `Asking ${participant.displayName}…`
               : `Hold to ask ${participant.displayName}`}
           </button>
+          <span id={`ask-desc-${participant.id}`} className="sr-only">
+            Press and hold Space, Enter, or primary pointer to address {participant.displayName}.
+            Release to stop.
+          </span>
           {/* FR8: say which form is in effect rather than implying a guarantee
               the transport is not providing. */}
           <small className={`enforcement enforcement--${row?.enforcement ?? "cooperative"}`}>

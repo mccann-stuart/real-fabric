@@ -87,9 +87,10 @@ export const SubscriptionGraph = memo(function SubscriptionGraph({
   const radius = centre - NODE_ORBIT_PADDING;
 
   // Performance optimization (⚡ Bolt): Memoize active participant filtering, edge building, and trigonometric node positioning
-  const { active, edges, positions } = useMemo(() => {
+  const { active, edges, positions, subscribedSet } = useMemo(() => {
     const activeParticipants = participants.filter((participant) => participant.state !== "left");
     const computedEdges = buildEdges(participants, routing, viewerId, publishing, subscribedIds);
+    const subscribedSet = new Set(subscribedIds);
     const posMap = new Map<string, { x: number; y: number }>();
     posMap.set("relay", { x: centre, y: centre });
     activeParticipants.forEach((participant, index) => {
@@ -99,7 +100,7 @@ export const SubscriptionGraph = memo(function SubscriptionGraph({
         y: centre + Math.sin(angle) * radius,
       });
     });
-    return { active: activeParticipants, edges: computedEdges, positions: posMap };
+    return { active: activeParticipants, edges: computedEdges, positions: posMap, subscribedSet };
   }, [participants, routing, viewerId, publishing, subscribedIds, centre, radius]);
 
   const liveEdgeCount = edges.filter((e) => e.live).length;
@@ -181,6 +182,56 @@ export const SubscriptionGraph = memo(function SubscriptionGraph({
         <li className="graph-key--subscription">Subscription — n−1 tracks in</li>
         <li className="graph-key--ai">AI inbound — dashed when consent is off</li>
       </ul>
+      <details className="graph-details">
+        <summary>Subscription graph connection details</summary>
+        <table className="comparison-table">
+          <caption>Participant audio and routing state</caption>
+          <thead>
+            <tr>
+              <th scope="col">Participant</th>
+              <th scope="col">Audio track</th>
+              <th scope="col">Hears me</th>
+            </tr>
+          </thead>
+          <tbody>
+            {active.map((participant) => {
+              const isViewer = participant.id === viewerId;
+              const preference = routing.find(
+                (row) => row.humanId === viewerId && row.aiId === participant.id,
+              );
+              return (
+                <tr key={participant.id}>
+                  <th scope="row">
+                    {participant.displayName}
+                    {isViewer ? " (You)" : ""}
+                    {participant.role === "ai" ? " (AI)" : " (Human)"}
+                    {participant.simulated &&
+                    !participant.displayName.toLowerCase().includes("(simulated)")
+                      ? " (Simulated)"
+                      : ""}
+                  </th>
+                  <td>
+                    {isViewer
+                      ? publishing
+                        ? "Publishing to relay"
+                        : "Not publishing"
+                      : subscribedSet.has(participant.id)
+                        ? "Subscribed"
+                        : "Not subscribed"}
+                  </td>
+                  <td>
+                    {participant.role !== "ai" || isViewer
+                      ? "—"
+                      : preference
+                        ? `${preference.hearsMe ? "On" : "Off"} (${preference.enforcement})`
+                        : "Not exposed"}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </details>
     </div>
   );
 });

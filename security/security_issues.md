@@ -11,15 +11,15 @@ This document turns the completed Codex Security review into an implementation b
 - Validated findings: 13 — 2 high, 10 medium and 1 low
 - Canonical sources: [`report.md`](./report.md), [`findings.json`](./findings.json), [`coverage.json`](./coverage.json) and [`scan-manifest.json`](./scan-manifest.json)
 
-The line numbers and excerpts below are pinned to the scanned revision (`a784122aa18c6b7fbee1ae53d34b054a24d71f0b`). As reconciled on 17 September 2026, ten findings have been remediated in code and validated by automated tests (SEC-02, SEC-04–SEC-12), while three findings remain open as forward-looking engineering backlog items (SEC-01, SEC-03, SEC-13).
+The line numbers and excerpts below are pinned to the scanned revision (`a784122aa18c6b7fbee1ae53d34b054a24d71f0b`). As reconciled on 30 September 2026, ten findings have been remediated in code and validated by automated tests (SEC-02, SEC-04–SEC-12), while three findings remain open (SEC-01, SEC-03, SEC-13). SEC-03 now has application-level target and stale-state checks, but still lacks a turn lease bound to the active AI.
 
 ## Priority summary
 
-| Priority | Issue | Severity | Confidence | Status (17 Sep 2026) | Primary boundary |
+| Priority | Issue | Severity | Confidence | Status (30 Sep 2026) | Primary boundary |
 | --- | --- | --- | --- | --- | --- |
 | P1 | [SEC-01 — Relay-wide browser bearer](#sec-01--room-creation-and-joining-disclose-a-relay-wide-publishsubscribe-bearer) | High | Medium | **Open (Known P1)** | Relay authorisation |
 | P1 | [SEC-02 — Any human receives presenter authority](#sec-02--any-joined-human-can-execute-presenter-and-ai-lifecycle-controls) | High | High | **Remediated** | Room authorisation |
-| P2 | [SEC-03 — Unvalidated AI floor target](#sec-03--unvalidated-ai-identifiers-can-wedge-or-pre-empt-the-global-floor) | Medium | High | **Open** | Shared floor integrity |
+| P2 | [SEC-03 — Unvalidated AI floor target](#sec-03--unvalidated-ai-identifiers-can-wedge-or-pre-empt-the-global-floor) | Medium | High | **Open (partially mitigated)** | Shared floor integrity |
 | P2 | [SEC-04 — Routing preference disclosure](#sec-04--public-room-snapshots-disclose-every-humans-per-ai-routing-preferences) | Medium | High | **Remediated** | Participant privacy |
 | P2 | [SEC-05 — Reusable bearer in WebSocket URL](#sec-05--a-reusable-participant-bearer-is-placed-in-the-websocket-query-string) | Medium | Medium | **Remediated** | Credential handling |
 | P2 | [SEC-06 — Unbounded control sockets](#sec-06--one-participant-token-can-open-unbounded-concurrent-control-sockets) | Medium | High | **Remediated** | Durable Object availability |
@@ -182,7 +182,7 @@ Trade-off: gives stronger least privilege and avoids a broad role, but introduce
 - **Rule:** `input-validation.ai-floor-target`
 - **Taxonomy:** CWE-20
 - **Severity / confidence:** Medium / High
-- **Status:** Open.
+- **Status:** Open (partially mitigated). Presenter-only floor operations and active-AI target validation are in place. The room now filters stale queue entries, advances past a departed holder, and releases a holder when its reconnect window expires. A turn lease bound to the current AI is still required before this finding can be closed.
 
 ### Evidence
 
@@ -869,7 +869,7 @@ Trade-off: produces shared authoritative recency, but depends on a trusted trans
 
 ## Remediation progress and Next steps / vision statements
 
-### Remediated controls (as of 16 September 2026)
+### Remediated controls (as of 30 September 2026)
 
 - **SEC-02:** Persisted room creator as `owner_id` in `room_meta` and enforced `assertPresenter` in `src/worker/room.ts` to restrict AI lifecycle, floor administration and presenter simulation to the room presenter.
 - **SEC-04:** Projected detailed routing rows to the authenticated viewer across HTTP, join and WebSocket snapshots; public snapshots retain only anonymous `partialContextAiIds` state, and shared routing-change events omit the human ID.
@@ -881,12 +881,15 @@ Trade-off: produces shared authoritative recency, but depends on a trusted trans
 - **SEC-12:** Enforced capture capability checks before starting microphone capture in `RoomSession.ts` to transition unsupported or read-only clients cleanly to `listen_only` without calling `getUserMedia`.
 - **Relay token validation:** Added fail-closed checks in Worker to reject expired or malformed relay JWTs.
 
+### Partial mitigation
+
+- **SEC-03 partial mitigation:** Floor snapshots and queues now exclude departed or invalid AI targets. A new request promotes an existing waiter before accepting a later requester when the stored holder has left. Expired AI reconnect windows release their floor state. Regression tests cover these paths; turn-lease validation remains open.
+
 ### Next steps and vision statements (Remaining backlog order)
 
-1. **SEC-03 (Next step):** Validate AI floor targets against active participants and make floor ownership transitions deterministic under concurrent requests.
-2. **SEC-12 (Next step):** Implement explicit session capability gating so narrow read-only clients never invoke `getUserMedia`.
-3. **SEC-13 (Next step):** Bind activity reporting to locally observed or otherwise trusted publication events.
-4. **SEC-01 (Vision target / Gate 1):** Replace the shared relay-wide token with participant- and room-scoped credentials once supported by the relay API, verifying enforcement with a live trace.
+1. **SEC-03 (Next step):** Bind floor release to a short-lived turn lease for the current AI, then verify concurrent request and lifecycle ordering end to end.
+2. **SEC-13 (Next step):** Bind activity reporting to locally observed or otherwise trusted publication events.
+3. **SEC-01 (Vision target / Gate 1):** Replace the shared relay-wide token with participant- and room-scoped credentials once supported by the relay API, verifying enforcement with a live trace.
 
 ## Closure checklist
 
