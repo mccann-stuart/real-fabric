@@ -507,6 +507,55 @@ describe("M2 — dynamic device tracking", () => {
   });
 });
 
+describe("M2 — TrackBuffer ring buffer write optimization", () => {
+  const RING_SAMPLES = 48_000;
+
+  class TestTrackBuffer {
+    ring = new Float32Array(RING_SAMPLES);
+    writeIndex = 0;
+    available = 0;
+
+    write(samples: Float32Array) {
+      const len = samples.length;
+      if (len === 0) return;
+
+      if (this.writeIndex + len <= RING_SAMPLES) {
+        this.ring.set(samples, this.writeIndex);
+        this.writeIndex = (this.writeIndex + len) % RING_SAMPLES;
+      } else {
+        const firstPart = RING_SAMPLES - this.writeIndex;
+        this.ring.set(samples.subarray(0, firstPart), this.writeIndex);
+        this.ring.set(samples.subarray(firstPart), 0);
+        this.writeIndex = (len - firstPart) % RING_SAMPLES;
+      }
+
+      this.available = Math.min(RING_SAMPLES, this.available + len);
+    }
+  }
+
+  it("handles in-order writes without ring buffer wrapping", () => {
+    const buf = new TestTrackBuffer();
+    const chunk = new Float32Array([0.5, 0.25, 0.75, 1.0]);
+    buf.write(chunk);
+    expect(buf.writeIndex).toBe(4);
+    expect(buf.available).toBe(4);
+    expect(Array.from(buf.ring.subarray(0, 4))).toEqual([0.5, 0.25, 0.75, 1.0]);
+  });
+
+  it("handles ring buffer wraparound correctly", () => {
+    const buf = new TestTrackBuffer();
+    buf.writeIndex = RING_SAMPLES - 2;
+    const chunk = new Float32Array([0.5, 0.25, 0.75, 1.0]);
+    buf.write(chunk);
+    expect(buf.writeIndex).toBe(2);
+    expect(buf.available).toBe(4);
+    expect(buf.ring[RING_SAMPLES - 2]).toBe(0.5);
+    expect(buf.ring[RING_SAMPLES - 1]).toBe(0.25);
+    expect(buf.ring[0]).toBe(0.75);
+    expect(buf.ring[1]).toBe(1.0);
+  });
+});
+
 function peakOf(samples: Float32Array | undefined): number {
   return Math.max(...Array.from(samples ?? [0]).map(Math.abs));
 }

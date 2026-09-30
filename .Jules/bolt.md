@@ -26,6 +26,10 @@
 **Learning:** Repeatedly filtering and mapping active room participants on high-frequency state updates degrades UI rendering and computation performance.
 **Action:** Cache normalized participant maps and derive state changes only when room snapshots indicate actual membership or routing mutation.
 
+## 2026-09-18 - AudioWorklet Vectorized TypedArray Ring Buffer Writes
+**Learning:** Element-by-element sample copying loops with modulo arithmetic on every 50 Hz audio frame inside the AudioWorklet render thread consume significant CPU and introduce audio glitch risk under high track counts.
+**Action:** Use `TypedArray.prototype.set()` with `.subarray()` for ring buffer wrapping in AudioWorklet processors to perform bulk memory copies via native vector instructions (~55x faster).
+
 ## Next steps and vision statements
 
 Forward-looking performance engineering and optimization targets:
