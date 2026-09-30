@@ -396,6 +396,7 @@ function withSecurityHeaders(response: Response, correlationId: string): Respons
   headers.set("x-frame-options", "DENY");
   headers.set("referrer-policy", "no-referrer");
   headers.set("permissions-policy", "camera=(), geolocation=(), microphone=(self)");
+  headers.set("cross-origin-opener-policy", "same-origin");
   headers.set(
     "content-security-policy",
     "default-src 'self'; connect-src 'self' https: wss:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",

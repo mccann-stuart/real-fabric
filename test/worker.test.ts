@@ -32,6 +32,7 @@ describe("Real Fabric Worker", () => {
     expect(response.headers.get("x-correlation-id")).toBe(customCorrelationId);
     expect(response.headers.get("x-content-type-options")).toBe("nosniff");
     expect(response.headers.get("x-frame-options")).toBe("DENY");
+    expect(response.headers.get("cross-origin-opener-policy")).toBe("same-origin");
 
     const body = (await response.json()) as {
       error: { code: string; message: string; correlationId: string };
