@@ -1,6 +1,6 @@
 # Open PR consolidation — 30 September 2026
 
-This review covered all 39 open pull requests (#204–#242) against `origin/main` at `b1b182ba3e6cd796ac515a76442bb078d4125824`. The proposals overlap in five areas, so this branch rebuilds the useful changes together instead of stacking conflicting heads. The source PRs remain open for their authors and history.
+This review covered all 39 open pull requests (#204–#242) against `origin/main` at `b1b182ba3e6cd796ac515a76442bb078d4125824`. The proposals overlap in five areas, so this branch rebuilds the useful changes together instead of stacking conflicting heads. The source PRs were closed after #243 merged, without deleting their branches.
 
 | Source PRs | Decision | Reason and resulting change |
 | --- | --- | --- |

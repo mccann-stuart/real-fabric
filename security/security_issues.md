@@ -11,7 +11,7 @@ This document turns the completed Codex Security review into an implementation b
 - Validated findings: 13 — 2 high, 10 medium and 1 low
 - Canonical sources: [`report.md`](./report.md), [`findings.json`](./findings.json), [`coverage.json`](./coverage.json) and [`scan-manifest.json`](./scan-manifest.json)
 
-The line numbers and excerpts below are pinned to the scanned revision (`a784122aa18c6b7fbee1ae53d34b054a24d71f0b`). As reconciled on 30 September 2026, ten findings have been remediated in code and validated by automated tests (SEC-02, SEC-04–SEC-12), while three findings remain open (SEC-01, SEC-03, SEC-13). SEC-03 now has application-level target and stale-state checks, but still lacks a turn lease bound to the active AI.
+The line numbers and excerpts below are pinned to the scanned revision (`a784122aa18c6b7fbee1ae53d34b054a24d71f0b`). As reconciled on 30 September 2026, ten findings have been remediated in code and validated by automated tests (SEC-02, SEC-04–SEC-12), while three findings remain open (SEC-01, SEC-03, SEC-13). SEC-03 now has application-level target and stale-state checks, but still lacks a turn lease bound to the active AI. SEC-13's original cross-participant target is blocked; the remaining activity source is untrusted self-reporting.
 
 ## Priority summary
 
@@ -29,7 +29,7 @@ The line numbers and excerpts below are pinned to the scanned revision (`a784122
 | P2 | [SEC-10 — Unbounded media burst work](#sec-10--media-bursts-trigger-count-unbounded-sorting-and-decoder-submission) | Medium | High | **Remediated** | Browser CPU and decoder |
 | P2 | [SEC-11 — Unknown room probes create SQLite state](#sec-11--unknown-room-code-probes-initialise-persistent-sqlite-durable-objects) | Medium | High | **Remediated** | Cloudflare resource allocation |
 | P2 | [SEC-12 — Read-only clients start capture](#sec-12--narrow-read-only-clients-still-start-microphone-capture-and-publication) | Medium | Medium | **Remediated** | Microphone privacy |
-| P3 | [SEC-13 — Cross-participant activity spoofing](#sec-13--any-participant-can-spoof-another-participants-activity) | Low | High | **Open** | Presentation integrity |
+| P3 | [SEC-13 — Cross-participant activity spoofing](#sec-13--any-participant-can-spoof-another-participants-activity) | Low | High | **Open (partially mitigated)** | Presentation integrity |
 
 ## Decision principles
 
@@ -821,7 +821,7 @@ Trade-off: structurally prevents accidental publishing, but duplicates some orch
 - **Rule:** `authorization.activity-target-spoofing`
 - **Taxonomy:** CWE-639
 - **Severity / confidence:** Low / High
-- **Status:** Open.
+- **Status:** Open (partially mitigated). `markActive` now requires the caller's authenticated participant ID to match the target ID, and a room-service test expects a 403 for another participant's ID. The server still accepts self-reported activity without proof of publication or observed audio, so shared recency is not authoritative.
 
 ### Evidence
 
@@ -884,11 +884,12 @@ Trade-off: produces shared authoritative recency, but depends on a trusted trans
 ### Partial mitigation
 
 - **SEC-03 partial mitigation:** Floor snapshots and queues now exclude departed or invalid AI targets. A new request promotes an existing waiter before accepting a later requester when the stored holder has left. Expired AI reconnect windows release their floor state. Regression tests cover these paths; turn-lease validation remains open.
+- **SEC-13 partial mitigation:** Authenticated participants cannot update another participant's activity target. The remaining self-report path is not tied to trusted audio publication or receiver observation.
 
 ### Next steps and vision statements (Remaining backlog order)
 
 1. **SEC-03 (Next step):** Bind floor release to a short-lived turn lease for the current AI, then verify concurrent request and lifecycle ordering end to end.
-2. **SEC-13 (Next step):** Bind activity reporting to locally observed or otherwise trusted publication events.
+2. **SEC-13 (Next step):** Decide whether shared activity means membership or speech; for speech, use locally observed or otherwise trusted publication events rather than client self-reporting.
 3. **SEC-01 (Vision target / Gate 1):** Replace the shared relay-wide token with participant- and room-scoped credentials once supported by the relay API, verifying enforcement with a live trace.
 
 ## Closure checklist
