@@ -39,9 +39,14 @@ class TrackBuffer {
   write(samples) {
     this.everWritten = true;
     this.awaitingActiveSamples = false;
-    for (let index = 0; index < samples.length; index += 1) {
-      this.ring[this.writeIndex] = samples[index];
-      this.writeIndex = (this.writeIndex + 1) % RING_SAMPLES;
+    let offset = 0;
+    // Copy contiguous spans while preserving the old ring semantics even if
+    // a delayed decoder delivers more than a full ring in one message.
+    while (offset < samples.length) {
+      const count = Math.min(samples.length - offset, RING_SAMPLES - this.writeIndex);
+      this.ring.set(samples.subarray(offset, offset + count), this.writeIndex);
+      this.writeIndex = (this.writeIndex + count) % RING_SAMPLES;
+      offset += count;
     }
     // Overwriting unread audio is bounded loss, not unbounded growth (H13).
     this.available = Math.min(RING_SAMPLES, this.available + samples.length);
@@ -137,7 +142,7 @@ class RealFabricMixer extends AudioWorkletProcessor {
     const channel = output[0];
     const frames = channel.length;
 
-    for (let frame = 0; frame < frames; frame += 1) channel[frame] = 0;
+    channel.fill(0);
 
     for (const track of this.tracks.values()) {
       let readAny = false;

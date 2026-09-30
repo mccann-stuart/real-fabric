@@ -92,6 +92,24 @@ describe("M2 — packet loss concealment", () => {
     concealer.observe(tone(200));
     expect(concealer.stats.consecutive).toBe(0);
   });
+
+  it("keeps decoded audio independent of reused input buffers across frames and sizes", () => {
+    const concealer = new PacketLossConcealer();
+    const first = tone(200);
+    concealer.observe(first);
+    first.fill(0);
+    expect(peakOf(concealer.conceal()?.samples)).toBeGreaterThan(0.1);
+
+    const next = tone(300);
+    concealer.observe(next);
+    next.fill(0);
+    expect(peakOf(concealer.conceal()?.samples)).toBeGreaterThan(0.1);
+
+    const longFrame = tone(180, FRAME_SAMPLES * 2);
+    concealer.observe(longFrame);
+    longFrame.fill(0);
+    expect(peakOf(concealer.conceal()?.samples)).toBeGreaterThan(0.1);
+  });
 });
 
 describe("M2 — drift estimation and silence rebuilding", () => {

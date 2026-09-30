@@ -46,7 +46,8 @@ export class PacketLossConcealer {
   /** Called for every genuinely decoded frame. Resets the loss run. */
   observe(samples: Float32Array): void {
     if (samples.length === 0) return;
-    this.last = samples.slice();
+    if (this.last?.length === samples.length) this.last.set(samples);
+    else this.last = samples.slice();
     // Invalidated rather than recomputed: the period is only needed on loss,
     // and loss is the rare case.
     this.pitchPeriod = null;

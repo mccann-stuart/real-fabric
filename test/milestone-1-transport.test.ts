@@ -1359,6 +1359,20 @@ describe("M1 — bounded session recovery", () => {
     expect(log.list()).toHaveLength(2);
   });
 
+  it("keeps the newest 200 events in order without changing earlier snapshots", () => {
+    const log = new SessionEventLog();
+    log.record("connect", "Connected", { at: 1 });
+    const earlier = log.list();
+    for (let index = 2; index <= 205; index += 1) {
+      log.record("subscribe", `Track ${index}`, { at: index });
+    }
+
+    expect(log.list()).toHaveLength(200);
+    expect(log.list()[0]?.at).toBe(205);
+    expect(log.list().at(-1)?.at).toBe(6);
+    expect(earlier.map((event) => event.at)).toEqual([1]);
+  });
+
   it("retains exact relay refusal evidence across a reload in the same browser session", () => {
     const stored = new Map<string, string>();
     const storage = {

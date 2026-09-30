@@ -77,7 +77,8 @@ export class SessionEventLog {
       detail,
       simulated: options.simulated ?? false,
     };
-    this.events = [event, ...this.events].slice(0, RETAINED_EVENTS);
+    this.events.unshift(event);
+    if (this.events.length > RETAINED_EVENTS) this.events.pop();
     this.persist();
     return event;
   }
