@@ -430,6 +430,41 @@ describe("FR4 — floor control serialises AI speech", () => {
     expect(released.value.floor.queue).toEqual([]);
   });
 
+  it("clears and advances stale floor holder and queue when an AI leaves or is removed (SEC-03)", async () => {
+    const created = await createRoom();
+    const first = await addAi(created, "Atlas");
+    const second = await addAi(created, "Sage");
+    const atlas = first.participants.find((p) => p.role === "ai" && p.displayName === "Atlas");
+    const sage = second.participants.find((p) => p.role === "ai" && p.displayName === "Sage");
+    if (!atlas || !sage) throw new Error("Expected Atlas and Sage to be present.");
+
+    // Grant floor to Atlas, queue Sage
+    await call(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: atlas.id,
+      operation: "request",
+    });
+    await call(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: sage.id,
+      operation: "request",
+    });
+
+    // Remove Atlas (the current floor holder)
+    const afterRemoveAtlas = await call<RoomSnapshot>(
+      `/api/rooms/${created.room.code}/ai`,
+      {
+        ...credential(created),
+        aiId: atlas.id,
+      },
+      "DELETE",
+    );
+
+    // Floor holder automatically advances to Sage
+    expect(afterRemoveAtlas.value.floor.holderId).toBe(sage.id);
+    expect(afterRemoveAtlas.value.floor.queue).toEqual([]);
+  });
+
   it("rejects floor requests and releases for invalid or non-AI targets", async () => {
     const created = await createRoom();
 
