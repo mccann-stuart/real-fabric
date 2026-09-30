@@ -153,9 +153,6 @@ export function EntryPage({
             onClick={() => void testMicrophone()}
           >
             <span>◉ Mic level test</span>
-            <output className="sr-only" aria-live="polite" aria-atomic="true">
-              Microphone level {Math.round(level * 100)} percent
-            </output>
             <span className="mic-test__wave" aria-hidden="true">
               {MIC_BARS.map((bar) => (
                 <i
@@ -167,6 +164,19 @@ export function EntryPage({
               ))}
             </span>
           </button>
+          {report.microphone === "ready" ? (
+            <meter
+              className="sr-only"
+              min={0}
+              max={100}
+              value={Math.round(level * 100)}
+              aria-label="Microphone level"
+            >
+              {Math.round(level * 100)}%
+            </meter>
+          ) : (
+            <span className="sr-only">Microphone level not exposed until the test runs.</span>
+          )}
         </section>
         <SignalPath />
       </div>

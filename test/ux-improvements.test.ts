@@ -9,6 +9,7 @@ import { ParticipantCard } from "../src/client/components/ParticipantCard";
 import { PreflightPanel } from "../src/client/components/PreflightPanel";
 import { RoomStatusStack } from "../src/client/components/RoomStatusStack";
 import { RoomTopBar } from "../src/client/components/RoomTopBar";
+import { SubscriptionGraph } from "../src/client/components/SubscriptionGraph";
 import { EntryPage } from "../src/client/pages/EntryPage";
 import { PreflightPage } from "../src/client/pages/PreflightPage";
 import type { Participant, RoomSnapshot, RoutingPreference } from "../src/shared/contracts";
@@ -35,6 +36,7 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(html).toContain("Solo presenter mode");
     expect(html).toContain("button--primary");
     expect(html).toContain('aria-label="Mic level test"');
+    expect(html).toContain("Microphone level not exposed until the test runs.");
   });
 
   it("renders accessible toggle switches inside participant card", () => {
@@ -78,7 +80,40 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(html).toContain('type="checkbox"');
     expect(html).toContain('aria-label="Hears me (Ada AI)"');
     expect(html).toContain('aria-label="Hold to ask Ada AI (press and hold)"');
+    expect(html).toContain('aria-describedby="ask-desc-ai-1"');
     expect(html).toContain('title="Press and hold (or Space/Enter) to address Ada AI"');
+  });
+
+  it("shows a measured microphone level only while capture is available", () => {
+    const human: Participant = {
+      id: "human-1",
+      displayName: "Ada",
+      role: "human",
+      state: "connected",
+      address: null,
+      simulated: false,
+      pipeline: null,
+      joinedAt: 1_000,
+      reconnectUntil: null,
+      wakeName: null,
+      lastActiveAt: 1_000,
+    };
+    const props = {
+      participant: human,
+      current: true,
+      viewerId: human.id,
+      routing: [],
+      partialContext: false,
+    };
+    const idle = renderToStaticMarkup(React.createElement(ParticipantCard, props));
+    expect(idle).toContain("Not exposed");
+    expect(idle).not.toContain("<meter");
+
+    const capturing = renderToStaticMarkup(
+      React.createElement(ParticipantCard, { ...props, levelAvailable: true, level: 0.4 }),
+    );
+    expect(capturing).toContain("<meter");
+    expect(capturing).toContain('value="40"');
   });
 
   it("renders invite feedback states in the live status region", () => {
@@ -410,5 +445,50 @@ describe("Micro-UX & Accessibility Improvements", () => {
 
     expect(html).toContain("Required capabilities");
     expect(html).toContain("Optional enhancements");
+  });
+
+  it("shows actual subscription and consent states without treating missing routing as off", () => {
+    const participant = (id: string, role: "human" | "ai"): Participant => ({
+      id,
+      displayName: id,
+      role,
+      state: "connected",
+      address: role === "ai" ? `ai/${id}` : null,
+      wakeName: role === "ai" ? id : null,
+      pipeline: role === "ai" ? "listening" : null,
+      simulated: false,
+      joinedAt: 1_000,
+      reconnectUntil: null,
+      lastActiveAt: 1_000,
+    });
+    const html = renderToStaticMarkup(
+      React.createElement(SubscriptionGraph, {
+        participants: [
+          participant("you", "human"),
+          participant("atlas", "ai"),
+          participant("sage", "ai"),
+        ],
+        routing: [
+          {
+            humanId: "you",
+            aiId: "atlas",
+            hearsMe: true,
+            iHearIt: true,
+            enforcement: "cooperative",
+            updatedAt: 1_000,
+          },
+        ],
+        viewerId: "you",
+        publishing: false,
+        subscribedIds: ["atlas"],
+      }),
+    );
+
+    expect(html).toContain("Subscription graph connection details");
+    expect(html).toContain("Not publishing");
+    expect(html).toContain("Subscribed");
+    expect(html).toContain("Not subscribed");
+    expect(html).toContain("On (cooperative)");
+    expect(html).toContain("Not exposed");
   });
 });
