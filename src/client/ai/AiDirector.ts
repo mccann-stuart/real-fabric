@@ -180,6 +180,15 @@ export class AiDirector {
     return this.promote();
   }
 
+  cancelQueued(aiId: string): void {
+    this.queue = this.queue.filter((entry) => entry.aiId !== aiId);
+  }
+
+  clearTurns(): void {
+    this.current = null;
+    this.queue = [];
+  }
+
   private promote(): AiTurn | null {
     for (;;) {
       const next = this.queue.shift();

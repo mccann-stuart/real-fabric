@@ -2,6 +2,8 @@ import type {
   AiPipelineState,
   ApiError,
   CreateRoomResponse,
+  FloorReleaseResult,
+  FloorRequestResult,
   JoinRoomResponse,
   PresenterConfiguration,
   RelayCredentialStatus,
@@ -139,19 +141,35 @@ export async function setAiPipeline(
 export async function requestFloor(
   session: StoredSession,
   aiId: string,
-): Promise<{ granted: boolean; room: RoomSnapshot }> {
-  return post<{ granted: boolean; room: RoomSnapshot }>(`/api/rooms/${session.code}/floor`, {
+): Promise<FloorRequestResult> {
+  return post<FloorRequestResult>(`/api/rooms/${session.code}/floor`, {
     ...credential(session),
     aiId,
     operation: "request",
   });
 }
 
-export async function releaseFloor(session: StoredSession, aiId: string): Promise<RoomSnapshot> {
+export async function releaseFloor(
+  session: StoredSession,
+  aiId: string,
+  turnId: string,
+): Promise<FloorReleaseResult> {
+  return post<FloorReleaseResult>(`/api/rooms/${session.code}/floor`, {
+    ...credential(session),
+    aiId,
+    turnId,
+    operation: "release",
+  });
+}
+
+export async function cancelFloorRequest(
+  session: StoredSession,
+  aiId: string,
+): Promise<RoomSnapshot> {
   return post<RoomSnapshot>(`/api/rooms/${session.code}/floor`, {
     ...credential(session),
     aiId,
-    operation: "release",
+    operation: "cancel",
   });
 }
 
@@ -181,13 +199,6 @@ export async function configurePresenter(
   return post<RoomSnapshot>(`/api/rooms/${session.code}/presenter`, {
     ...credential(session),
     ...configuration,
-  });
-}
-
-export async function markActive(session: StoredSession, targetId: string): Promise<void> {
-  await send<void>(`/api/rooms/${session.code}/active`, "POST", {
-    ...credential(session),
-    targetId,
   });
 }
 

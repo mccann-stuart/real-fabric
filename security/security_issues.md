@@ -11,7 +11,7 @@ This document turns the completed Codex Security review into an implementation b
 - Validated findings: 13 — 2 high, 10 medium and 1 low
 - Canonical scan sources: [`findings.json`](./findings.json), [`coverage.json`](./coverage.json) and [`scan-manifest.json`](./scan-manifest.json). The superseded generated Markdown report remains available in Git history.
 
-The line numbers and excerpts below are pinned to the scanned revision (`a784122aa18c6b7fbee1ae53d34b054a24d71f0b`). As reconciled on 30 September 2026, ten findings have been remediated in code and validated by automated tests (SEC-02, SEC-04–SEC-12), while three findings are not closed (SEC-01, SEC-03, SEC-13). SEC-03 has application-level target and stale-state checks but lacks an AI-bound turn lease. SEC-13 rejects cross-participant targets in current source and has a negative room-service test, but activity remains caller-reported.
+The line numbers and excerpts below are pinned to the scanned revision (`a784122aa18c6b7fbee1ae53d34b054a24d71f0b`). As reconciled on 30 September 2026, twelve findings have been remediated in code and validated by automated tests (SEC-02–SEC-13). SEC-01 remains open because the relay cannot enforce room and participant scope. The scan excerpts are historical evidence, not current source.
 
 ## Priority summary
 
@@ -19,7 +19,7 @@ The line numbers and excerpts below are pinned to the scanned revision (`a784122
 | --- | --- | --- | --- | --- | --- |
 | P1 | [SEC-01 — Relay-wide browser bearer](#sec-01--room-creation-and-joining-disclose-a-relay-wide-publishsubscribe-bearer) | High | Medium | **Open (Known P1)** | Relay authorisation |
 | P1 | [SEC-02 — Any human receives presenter authority](#sec-02--any-joined-human-can-execute-presenter-and-ai-lifecycle-controls) | High | High | **Remediated** | Room authorisation |
-| P2 | [SEC-03 — Unvalidated AI floor target](#sec-03--unvalidated-ai-identifiers-can-wedge-or-pre-empt-the-global-floor) | Medium | High | **Open (partially mitigated)** | Shared floor integrity |
+| P2 | [SEC-03 — Unvalidated AI floor target](#sec-03--unvalidated-ai-identifiers-can-wedge-or-pre-empt-the-global-floor) | Medium | High | **Remediated in application** | Shared floor integrity |
 | P2 | [SEC-04 — Routing preference disclosure](#sec-04--public-room-snapshots-disclose-every-humans-per-ai-routing-preferences) | Medium | High | **Remediated** | Participant privacy |
 | P2 | [SEC-05 — Reusable bearer in WebSocket URL](#sec-05--a-reusable-participant-bearer-is-placed-in-the-websocket-query-string) | Medium | Medium | **Remediated** | Credential handling |
 | P2 | [SEC-06 — Unbounded control sockets](#sec-06--one-participant-token-can-open-unbounded-concurrent-control-sockets) | Medium | High | **Remediated** | Durable Object availability |
@@ -29,7 +29,7 @@ The line numbers and excerpts below are pinned to the scanned revision (`a784122
 | P2 | [SEC-10 — Unbounded media burst work](#sec-10--media-bursts-trigger-count-unbounded-sorting-and-decoder-submission) | Medium | High | **Remediated** | Browser CPU and decoder |
 | P2 | [SEC-11 — Unknown room probes create SQLite state](#sec-11--unknown-room-code-probes-initialise-persistent-sqlite-durable-objects) | Medium | High | **Remediated** | Cloudflare resource allocation |
 | P2 | [SEC-12 — Read-only clients start capture](#sec-12--narrow-read-only-clients-still-start-microphone-capture-and-publication) | Medium | Medium | **Remediated** | Microphone privacy |
-| P3 | [SEC-13 — Cross-participant activity spoofing](#sec-13--any-participant-can-spoof-another-participants-activity) | Low | High | **Open (partially mitigated)** | Presentation integrity |
+| P3 | [SEC-13 — Cross-participant activity spoofing](#sec-13--any-participant-can-spoof-another-participants-activity) | Low | High | **Remediated** | Presentation integrity |
 
 ## Decision principles
 
@@ -182,7 +182,7 @@ Trade-off: gives stronger least privilege and avoids a broad role, but introduce
 - **Rule:** `input-validation.ai-floor-target`
 - **Taxonomy:** CWE-20
 - **Severity / confidence:** Medium / High
-- **Status:** Open (partially mitigated). Presenter-only floor operations and active-AI target validation are in place. The room now filters stale queue entries, advances past a departed holder, and releases a holder when its reconnect window expires. A turn lease bound to the current AI is still required before this finding can be closed.
+- **Status:** Remediated in application (30 September 2026). Presenter-only floor operations require a connected AI target. Every grant receives a random, 30-second turn ID stored with the holder in SQLite; release requires that exact current ID and rejects missing, forged, stale or expired IDs. An alarm expires stuck turns and promotes the oldest connected waiter. Queued cancellation is a separate operation that cannot release the holder. The turn ID appears only in presenter-authorised operation replies, never in room snapshots. `test/room-service.test.ts` covers target validation, stale release, cancellation, expiry and queue promotion. This is application floor integrity; live AI-worker authority and publication enforcement remain Milestone 3 work.
 
 ### Evidence
 
@@ -229,6 +229,8 @@ Trade-off: explicit and easy to test, but every lifecycle path must continue cle
 Replace the free-text holder and queue with a floor-lease table whose AI identifiers reference participant rows and whose rows include lease IDs and expiry. Execute lifecycle and floor transitions transactionally so a removed AI cannot remain a holder or queued entry.
 
 Trade-off: gives stronger storage invariants, but requires a SQLite schema migration and careful rollback planning.
+
+**Decision:** Implemented option A with persisted lease fields in `room_meta`. A full relational floor-lease table was unnecessary for the 20-minute room lifetime and would widen the migration. The schema version does advance to 4; deploying this change while a room is active recreates that ephemeral room's state under the existing migration policy.
 
 ### Verification required
 
@@ -821,7 +823,7 @@ Trade-off: structurally prevents accidental publishing, but duplicates some orch
 - **Rule:** `authorization.activity-target-spoofing`
 - **Taxonomy:** CWE-639
 - **Severity / confidence:** Low / High
-- **Status:** Open (partially mitigated). `markActive` requires the caller's authenticated participant ID to match the target ID, and `test/room-service.test.ts` expects a 403 for another participant's ID. The server still accepts self-reported activity without proof of publication or observed audio, so shared recency is not authoritative.
+- **Status:** Remediated in application (30 September 2026). Removed the `/active` mutation and its client calls. The Worker no longer stores self-reported audio recency or updates it from presenter pipeline labels. Shared snapshots use join time as a deterministic fallback; each listener projects actual `TrackPlayer` audio-object arrival times into its own room layout. `test/room-service.test.ts` rejects self and cross-participant reports, and `test/room-session-context-cache.test.ts` checks the local projection.
 
 ### Evidence
 
@@ -842,15 +844,15 @@ Trade-off: structurally prevents accidental publishing, but duplicates some orch
 
 **Reviewer comment:** Authentication proves who submitted the request, not that the target published audio or that the caller observed an authorised track. Participant IDs are available in room snapshots.
 
-**Current-source reconciliation:** `Room.markActive` now rejects a `participantId` different from the authenticated caller with `403 unauthorized_target` before updating SQLite; a room-service test covers that denial. This blocks the original cross-participant target path. The caller can still report its own activity without a trusted publication event, so the finding remains open.
+**Current-source reconciliation:** The `/active` route and `Room.markActive` have been removed. Neither self nor cross-participant activity reports update shared state. The Worker returns join time for deterministic layout fallback; each listener derives later recency only from locally received audio objects.
 
 ### Impact
 
-At the scanned revision, an attendee could make another participant appear recently active and influence shared ordering or prominence. The current target check blocks that cross-participant request, while caller-reported self-activity can still be inaccurate. The remaining impact is presentation integrity rather than media routing or confidentiality.
+At the scanned revision, an attendee could make another participant appear recently active and influence shared ordering or prominence. Removing the mutation closes that spoofing path. Activity shown by different listeners can still vary with their received media, as intended for listener-local presentation.
 
 ### Fix option A — Keep activity local to each listener (recommended for v1)
 
-Complete the current target check by deriving speaking/recency presentation from each listener's own `TrackPlayer` object-arrival state. Do not persist or broadcast activity that the server cannot verify.
+Remove the shared arbitrary-target mutation and derive speaking/recency presentation from each listener's own `TrackPlayer` object-arrival state. Do not persist or broadcast activity that the server cannot verify.
 
 Trade-off: different listeners may briefly show different activity based on network arrival, but this is truthful and avoids a new trust protocol.
 
@@ -859,6 +861,8 @@ Trade-off: different listeners may briefly show different activity based on netw
 When the deployed relay or a trusted media orchestration boundary can emit authenticated publication events, update `last_active_at` only from that source. Bind the event to the participant track and rate-limit updates.
 
 Trade-off: produces shared authoritative recency, but depends on a trusted transport integration that does not yet exist and must not be simulated by ordinary clients.
+
+**Decision:** Implemented option A for v1. Option B remains a future possibility only if a trusted publication event source exists.
 
 ### Verification required
 
@@ -881,18 +885,14 @@ Trade-off: produces shared authoritative recency, but depends on a trusted trans
 - **SEC-10:** Bounded jitter-buffer insertion and receive-side drain and decoder work against faulty or adversarial media bursts.
 - **SEC-11:** Deferred SQLite table migration on unknown room code probes in `Room` Durable Object until explicit room initialisation (`initialise()`), avoiding persistent SQLite allocation on uninitialised probes.
 - **SEC-12:** Enforced capture capability checks before starting microphone capture in `RoomSession.ts` to transition unsupported or read-only clients cleanly to `listen_only` without calling `getUserMedia`.
+- **SEC-03:** Added connected-AI floor validation, persisted 30-second turn IDs, stale release rejection, queued cancellation and alarm-based promotion.
+- **SEC-13:** Removed unverified shared activity reports and projected audio recency per listener from received objects.
 - **Relay token validation:** Added fail-closed checks in Worker to reject expired or malformed relay JWTs.
-
-### Partial mitigation
-
-- **SEC-03 partial mitigation:** Floor snapshots and queues now exclude departed or invalid AI targets. A new request promotes an existing waiter before accepting a later requester when the stored holder has left. Expired AI reconnect windows release their floor state. Regression tests cover these paths; turn-lease validation remains open.
-- **SEC-13 partial mitigation:** Authenticated participants cannot update another participant's activity target, with a negative room-service test. The remaining self-report path is not tied to trusted audio publication or receiver observation.
 
 ### Next steps and vision statements (Remaining backlog order)
 
-1. **SEC-03 (Next step):** Bind floor release to a short-lived turn lease for the current AI, then verify concurrent request and lifecycle ordering end to end.
-2. **SEC-13 (Next step):** Decide whether shared activity means membership or speech; for speech, use locally observed or otherwise trusted publication events rather than client self-reporting.
-3. **SEC-01 (Vision target / Gate 1):** Replace the shared relay-wide token with participant- and room-scoped credentials once supported by the relay API, verifying enforcement with a live trace.
+1. **SEC-01 (Vision target):** Replace the shared relay-wide token with participant- and room-scoped credentials once supported by the relay API, verifying enforcement with a live trace.
+2. **Milestone 3:** Bind floor grants and AI publication to an authenticated AI worker when the live speech pipeline is implemented. The presenter simulation remains labelled and cannot prove live worker authority.
 
 ## Closure checklist
 

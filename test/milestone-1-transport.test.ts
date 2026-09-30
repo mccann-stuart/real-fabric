@@ -761,8 +761,9 @@ describe("M1 — bounded session recovery", () => {
     });
     const room = {
       code: "AAAAAAAAAAAAAAAAAAAA",
+      participants: [],
       transport: { discovery: "unknown" },
-    } as RoomSnapshot;
+    } as unknown as RoomSnapshot;
     const internal = session as unknown as {
       room: RoomSnapshot;
       transport: { subscribeNamespace: (namespace: string) => Promise<void> };
@@ -791,8 +792,9 @@ describe("M1 — bounded session recovery", () => {
     });
     const room = {
       code: "AAAAAAAAAAAAAAAAAAAA",
+      participants: [],
       transport: { discovery: "unknown" },
-    } as RoomSnapshot;
+    } as unknown as RoomSnapshot;
     const internal = session as unknown as {
       room: RoomSnapshot;
       transport: { subscribeNamespace: (namespace: string) => Promise<void> };
@@ -827,8 +829,9 @@ describe("M1 — bounded session recovery", () => {
     });
     const room = {
       code: "AAAAAAAAAAAAAAAAAAAA",
+      participants: [],
       transport: { discovery: "unknown" },
-    } as RoomSnapshot;
+    } as unknown as RoomSnapshot;
     const internal = session as unknown as {
       room: RoomSnapshot;
       transport: { subscribeNamespace: (namespace: string) => Promise<void> };

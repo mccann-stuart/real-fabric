@@ -67,7 +67,7 @@ export interface Participant {
   wakeName: string | null;
   /** Null for humans. */
   pipeline: AiPipelineState | null;
-  /** Last time this participant published audio, for grid ordering and the ladder. */
+  /** Listener-observed audio recency, or joinedAt when no audio has been observed. */
   lastActiveAt: number;
 }
 
@@ -97,6 +97,18 @@ export interface FloorState {
   heldSince: number | null;
   /** AI ids waiting, in arrival order. Each shows Thinking. */
   queue: string[];
+}
+
+/** Presenter-only floor replies. Turn IDs never appear in room snapshots. */
+export interface FloorRequestResult {
+  granted: boolean;
+  room: RoomSnapshot;
+  turnId: string | null;
+}
+
+export interface FloorReleaseResult {
+  room: RoomSnapshot;
+  nextTurnId: string | null;
 }
 
 export interface TransportStatus {

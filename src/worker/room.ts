@@ -7,6 +7,8 @@ import {
   type DiscoveryMechanism,
   EMPTY_ROOM_EXPIRY_MS,
   evaluateComposition,
+  type FloorReleaseResult,
+  type FloorRequestResult,
   type FloorState,
   MAX_SIMULATED_PARTICIPANTS,
   type MoqDraft,
@@ -41,12 +43,13 @@ function endpointName(endpoint: string): string {
  * minutes, so recreating an out-of-date schema loses nothing worth keeping and
  * is preferable to serving a snapshot with missing columns.
  */
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 const CONTROL_AUTH_TIMEOUT_MS = 5_000;
 const CONTROL_AUTH_MESSAGE_MAX_LENGTH = 512;
 const HTTP_SWITCHING_PROTOCOLS = 101;
 const RATE_LIMIT_WINDOW_MS = 10 * 60_000;
+const FLOOR_TURN_LEASE_MS = 30_000;
 
 interface ParticipantRow {
   [key: string]: SqlStorageValue;
@@ -61,7 +64,6 @@ interface ParticipantRow {
   address: string | null;
   wake_name: string | null;
   pipeline: AiPipelineState | null;
-  last_active_at: number;
 }
 
 interface RoutingRow {
@@ -85,6 +87,8 @@ interface MetaRow {
   ai_to_ai_capped_at: number | null;
   floor_holder: string | null;
   floor_since: number | null;
+  floor_turn_id: string | null;
+  floor_turn_expires_at: number | null;
   simulated_humans: number;
   simulated_ais: number;
   scripted_responses: number;
@@ -149,9 +153,9 @@ export class Room extends DurableObject<Env> {
         `INSERT INTO room_meta (
            singleton, code, created_at, expires_at, empty_since,
            ai_to_ai_enabled, ai_to_ai_turns, ai_to_ai_capped_at,
-           floor_holder, floor_since,
+           floor_holder, floor_since, floor_turn_id, floor_turn_expires_at,
            simulated_humans, simulated_ais, scripted_responses
-         ) VALUES (1, ?, ?, ?, NULL, 0, 0, NULL, NULL, NULL, 0, 0, 0)`,
+         ) VALUES (1, ?, ?, ?, NULL, 0, 0, NULL, NULL, NULL, NULL, NULL, 0, 0, 0)`,
         code,
         now,
         now + ROOM_LIFETIME_MS,
@@ -180,13 +184,12 @@ export class Room extends DurableObject<Env> {
     this.ctx.storage.sql.exec(
       `INSERT INTO participants (
          id, display_name, role, state, joined_at, reconnect_until, rejoin_hash,
-         simulated, address, wake_name, pipeline, last_active_at
-       ) VALUES (?, ?, 'human', 'connected', ?, NULL, ?, 0, NULL, NULL, NULL, ?)`,
+         simulated, address, wake_name, pipeline
+       ) VALUES (?, ?, 'human', 'connected', ?, NULL, ?, 0, NULL, NULL, NULL)`,
       participantId,
       displayName,
       now,
       await sha256(token),
-      now,
     );
     // §8: a human joining later grants nothing until they act, so every row
     // starts with inbound consent withheld.
@@ -229,8 +232,8 @@ export class Room extends DurableObject<Env> {
     this.ctx.storage.sql.exec(
       `INSERT INTO participants (
          id, display_name, role, state, joined_at, reconnect_until, rejoin_hash,
-         simulated, address, wake_name, pipeline, last_active_at
-       ) VALUES (?, ?, 'ai', 'connected', ?, NULL, ?, ?, ?, ?, 'listening', ?)`,
+         simulated, address, wake_name, pipeline
+       ) VALUES (?, ?, 'ai', 'connected', ?, NULL, ?, ?, ?, ?, 'listening')`,
       aiId,
       displayName,
       now,
@@ -238,7 +241,6 @@ export class Room extends DurableObject<Env> {
       options.simulated ? 1 : 0,
       address,
       options.wakeName ?? displayName,
-      now,
     );
     // Adding an AI mid-session does not inherit consent from AIs already present.
     this.seedRoutingForAi(aiId, now);
@@ -273,6 +275,12 @@ export class Room extends DurableObject<Env> {
     return row;
   }
 
+  private assertConnectedFloorAi(aiId: string): void {
+    if (this.assertAiParticipant(aiId).state !== "connected") {
+      throw roomError(409, "ai_unavailable", "The AI must be connected to hold the floor.");
+    }
+  }
+
   private async removeAiInternal(
     viewerId: string | undefined,
     aiId: string,
@@ -285,7 +293,8 @@ export class Room extends DurableObject<Env> {
       aiId,
     );
     this.ctx.storage.sql.exec("DELETE FROM routing WHERE ai_id = ?", aiId);
-    await this.releaseFloorInternal(aiId, now);
+    this.releaseFloorInternal(aiId, now);
+    await this.rescheduleAlarm();
     this.broadcast({ type: "participant_changed", participantId: aiId, state: "left", at: now });
     return this.snapshot(viewerId);
   }
@@ -360,9 +369,8 @@ export class Room extends DurableObject<Env> {
     this.assertAiParticipant(aiId);
     const now = Date.now();
     this.ctx.storage.sql.exec(
-      "UPDATE participants SET pipeline = ?, last_active_at = ? WHERE id = ? AND role = 'ai'",
+      "UPDATE participants SET pipeline = ? WHERE id = ? AND role = 'ai'",
       pipeline,
-      pipeline === "speaking" ? now : (this.participantRow(aiId)?.last_active_at ?? now),
       aiId,
     );
     this.broadcast({ type: "ai_pipeline_changed", aiId, pipeline, at: now });
@@ -373,35 +381,41 @@ export class Room extends DurableObject<Env> {
    * FR4 floor control: an AI does not begin publishing while another AI is
    * publishing. A second addressed AI queues and shows Thinking.
    */
-  async requestFloor(
-    credential: ParticipantCredential,
-    aiId: string,
-  ): Promise<{ granted: boolean; room: RoomSnapshot }> {
+  async requestFloor(credential: ParticipantCredential, aiId: string): Promise<FloorRequestResult> {
     await this.assertPresenter(credential);
     this.assertActive();
-    this.assertAiParticipant(aiId);
+    this.assertConnectedFloorAi(aiId);
     const now = Date.now();
     const meta = this.meta();
     if (!meta) throw roomError(404, "room_not_found", "Room is not initialised.");
 
     this.pruneFloorQueue();
-    if (meta.floor_holder && !this.activeFloorHolder(meta.floor_holder)) {
-      // A departed holder must not leave the floor wedged or let this new
-      // request jump ahead of AIs already waiting in the queue.
-      await this.releaseFloorInternal(meta.floor_holder, now);
+    const expiredHolder =
+      meta.floor_holder &&
+      (!this.activeFloorHolder(meta.floor_holder) ||
+        meta.floor_turn_expires_at === null ||
+        meta.floor_turn_expires_at <= now);
+    if (expiredHolder) {
+      // Promote an existing waiter before admitting this later request.
+      this.expireFloorTurn(meta, now);
     }
-    const holderId = this.meta()?.floor_holder ?? null;
+    const current = this.meta();
+    const holderId = current?.floor_holder ?? null;
 
-    if (holderId === aiId) return { granted: true, room: this.snapshot(credential.participantId) };
+    if (holderId === aiId) {
+      if (expiredHolder) await this.rescheduleAlarm();
+      return {
+        granted: true,
+        room: this.snapshot(credential.participantId),
+        turnId: current?.floor_turn_id ?? null,
+      };
+    }
     if (holderId === null) {
-      this.ctx.storage.sql.exec(
-        "UPDATE room_meta SET floor_holder = ?, floor_since = ? WHERE singleton = 1",
-        aiId,
-        now,
-      );
+      const turnId = this.grantFloor(aiId, now);
       this.ctx.storage.sql.exec("DELETE FROM floor_queue WHERE ai_id = ?", aiId);
       this.broadcast({ type: "floor_changed", holderId: aiId, queue: this.floorQueue(), at: now });
-      return { granted: true, room: this.snapshot(credential.participantId) };
+      await this.rescheduleAlarm();
+      return { granted: true, room: this.snapshot(credential.participantId), turnId };
     }
 
     this.ctx.storage.sql.exec(
@@ -419,14 +433,56 @@ export class Room extends DurableObject<Env> {
       queue: this.floorQueue(),
       at: now,
     });
-    return { granted: false, room: this.snapshot(credential.participantId) };
+    if (expiredHolder) await this.rescheduleAlarm();
+    return { granted: false, room: this.snapshot(credential.participantId), turnId: null };
   }
 
-  async releaseFloor(credential: ParticipantCredential, aiId: string): Promise<RoomSnapshot> {
+  async releaseFloor(
+    credential: ParticipantCredential,
+    aiId: string,
+    turnId: string,
+  ): Promise<FloorReleaseResult> {
     await this.assertPresenter(credential);
     this.assertActive();
-    this.assertAiParticipant(aiId);
-    await this.releaseFloorInternal(aiId, Date.now());
+    this.assertConnectedFloorAi(aiId);
+    const now = Date.now();
+    const meta = this.meta();
+    if (
+      !meta ||
+      meta.floor_holder !== aiId ||
+      meta.floor_turn_id !== turnId ||
+      meta.floor_turn_expires_at === null ||
+      meta.floor_turn_expires_at <= now
+    ) {
+      if (
+        meta?.floor_holder &&
+        (meta.floor_turn_expires_at === null || meta.floor_turn_expires_at <= now)
+      ) {
+        this.expireFloorTurn(meta, now);
+        await this.rescheduleAlarm();
+      }
+      throw roomError(409, "floor_turn_stale", "This AI no longer holds the current floor turn.");
+    }
+    const nextTurnId = this.releaseFloorInternal(aiId, now);
+    await this.rescheduleAlarm();
+    return { room: this.snapshot(credential.participantId), nextTurnId };
+  }
+
+  async cancelFloorRequest(credential: ParticipantCredential, aiId: string): Promise<RoomSnapshot> {
+    await this.assertPresenter(credential);
+    this.assertActive();
+    this.assertConnectedFloorAi(aiId);
+    const meta = this.meta();
+    if (meta?.floor_holder === aiId) {
+      throw roomError(409, "floor_turn_active", "An active floor turn requires its turn ID.");
+    }
+    this.ctx.storage.sql.exec("DELETE FROM floor_queue WHERE ai_id = ?", aiId);
+    this.broadcast({
+      type: "floor_changed",
+      holderId: meta?.floor_holder ?? null,
+      queue: this.floorQueue(),
+      at: Date.now(),
+    });
     return this.snapshot(credential.participantId);
   }
 
@@ -503,25 +559,6 @@ export class Room extends DurableObject<Env> {
     return this.snapshot(credential.participantId);
   }
 
-  /** Audio object arrival is the source of truth for "connected" (§6.2). */
-  async markActive(credential: ParticipantCredential, participantId: string): Promise<void> {
-    await this.assertParticipant(credential.participantId, credential.rejoinToken);
-    // Security: Restrict activity updates to the caller's own participant ID to prevent activity spoofing (CWE-639).
-    if (credential.participantId !== participantId) {
-      throw roomError(
-        403,
-        "unauthorized_target",
-        "Participants can only update their own activity state.",
-      );
-    }
-    if (!this.meta()) return;
-    this.ctx.storage.sql.exec(
-      "UPDATE participants SET last_active_at = ? WHERE id = ?",
-      Date.now(),
-      participantId,
-    );
-  }
-
   async fetch(request: Request): Promise<Response> {
     if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
       return new Response("WebSocket upgrade required.", { status: 426 });
@@ -573,7 +610,8 @@ export class Room extends DurableObject<Env> {
       );
       this.ctx.storage.sql.exec("DELETE FROM floor_queue");
       this.ctx.storage.sql.exec(
-        "UPDATE room_meta SET expires_at = ?, floor_holder = NULL, floor_since = NULL WHERE singleton = 1",
+        `UPDATE room_meta SET expires_at = ?, floor_holder = NULL, floor_since = NULL,
+         floor_turn_id = NULL, floor_turn_expires_at = NULL WHERE singleton = 1`,
         Math.min(meta.expires_at, now),
       );
       return;
@@ -590,7 +628,14 @@ export class Room extends DurableObject<Env> {
       now,
     );
     for (const ai of expiredAis) {
-      await this.releaseFloorInternal(ai.id, now);
+      this.releaseFloorInternal(ai.id, now);
+    }
+    const floor = this.meta();
+    if (
+      floor?.floor_holder &&
+      (floor.floor_turn_expires_at === null || floor.floor_turn_expires_at <= now)
+    ) {
+      this.expireFloorTurn(floor, now);
     }
     this.noteEmptiness(now);
     await this.rescheduleAlarm();
@@ -698,6 +743,8 @@ export class Room extends DurableObject<Env> {
         ai_to_ai_capped_at INTEGER,
         floor_holder TEXT,
         floor_since INTEGER,
+        floor_turn_id TEXT,
+        floor_turn_expires_at INTEGER,
         simulated_humans INTEGER NOT NULL DEFAULT 0,
         simulated_ais INTEGER NOT NULL DEFAULT 0,
         scripted_responses INTEGER NOT NULL DEFAULT 0
@@ -715,8 +762,7 @@ export class Room extends DurableObject<Env> {
         wake_name TEXT,
         pipeline TEXT CHECK (
           pipeline IN ('listening', 'thinking', 'speaking', 'interrupted', 'unavailable')
-        ),
-        last_active_at INTEGER NOT NULL
+        )
       );
       CREATE TABLE routing (
         human_id TEXT NOT NULL,
@@ -793,9 +839,40 @@ export class Room extends DurableObject<Env> {
     );
   }
 
-  private async releaseFloorInternal(aiId: string, now: number): Promise<void> {
+  private grantFloor(aiId: string, now: number): string {
+    const turnId = crypto.randomUUID();
+    this.ctx.storage.sql.exec(
+      `UPDATE room_meta SET floor_holder = ?, floor_since = ?,
+       floor_turn_id = ?, floor_turn_expires_at = ? WHERE singleton = 1`,
+      aiId,
+      now,
+      turnId,
+      now + FLOOR_TURN_LEASE_MS,
+    );
+    return turnId;
+  }
+
+  private expireFloorTurn(meta: MetaRow, now: number): void {
+    if (!meta.floor_holder) return;
+    const holder = this.participantRow(meta.floor_holder);
+    if (holder?.role === "ai" && holder.pipeline === "speaking") {
+      this.ctx.storage.sql.exec(
+        "UPDATE participants SET pipeline = 'interrupted' WHERE id = ? AND role = 'ai'",
+        meta.floor_holder,
+      );
+      this.broadcast({
+        type: "ai_pipeline_changed",
+        aiId: meta.floor_holder,
+        pipeline: "interrupted",
+        at: now,
+      });
+    }
+    this.releaseFloorInternal(meta.floor_holder, now);
+  }
+
+  private releaseFloorInternal(aiId: string, now: number): string | null {
     const meta = this.meta();
-    if (!meta) return;
+    if (!meta) return null;
     this.ctx.storage.sql.exec("DELETE FROM floor_queue WHERE ai_id = ?", aiId);
     this.pruneFloorQueue();
     const holderId = this.activeFloorHolder(meta.floor_holder);
@@ -806,26 +883,24 @@ export class Room extends DurableObject<Env> {
         queue: this.floorQueue(),
         at: now,
       });
-      return;
+      return null;
     }
     const next = this.ctx.storage.sql
       .exec<{ ai_id: string }>(
         `SELECT f.ai_id FROM floor_queue f
          JOIN participants p ON p.id = f.ai_id
-         WHERE p.role = 'ai' AND p.state != 'left'
+         WHERE p.role = 'ai' AND p.state = 'connected'
          ORDER BY f.queued_at, f.ai_id LIMIT 1`,
       )
       .toArray()[0];
+    let nextTurnId: string | null = null;
     if (next) {
       this.ctx.storage.sql.exec("DELETE FROM floor_queue WHERE ai_id = ?", next.ai_id);
-      this.ctx.storage.sql.exec(
-        "UPDATE room_meta SET floor_holder = ?, floor_since = ? WHERE singleton = 1",
-        next.ai_id,
-        now,
-      );
+      nextTurnId = this.grantFloor(next.ai_id, now);
     } else {
       this.ctx.storage.sql.exec(
-        "UPDATE room_meta SET floor_holder = NULL, floor_since = NULL WHERE singleton = 1",
+        `UPDATE room_meta SET floor_holder = NULL, floor_since = NULL,
+         floor_turn_id = NULL, floor_turn_expires_at = NULL WHERE singleton = 1`,
       );
     }
     this.broadcast({
@@ -834,6 +909,7 @@ export class Room extends DurableObject<Env> {
       queue: this.floorQueue(),
       at: now,
     });
+    return nextTurnId;
   }
 
   private async reconcileSimulated(
@@ -870,15 +946,13 @@ export class Room extends DurableObject<Env> {
           const valuePlaceholders: string[] = [];
           const params: SqlStorageValue[] = [];
           for (const item of chunk) {
-            valuePlaceholders.push(
-              "(?, ?, 'human', 'connected', ?, NULL, ?, 1, NULL, NULL, NULL, ?)",
-            );
-            params.push(item.id, item.name, now, item.hash, now);
+            valuePlaceholders.push("(?, ?, 'human', 'connected', ?, NULL, ?, 1, NULL, NULL, NULL)");
+            params.push(item.id, item.name, now, item.hash);
           }
           this.ctx.storage.sql.exec(
             `INSERT INTO participants (
                id, display_name, role, state, joined_at, reconnect_until, rejoin_hash,
-               simulated, address, wake_name, pipeline, last_active_at
+               simulated, address, wake_name, pipeline
              ) VALUES ${valuePlaceholders.join(", ")}`,
             ...params,
           );
@@ -932,15 +1006,13 @@ export class Room extends DurableObject<Env> {
           const valuePlaceholders: string[] = [];
           const params: SqlStorageValue[] = [];
           for (const item of chunk) {
-            valuePlaceholders.push(
-              "(?, ?, 'ai', 'connected', ?, NULL, ?, 1, ?, ?, 'listening', ?)",
-            );
-            params.push(item.id, item.name, now, item.hash, item.address, item.wakeName, now);
+            valuePlaceholders.push("(?, ?, 'ai', 'connected', ?, NULL, ?, 1, ?, ?, 'listening')");
+            params.push(item.id, item.name, now, item.hash, item.address, item.wakeName);
           }
           this.ctx.storage.sql.exec(
             `INSERT INTO participants (
                id, display_name, role, state, joined_at, reconnect_until, rejoin_hash,
-               simulated, address, wake_name, pipeline, last_active_at
+               simulated, address, wake_name, pipeline
              ) VALUES ${valuePlaceholders.join(", ")}`,
             ...params,
           );
@@ -1080,7 +1152,7 @@ export class Room extends DurableObject<Env> {
       .exec<{ ai_id: string }>(
         `SELECT f.ai_id FROM floor_queue f
          JOIN participants p ON p.id = f.ai_id
-         WHERE p.role = 'ai' AND p.state != 'left'
+         WHERE p.role = 'ai' AND p.state = 'connected'
          ORDER BY f.queued_at, f.ai_id`,
       )
       .toArray()
@@ -1091,7 +1163,7 @@ export class Room extends DurableObject<Env> {
     if (!holderId) return null;
     const holder = this.ctx.storage.sql
       .exec<{ id: string }>(
-        "SELECT id FROM participants WHERE id = ? AND role = 'ai' AND state != 'left' LIMIT 1",
+        "SELECT id FROM participants WHERE id = ? AND role = 'ai' AND state = 'connected' LIMIT 1",
         holderId,
       )
       .toArray()[0];
@@ -1103,7 +1175,7 @@ export class Room extends DurableObject<Env> {
       `DELETE FROM floor_queue
        WHERE NOT EXISTS (
          SELECT 1 FROM participants p
-         WHERE p.id = floor_queue.ai_id AND p.role = 'ai' AND p.state != 'left'
+         WHERE p.id = floor_queue.ai_id AND p.role = 'ai' AND p.state = 'connected'
        )`,
     );
   }
@@ -1286,6 +1358,9 @@ export class Room extends DurableObject<Env> {
       )
       .toArray()[0]?.reconnect_until;
     if (nextReconnect !== undefined) candidates.push(nextReconnect);
+    if (meta.floor_holder && meta.floor_turn_expires_at !== null) {
+      candidates.push(meta.floor_turn_expires_at);
+    }
     const sockets = this.ctx.getWebSockets();
     for (let i = 0; i < sockets.length; i++) {
       const socket = sockets[i];
@@ -1324,7 +1399,9 @@ function toParticipant(row: ParticipantRow): Participant {
     address: row.address,
     wakeName: row.wake_name,
     pipeline: row.pipeline,
-    lastActiveAt: row.last_active_at,
+    // Shared state has no trusted media-arrival signal. Listeners replace this
+    // fallback with their own observed object time for compact-grid ordering.
+    lastActiveAt: row.joined_at,
   };
 }
 

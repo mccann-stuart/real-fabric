@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ApiClientError,
   addAi,
+  cancelFloorRequest,
   clearSession,
   configurePresenter,
   createRoom,
@@ -10,7 +11,6 @@ import {
   joinRoom,
   leaveRoom,
   loadSession,
-  markActive,
   normaliseCode,
   recordAiToAiTurn,
   releaseFloor,
@@ -105,28 +105,6 @@ describe("client API session management", () => {
           ),
         },
       });
-    });
-
-    it("returns undefined on HTTP 204 No Content response", async () => {
-      vi.stubGlobal(
-        "fetch",
-        vi.fn().mockResolvedValue(
-          new Response(null, {
-            status: 204,
-          }),
-        ),
-      );
-
-      const session = {
-        code: "ROOM123",
-        participantId: "p-1",
-        rejoinToken: "token-abc",
-        displayName: "Alice",
-        storedAt: 123456789,
-      };
-
-      const res = await markActive(session, "p-1");
-      expect(res).toBeUndefined();
     });
 
     it("throws ApiClientError with problem details when response is not ok and JSON is valid ApiError", async () => {
@@ -542,7 +520,7 @@ describe("client API session management", () => {
     });
 
     it("releaseFloor sends POST /api/rooms/:code/floor with operation release", async () => {
-      await releaseFloor(dummySession, "ai-42");
+      await releaseFloor(dummySession, "ai-42", "turn-123");
       const [url, init] = (fetchMock.mock.calls[0] ?? []) as [
         string,
         RequestInit & { body: string },
@@ -553,7 +531,23 @@ describe("client API session management", () => {
         participantId: "p-100",
         rejoinToken: "rt-200",
         aiId: "ai-42",
+        turnId: "turn-123",
         operation: "release",
+      });
+    });
+
+    it("cancelFloorRequest sends a separate cancellation operation", async () => {
+      await cancelFloorRequest(dummySession, "ai-42");
+      const [url, init] = (fetchMock.mock.calls[0] ?? []) as [
+        string,
+        RequestInit & { body: string },
+      ];
+      expect(url).toBe("/api/rooms/room-abc-123/floor");
+      expect(JSON.parse(init.body)).toEqual({
+        participantId: "p-100",
+        rejoinToken: "rt-200",
+        aiId: "ai-42",
+        operation: "cancel",
       });
     });
 
@@ -602,22 +596,6 @@ describe("client API session management", () => {
         simulatedHumans: 3,
         simulatedAis: 2,
         scriptedResponses: true,
-      });
-    });
-
-    it("markActive sends POST /api/rooms/:code/active with targetId and credentials", async () => {
-      fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
-      await markActive(dummySession, "target-participant-id");
-      const [url, init] = (fetchMock.mock.calls[0] ?? []) as [
-        string,
-        RequestInit & { body: string },
-      ];
-      expect(url).toBe("/api/rooms/room-abc-123/active");
-      expect(init.method).toBe("POST");
-      expect(JSON.parse(init.body)).toEqual({
-        participantId: "p-100",
-        rejoinToken: "rt-200",
-        targetId: "target-participant-id",
       });
     });
   });

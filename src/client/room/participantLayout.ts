@@ -1,4 +1,21 @@
-import type { Participant } from "../../shared/contracts";
+import type { Participant, RoomSnapshot } from "../../shared/contracts";
+
+/** Shared snapshots carry join order; only this listener can observe audio recency. */
+export function projectObservedActivity(
+  room: RoomSnapshot,
+  observedAt: ReadonlyMap<string, { readonly lastActiveAt: number }>,
+): RoomSnapshot {
+  return {
+    ...room,
+    participants: room.participants.map((participant) => ({
+      ...participant,
+      lastActiveAt: Math.max(
+        participant.joinedAt,
+        observedAt.get(participant.id)?.lastActiveAt ?? 0,
+      ),
+    })),
+  };
+}
 
 /**
  * §4.2: below eight participants, equal cards. Above that, a compact grid
