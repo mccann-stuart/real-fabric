@@ -1,6 +1,6 @@
 # Milestone 3 — §11.4 Gate 3: multi-agent AI orchestration, floor control and fault isolation
 
-> **Status:** Forward-looking architectural roadmap (unbuilt). Milestones 1 and 2 are built in the current codebase (439 tests passing across 27 files); Milestone 3 represents proposed next steps and vision targets.
+> **Status:** Forward-looking architectural plan (unbuilt). Milestones 1 and 2 are built in code; Milestone 3 represents proposed next steps and vision targets. This plan was drafted against an earlier revision, so recheck source references and bug descriptions before implementation.
 
 ## Next steps and vision statements: Milestone 3 Implementation Blueprint
 
@@ -15,7 +15,7 @@ Gate 3's subject is autonomous AI participants: deterministic addressing, floor 
 - **Floor control is not authoritative.** Each browser tab runs its own `AiDirector`, and the Durable Object calls are `.catch(() => undefined)` (`RoomSession.ts:864`, `:876`, `:896`) while the local director proceeds regardless.
 - **Two of the three Gate 3 failure codes have no raise site.** `ai_pipeline_failed` and `ai_floor_contention` exist in the registry (`failures.ts:23-25`) but are never raised; only `ai_loop_capped` is.
 
-Three live bugs were found while planning, all confirmed in source. They are fixed as part of this work:
+Three behaviours were identified in the planning snapshot. Revalidate each against current code and tests before changing it:
 
 1. **Barge-in permanently wedges the floor.** `onHumanOnset` (`RoomSession.ts:831-857`) clears the local turn but never calls `releaseFloor`, so `room_meta.floor_holder` still names the interrupted AI and every later address in that room is denied for the room's life.
 2. **Barge-in only cancels the first group of a turn.** `AiTurn.groupId` is minted once per turn, but §6.3 groups roll every second (`RoomSession.ts:769-772`) and scripted turns run 2,600–4,200 ms. Cancelling `turn.groupId` alone leaves the later groups playing.
@@ -34,7 +34,7 @@ Three live bugs were found while planning, all confirmed in source. They are fix
 
 ### Assumptions, stated rather than assumed silently
 
-- **`MoqTransportAdapter` gains an eighth method, `unpublish(track)`.** §10.4 requires that a pipeline failure "closes that AI's publication track" while humans and other AIs continue; the adapter today offers only whole-session `close()`, which would take the humans down with the AI. `unpublish` is symmetric with the existing `unsubscribe(track)`. This adds one line to the adapter surface enumerated in `PRODUCT_SPEC §6.4` and `AGENTS.md:104-112`; both are updated to match. Per `AGENTS.md:29` this does not materially change user-visible behaviour, security or data handling, so it proceeds without a spec waiver.
+- **`MoqTransportAdapter` would gain `unpublish(track)`.** §10.4 requires that a pipeline failure close that AI's publication while humans and other AIs continue. The proposal is symmetric with `unsubscribe(track)` and would require corresponding updates to the adapter surface in the product specification and AGENTS.md. Check the pinned `moqtail` API before choosing the exact behaviour or wording.
 - **Routing stays labelled cooperative.** An in-browser AI publisher does *not* make **Hears me** enforced — the driving browser holds one subscription for its own playback, not a separate AI subscription. `MOQ_ROUTING_ENFORCEMENT=cooperative` is unchanged and the UI keeps saying so. Do not let the new publisher become an argument that FR8 is enforced.
 - **No `SCHEMA_VERSION` bump.** Every worker change uses existing columns. `migrate()` drops and recreates on a version change (`room.ts:551-552`), which would destroy live rooms' membership, routing consent and `rejoin_hash`. Not worth it.
 - **AI first-audio is reported, not gated.** §9.5 lists it explicitly under "Reported, not gated", so its Inspector row carries `"Reported · no gate"` and no Within/Over chip.
@@ -239,17 +239,9 @@ New `test/milestone-3-ai.test.ts`, following the established conventions exactly
 
 ### S14 — Documentation
 
-Recount tests from the real `pnpm test` output first. Note the **pre-existing drift**: `README.md:127` says 152 across ten files, `AGENTS.md:34` says 144 across ten files, `Standards.md:87` says 152 across ten files, and `test/` holds 17. Reconcile all three.
+Recount tests from the real `pnpm test` output first. Update [README.md](../README.md), [ROADMAP.md](ROADMAP.md) and [AGENTS.md](../AGENTS.md) with the implemented floor grant, publisher markers, labelled scripted voice, inspector behaviour and exact unverified live boundaries. The README's platform diagram should gain the parallel AI branch (`ScriptedVoice` → WebCodecs Opus → `MoqTransportAdapter` → `audio/<ai-id>`). Keep live recognition, model and synthesis providers labelled **Not built** until they exist.
 
-**`README.md`** — `:9` status paragraph adds Milestone 3 and "no live AI pipeline exists"; `:19` becomes "Milestones 1, 2 and 3 of the §11 release plan are built in code. Milestone 4 is not. Gate 3's live acceptance evidence is outstanding."; H5/H6/H10 rows (`:38`, `:39`, `:43`) gain the DO grant, the publisher markers and the card-visible counter; `:122` layout bullet adds the three new `src/client/ai` modules. **New Milestone 3 table after `:88`**, matching the M1/M2 two-column shape, with rows for the extended director/floor work, publisher cancellation markers, fault isolation and browser AI audio all marked **Built.** with their live caveat, wake-name detection and live providers marked **Not built.** with the §14 owner, and a final bolded **Gate 3 exit … Outstanding.** row.
-
-**"What is not verified" (`:176-195`)** — rewrite, do not delete: `:186` becomes "that a remote browser goes audibly silent within 300 ms of a published cancellation marker. The marker is emitted and the receiver purge is unit-tested, but no relay has carried one." `:190` becomes "milestone 4 of the §11 release plan, and Gate 3's live acceptance evidence: two live AIs, ten addressed exchanges, audible barge-in within 300 ms and live routing changes within 500 ms." `:185` stays verbatim. **New bullet:** "that the AI voice is anything other than a labelled synthetic tone. No speech is synthesised anywhere in this build."
-
-**`AGENTS.md`** — extend `:46` with the browser AI publisher, its labelling, and DO floor authority; add `unpublish(track)` to the boundary block at `:104-112`; add the `AiResponder`-is-the-only-provider-importer rule; append the publisher's cancellation marker to the invariant at `:63`. `:162` needs no wording change — it is now actually true.
-
-**`Standards.md`** — §1 pipeline diagram gains the parallel AI branch (`ScriptedVoice` → WebCodecs Opus, identical configuration → `MoqTransportAdapter` → `audio/<ai-id>`); `:89-96` "Automated tests do not prove" gains "audible AI barge-in across ten interruptions" and "any live recognition, model or synthesis provider".
-
-**`PRODUCT_SPEC_v1-demo_1.md`** — one line in §6.4's adapter list for `unpublish(track)`.
+If the adapter gains `unpublish(track)`, update §6.4 of [PRODUCT_SPEC_v1-demo_1.md](PRODUCT_SPEC_v1-demo_1.md) and the boundary in AGENTS.md. State explicitly that unit tests do not prove two live AIs, ten addressed exchanges, audible barge-in within 300 ms across ten interruptions, or routing changes within 500 ms. A synthetic tone is not speech synthesis, and no relay acceptance claim follows from publisher unit tests.
 
 ---
 
@@ -275,7 +267,7 @@ Run in order. Every command is expected to pass before the next.
 test -L node_modules && readlink node_modules
 ```
 
-Must print exactly `/Users/mccannstuart/.node_modules` — the `MEMORIES.md` constraint. Stop if it does not.
+Must print exactly `/Users/mccannstuart/.node_modules` — the AGENTS.md dependency constraint. Stop if it does not.
 
 ```bash
 pnpm lint && pnpm typecheck
