@@ -251,8 +251,11 @@ async function handleRoomAction(
     const body = await readJsonObject(request);
     const credential = readCredential(body);
     const aiId = requiredString(body, "aiId", 64);
-    const operation = requiredEnum(body, "operation", ["request", "release"] as const);
-    if (operation === "release") return json(await stub.releaseFloor(credential, aiId));
+    const operation = requiredEnum(body, "operation", ["request", "release", "cancel"] as const);
+    if (operation === "release") {
+      return json(await stub.releaseFloor(credential, aiId, requiredString(body, "turnId", 64)));
+    }
+    if (operation === "cancel") return json(await stub.cancelFloorRequest(credential, aiId));
     const result = await stub.requestFloor(credential, aiId);
     logRoomEvent("floor_requested", correlationId, code, credential.participantId);
     return json(result);
@@ -293,14 +296,6 @@ async function handleRoomAction(
     });
     logRoomEvent("presenter_configured", correlationId, code, credential.participantId);
     return json(room);
-  }
-
-  if (request.method === "POST" && action === "active") {
-    const body = await readJsonObject(request);
-    const credential = readCredential(body);
-    const participantId = requiredString(body, "targetId", 64);
-    await stub.markActive(credential, participantId);
-    return new Response(null, { status: 204, headers: { "cache-control": "no-store" } });
   }
 
   if (request.method === "GET" && action === "events") {

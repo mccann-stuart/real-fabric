@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { projectObservedActivity } from "../src/client/room/participantLayout";
 import { RoomSession } from "../src/client/session/RoomSession";
 import type { Participant, RoomSnapshot, RoutingPreference } from "../src/shared/contracts";
 
@@ -101,5 +102,19 @@ describe("RoomSession scripted-context cache", () => {
     expect(noteHeard).toHaveBeenCalledOnce();
     expect(noteHeard).toHaveBeenCalledWith(secondAi.id, human.id);
     await session.close();
+  });
+});
+
+describe("SEC-13 — listener-observed activity", () => {
+  it("orders from received audio while leaving unobserved participants at join time", () => {
+    const first = { ...participant("human-1", "human"), joinedAt: 100, lastActiveAt: 10_000 };
+    const second = { ...participant("human-2", "human"), joinedAt: 200, lastActiveAt: 20_000 };
+    const shared = room([first, second], []);
+    const projected = projectObservedActivity(
+      shared,
+      new Map([[second.id, { lastActiveAt: 500 }]]),
+    );
+    expect(projected.participants.map((entry) => entry.lastActiveAt)).toEqual([100, 500]);
+    expect(shared.participants.map((entry) => entry.lastActiveAt)).toEqual([10_000, 20_000]);
   });
 });

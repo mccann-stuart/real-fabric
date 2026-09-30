@@ -1,6 +1,7 @@
 import type {
   AiPipelineState,
   DiscoveryMechanism,
+  FloorRequestResult,
   Participant,
   RoomEvent,
   RoomSnapshot,
@@ -20,8 +21,8 @@ import {
 import { type AddressOutcome, AiDirector, type BargeInResult } from "../ai/AiDirector";
 import { ScriptedResponder } from "../ai/ScriptedResponder";
 import {
+  cancelFloorRequest,
   fetchRoom,
-  markActive,
   releaseFloor,
   requestFloor,
   roomEventsUrl,
@@ -46,6 +47,7 @@ import { PlaybackDeduplicator } from "../audio/PlaybackDeduplicator";
 import { TrackPlayer } from "../audio/TrackPlayer";
 import type { CapturePath } from "../audio/UniversalAudioCaptureAdapter";
 import { inspectCaptureSupport } from "../audio/UniversalAudioCaptureAdapter";
+import { projectObservedActivity } from "../room/participantLayout";
 import { SessionTelemetry } from "../telemetry/SessionTelemetry";
 import {
   isTrackNotFoundError,
@@ -241,6 +243,9 @@ export class RoomSession {
   private readonly underrunWindow = new UnderrunWindowCounter();
   private readonly reconnection = new ReconnectionPolicy();
   private readonly players = new Map<string, TrackPlayer>();
+  private readonly floorTurnIds = new Map<string, string>();
+  private readonly floorRequests = new Map<string, Promise<FloorRequestResult>>();
+  private readonly cancelledFloorAddresses = new Set<string>();
   private readonly subscriptionIntent = new Map<string, boolean>();
   private readonly subscriptionRetries = new Map<string, SubscriptionRetry>();
   private readonly subscriptionsOpening = new Set<string>();
@@ -413,10 +418,7 @@ export class RoomSession {
     publishing: Promise<void>,
   ): Promise<void> {
     try {
-      // Authenticated activity confirms that the retained participant identity
-      // is still valid before a resumed transport publishes into the room.
-      await markActive(this.options.session, this.options.session.participantId);
-      if (generation !== this.audioGeneration || this.closed) return;
+      // Refresh through the authenticated snapshot before publishing.
       this.applyRoom(await fetchRoom(this.options.session));
       if (generation !== this.audioGeneration || this.closed) return;
       await this.openTransport(generation);
@@ -910,6 +912,7 @@ export class RoomSession {
    */
   private async onHumanOnset(): Promise<void> {
     const onsetAt = this.now();
+    const waiting = [...this.director.waiting];
     const result = this.director.bargeIn(onsetAt);
     if (!result) {
       this.emit();
@@ -933,15 +936,63 @@ export class RoomSession {
       value: result.latencyMs,
     });
     await this.setPipeline(result.aiId, "interrupted");
+    for (const queuedAiId of waiting) {
+      await this.floorRequests.get(queuedAiId)?.catch(() => undefined);
+      try {
+        this.applyRoom(await cancelFloorRequest(this.options.session, queuedAiId));
+        await this.setPipeline(queuedAiId, "listening");
+      } catch {
+        this.log.record("failure", "The queued floor request could not be cancelled.", {
+          subject: queuedAiId,
+        });
+      }
+    }
+    await this.floorRequests.get(result.aiId)?.catch(() => undefined);
+    const turnId = this.floorTurnIds.get(result.aiId);
+    this.floorTurnIds.delete(result.aiId);
+    if (turnId) {
+      try {
+        this.applyRoom((await releaseFloor(this.options.session, result.aiId, turnId)).room);
+      } catch {
+        this.log.record("failure", "The interrupted floor turn could not be released.", {
+          subject: result.aiId,
+        });
+      }
+    }
     this.emit();
+  }
+
+  private async acquireFloor(aiId: string): Promise<FloorRequestResult | null> {
+    const request = requestFloor(this.options.session, aiId);
+    this.floorRequests.set(aiId, request);
+    try {
+      const result = await request;
+      this.applyRoom(result.room);
+      if (result.granted && result.turnId) this.floorTurnIds.set(aiId, result.turnId);
+      return result;
+    } catch {
+      this.log.record("failure", "The AI floor request was refused.", { subject: aiId });
+      return null;
+    } finally {
+      if (this.floorRequests.get(aiId) === request) this.floorRequests.delete(aiId);
+    }
   }
 
   /** H5: the presenter addressing one AI. Nothing else starts a turn. */
   async address(aiId: string): Promise<AddressOutcome> {
+    this.cancelledFloorAddresses.delete(aiId);
     const outcome = this.director.address(aiId, this.options.session.participantId, "human");
     if (outcome.result === "queued") {
       // FR4: the second addressed AI shows Thinking and waits its turn.
-      await requestFloor(this.options.session, aiId).catch(() => undefined);
+      const grant = await this.acquireFloor(aiId);
+      if (!grant || grant.granted || this.cancelledFloorAddresses.has(aiId)) {
+        this.director.cancelQueued(aiId);
+        if (grant?.turnId && !this.cancelledFloorAddresses.has(aiId)) {
+          await releaseFloor(this.options.session, aiId, grant.turnId).catch(() => undefined);
+          this.floorTurnIds.delete(aiId);
+        }
+        return { result: "refused", reason: "unavailable" };
+      }
       await this.setPipeline(aiId, "thinking");
       this.log.record(
         "simulation",
@@ -953,7 +1004,23 @@ export class RoomSession {
       );
     }
     if (outcome.result === "speaking") {
-      await requestFloor(this.options.session, aiId).catch(() => undefined);
+      const grant = await this.acquireFloor(aiId);
+      if (
+        !grant?.granted ||
+        !grant.turnId ||
+        this.director.speaking?.aiId !== aiId ||
+        this.cancelledFloorAddresses.has(aiId)
+      ) {
+        this.director.endTurn(aiId);
+        if (grant && !grant.granted) {
+          await cancelFloorRequest(this.options.session, aiId).catch(() => undefined);
+        }
+        if (grant?.turnId && !this.cancelledFloorAddresses.has(aiId)) {
+          await releaseFloor(this.options.session, aiId, grant.turnId).catch(() => undefined);
+          this.floorTurnIds.delete(aiId);
+        }
+        return { result: "refused", reason: "unavailable" };
+      }
       await this.setPipeline(aiId, "speaking");
       this.log.record("simulation", "Addressed directly; scripted turn started", {
         subject: aiId,
@@ -972,10 +1039,43 @@ export class RoomSession {
   }
 
   async endTurn(aiId: string): Promise<void> {
+    const wasSpeaking = this.director.speaking?.aiId === aiId;
+    const wasQueued = this.director.waiting.includes(aiId);
+    if (!wasSpeaking && !wasQueued) return;
+    this.cancelledFloorAddresses.add(aiId);
+    await this.floorRequests.get(aiId)?.catch(() => undefined);
+    if (wasQueued) {
+      this.director.cancelQueued(aiId);
+      try {
+        this.applyRoom(await cancelFloorRequest(this.options.session, aiId));
+      } catch {
+        this.log.record("failure", "The queued floor request could not be cancelled.", {
+          subject: aiId,
+        });
+      }
+      await this.setPipeline(aiId, "listening");
+      this.cancelledFloorAddresses.delete(aiId);
+      this.emit();
+      return;
+    }
+
     const promoted = this.director.endTurn(aiId);
-    await releaseFloor(this.options.session, aiId).catch(() => undefined);
+    const turnId = this.floorTurnIds.get(aiId);
+    this.floorTurnIds.delete(aiId);
+    if (turnId) {
+      try {
+        const released = await releaseFloor(this.options.session, aiId, turnId);
+        this.applyRoom(released.room);
+        if (promoted?.aiId === released.room.floor.holderId && released.nextTurnId) {
+          this.floorTurnIds.set(promoted.aiId, released.nextTurnId);
+          await this.setPipeline(promoted.aiId, "speaking");
+        }
+      } catch {
+        this.log.record("failure", "The floor turn could not be released.", { subject: aiId });
+      }
+    }
     await this.setPipeline(aiId, "listening");
-    if (promoted) await this.setPipeline(promoted.aiId, "speaking");
+    this.cancelledFloorAddresses.delete(aiId);
     this.emit();
   }
 
@@ -1047,9 +1147,7 @@ export class RoomSession {
           onFirstObject: (trackId) => {
             if (this.firstAudioAt === null) this.firstAudioAt = this.now();
             this.log.record("first_object", trackId, { subject: participantId });
-            void markActive(this.options.session, this.options.session.participantId).catch(
-              () => undefined,
-            );
+            this.emit();
           },
           onDriftCorrection: (correction) => {
             const lastEventAt = this.lastDriftEventAt.get(participantId);
@@ -1567,6 +1665,20 @@ export class RoomSession {
   }
 
   private applyRoom(room: RoomSnapshot): void {
+    const localTurn = this.director.speaking;
+    if (
+      localTurn &&
+      this.floorTurnIds.has(localTurn.aiId) &&
+      room.floor.holderId !== localTurn.aiId
+    ) {
+      this.director.clearTurns();
+      this.log.record("failure", "The AI floor turn expired or was replaced.", {
+        subject: localTurn.aiId,
+      });
+    }
+    for (const aiId of this.floorTurnIds.keys()) {
+      if (aiId !== room.floor.holderId) this.floorTurnIds.delete(aiId);
+    }
     this.room = this.observedDiscovery
       ? { ...room, transport: { ...room.transport, discovery: this.observedDiscovery } }
       : room;
@@ -1624,6 +1736,9 @@ export class RoomSession {
   async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
+    this.floorTurnIds.clear();
+    this.floorRequests.clear();
+    this.cancelledFloorAddresses.clear();
     if (this.ladderTimer) clearInterval(this.ladderTimer);
     if (this.drainTimer) clearInterval(this.drainTimer);
     if (this.retryTimer) clearTimeout(this.retryTimer);
@@ -1675,9 +1790,10 @@ export class RoomSession {
   }
 
   private snapshot(): SessionState {
+    const room = this.room ? projectObservedActivity(this.room, this.players) : null;
     return {
       phase: this.phase,
-      room: this.room,
+      room,
       failures: [...this.failures],
       degradation: this.degradation,
       publishing: this.publishing,

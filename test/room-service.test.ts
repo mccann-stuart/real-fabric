@@ -4,6 +4,8 @@ import {
   AI_TO_AI_TURN_CAP,
   type ApiError,
   type CreateRoomResponse,
+  type FloorReleaseResult,
+  type FloorRequestResult,
   type JoinRoomResponse,
   MAX_SIMULATED_PARTICIPANTS,
   type RoomSnapshot,
@@ -334,18 +336,24 @@ describe("H9 and §8 — consent is per human and AI pair", () => {
   });
 });
 
-describe("Activity endpoint authorization", () => {
-  it("allows a participant to update their own active state", async () => {
+describe("SEC-13 — activity stays with the observing listener", () => {
+  it("does not accept a participant's unverified activity report", async () => {
     const created = await createRoom();
     const { status } = await call(`/api/rooms/${created.room.code}/active`, {
       participantId: created.participant.id,
       rejoinToken: created.rejoinToken,
       targetId: created.participant.id,
     });
-    expect(status).toBe(204);
+    expect(status).toBe(404);
+    const snapshot = await call<RoomSnapshot>(`/api/rooms/${created.room.code}/snapshot`, {
+      ...credential(created),
+    });
+    expect(
+      snapshot.value.participants.find((p) => p.id === created.participant.id)?.lastActiveAt,
+    ).toBe(created.participant.joinedAt);
   });
 
-  it("refuses to update another participant's active state", async () => {
+  it("does not accept a forged report for another participant", async () => {
     const created = await createRoom();
     const joined = await call<CreateRoomResponse>(`/api/rooms/${created.room.code}/join`, {
       displayName: "Grace",
@@ -357,7 +365,13 @@ describe("Activity endpoint authorization", () => {
       rejoinToken: created.rejoinToken,
       targetId: otherId,
     });
-    expect(status).toBe(403);
+    expect(status).toBe(404);
+    const snapshot = await call<RoomSnapshot>(`/api/rooms/${created.room.code}/snapshot`, {
+      ...credential(created),
+    });
+    expect(snapshot.value.participants.find((p) => p.id === otherId)?.lastActiveAt).toBe(
+      joined.value.participant.joinedAt,
+    );
   });
 });
 
@@ -409,31 +423,205 @@ describe("FR4 — floor control serialises AI speech", () => {
       (participant) => participant.role === "ai" && participant.id !== atlas?.id,
     );
 
-    const granted = await call<{ granted: boolean; room: RoomSnapshot }>(
-      `/api/rooms/${created.room.code}/floor`,
-      { ...credential(created), aiId: atlas?.id, operation: "request" },
-    );
+    const granted = await call<FloorRequestResult>(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: atlas?.id,
+      operation: "request",
+    });
     expect(granted.value.granted).toBe(true);
+    expect(granted.value.turnId).toMatch(/^[0-9a-f-]{36}$/i);
     expect(granted.value.room.floor.holderId).toBe(atlas?.id);
 
-    const queued = await call<{ granted: boolean; room: RoomSnapshot }>(
-      `/api/rooms/${created.room.code}/floor`,
-      { ...credential(created), aiId: sage?.id, operation: "request" },
-    );
+    const queued = await call<FloorRequestResult>(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: sage?.id,
+      operation: "request",
+    });
     expect(queued.value.granted).toBe(false);
+    expect(queued.value.turnId).toBeNull();
     expect(queued.value.room.floor.queue).toEqual([sage?.id]);
     // FR4: the waiting AI shows Thinking rather than speaking over the first.
     expect(
       queued.value.room.participants.find((participant) => participant.id === sage?.id)?.pipeline,
     ).toBe("thinking");
 
-    const released = await call<RoomSnapshot>(`/api/rooms/${created.room.code}/floor`, {
+    const released = await call<FloorReleaseResult>(`/api/rooms/${created.room.code}/floor`, {
       ...credential(created),
       aiId: atlas?.id,
+      turnId: granted.value.turnId,
       operation: "release",
     });
-    expect(released.value.floor.holderId).toBe(sage?.id);
-    expect(released.value.floor.queue).toEqual([]);
+    expect(released.value.room.floor.holderId).toBe(sage?.id);
+    expect(released.value.room.floor.queue).toEqual([]);
+    expect(released.value.nextTurnId).not.toBe(granted.value.turnId);
+  });
+
+  it("requires the current turn ID and refuses stale releases", async () => {
+    const created = await createRoom();
+    const withAtlas = await addAi(created, "Atlas");
+    const withSage = await addAi(created, "Sage");
+    const atlas = withAtlas.participants.find((participant) => participant.role === "ai");
+    const sage = withSage.participants.find(
+      (participant) => participant.role === "ai" && participant.id !== atlas?.id,
+    );
+    if (!atlas || !sage) throw new Error("Expected two AI participants");
+
+    const first = await call<FloorRequestResult>(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: atlas.id,
+      operation: "request",
+    });
+    await call(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: sage.id,
+      operation: "request",
+    });
+
+    const missing = await call<ApiError>(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: atlas.id,
+      operation: "release",
+    });
+    expect(missing.status).toBe(400);
+
+    const forged = await call<ApiError>(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: atlas.id,
+      turnId: crypto.randomUUID(),
+      operation: "release",
+    });
+    expect(forged.status).toBe(409);
+    expect(forged.value.error.code).toBe("floor_turn_stale");
+
+    const cancelledHolder = await call<ApiError>(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: atlas.id,
+      operation: "cancel",
+    });
+    expect(cancelledHolder.status).toBe(409);
+
+    const released = await call<FloorReleaseResult>(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: atlas.id,
+      turnId: first.value.turnId,
+      operation: "release",
+    });
+    expect(released.value.room.floor.holderId).toBe(sage.id);
+    expect(released.value.nextTurnId).toBeTruthy();
+
+    const replay = await call<ApiError>(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: sage.id,
+      turnId: first.value.turnId,
+      operation: "release",
+    });
+    expect(replay.status).toBe(409);
+
+    const snapshot = await call<RoomSnapshot>(`/api/rooms/${created.room.code}/snapshot`, {
+      ...credential(created),
+    });
+    expect(snapshot.value.floor.holderId).toBe(sage.id);
+    expect(JSON.stringify(snapshot.value)).not.toContain(first.value.turnId);
+    expect(JSON.stringify(snapshot.value)).not.toContain(released.value.nextTurnId);
+  });
+
+  it("cancels only a queued AI and rejects a reconnecting AI target", async () => {
+    const created = await createRoom();
+    const withAtlas = await addAi(created, "Atlas");
+    const withSage = await addAi(created, "Sage");
+    const atlas = withAtlas.participants.find((participant) => participant.role === "ai");
+    const sage = withSage.participants.find(
+      (participant) => participant.role === "ai" && participant.id !== atlas?.id,
+    );
+    if (!atlas || !sage) throw new Error("Expected two AI participants");
+
+    const holder = await call<FloorRequestResult>(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: atlas.id,
+      operation: "request",
+    });
+    await call(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: sage.id,
+      operation: "request",
+    });
+    const cancelled = await call<RoomSnapshot>(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: sage.id,
+      operation: "cancel",
+    });
+    expect(cancelled.value.floor.holderId).toBe(atlas.id);
+    expect(cancelled.value.floor.queue).toEqual([]);
+
+    const stub = roomStub(created.room.code);
+    await runInDurableObject(stub, async (_instance: Room, state: DurableObjectState) => {
+      state.storage.sql.exec(
+        "UPDATE participants SET state = 'reconnecting', reconnect_until = ? WHERE id = ?",
+        Date.now() + 60_000,
+        sage.id,
+      );
+    });
+    const unavailable = await call<ApiError>(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: sage.id,
+      operation: "request",
+    });
+    expect(unavailable.status).toBe(409);
+    expect(unavailable.value.error.code).toBe("ai_unavailable");
+
+    const release = await call<FloorReleaseResult>(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: atlas.id,
+      turnId: holder.value.turnId,
+      operation: "release",
+    });
+    expect(release.value.room.floor.holderId).toBeNull();
+  });
+
+  it("expires a floor turn and promotes the oldest active waiter", async () => {
+    const created = await createRoom();
+    const withAtlas = await addAi(created, "Atlas");
+    const withSage = await addAi(created, "Sage");
+    const atlas = withAtlas.participants.find((participant) => participant.role === "ai");
+    const sage = withSage.participants.find(
+      (participant) => participant.role === "ai" && participant.id !== atlas?.id,
+    );
+    if (!atlas || !sage) throw new Error("Expected two AI participants");
+
+    const first = await call<FloorRequestResult>(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: atlas.id,
+      operation: "request",
+    });
+    await call(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: sage.id,
+      operation: "request",
+    });
+    const stub = roomStub(created.room.code);
+    await runInDurableObject(stub, async (instance: Room, state: DurableObjectState) => {
+      state.storage.sql.exec(
+        "UPDATE room_meta SET floor_turn_expires_at = ? WHERE singleton = 1",
+        Date.now() - 1,
+      );
+      await instance.alarm();
+    });
+
+    const stale = await call<ApiError>(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: atlas.id,
+      turnId: first.value.turnId,
+      operation: "release",
+    });
+    expect(stale.status).toBe(409);
+    const promoted = await call<FloorRequestResult>(`/api/rooms/${created.room.code}/floor`, {
+      ...credential(created),
+      aiId: sage.id,
+      operation: "request",
+    });
+    expect(promoted.value.granted).toBe(true);
+    expect(promoted.value.turnId).not.toBe(first.value.turnId);
+    expect(promoted.value.room.floor.holderId).toBe(sage.id);
   });
 
   it("rejects floor requests and releases for invalid or non-AI targets", async () => {
@@ -456,6 +644,7 @@ describe("FR4 — floor control serialises AI speech", () => {
     const releaseNonExistent = await call(`/api/rooms/${created.room.code}/floor`, {
       ...credential(created),
       aiId: "non-existent-ai",
+      turnId: "not-a-turn",
       operation: "release",
     });
     expect(releaseNonExistent.status).toBe(404);
@@ -471,7 +660,7 @@ describe("FR4 — floor control serialises AI speech", () => {
     );
     if (!atlas || !sage) throw new Error("Expected two AI participants");
 
-    await call(`/api/rooms/${created.room.code}/floor`, {
+    const granted = await call<FloorRequestResult>(`/api/rooms/${created.room.code}/floor`, {
       ...credential(created),
       aiId: atlas.id,
       operation: "request",
@@ -497,13 +686,14 @@ describe("FR4 — floor control serialises AI speech", () => {
     const before = (await publicSnapshot.json()) as RoomSnapshot;
     expect(before.floor.queue).toEqual([sage.id]);
 
-    const released = await call<RoomSnapshot>(`/api/rooms/${created.room.code}/floor`, {
+    const released = await call<FloorReleaseResult>(`/api/rooms/${created.room.code}/floor`, {
       ...credential(created),
       aiId: atlas.id,
+      turnId: granted.value.turnId,
       operation: "release",
     });
-    expect(released.value.floor.holderId).toBe(sage.id);
-    expect(released.value.floor.queue).toEqual([]);
+    expect(released.value.room.floor.holderId).toBe(sage.id);
+    expect(released.value.room.floor.queue).toEqual([]);
 
     await runInDurableObject(stub, async (_instance: Room, state: DurableObjectState) => {
       expect(state.storage.sql.exec("SELECT ai_id FROM floor_queue").toArray()).toEqual([]);
@@ -858,7 +1048,7 @@ describe("Room state and error paths (meta, assertActive, schema migration)", ()
       const currentVersion = state.storage.sql
         .exec<{ version: number }>("SELECT version FROM schema_meta LIMIT 1")
         .toArray()[0]?.version;
-      expect(currentVersion).toBe(3);
+      expect(currentVersion).toBe(4);
     });
   });
 });
