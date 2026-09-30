@@ -2,222 +2,98 @@
 
 > People and AIs speaking over Media over QUIC.
 
-Real Fabric is a conference-stage demonstration of humans and AI agents speaking over independent Media over QUIC tracks while an inspector shows relay fan-out, subscriptions, routing changes and failure states.
+Real Fabric is a ten-minute conference-stage demonstration. Humans publish independent audio tracks while the audience can inspect relay fan-out, subscriptions, routing changes and failure states. Scripted AI participants are visibly simulated today; independent AI audio tracks are a Milestone 3 goal. The [product specification](design/PRODUCT_SPEC_v1-demo_1.md) defines the requirements, and [AGENTS.md](AGENTS.md) records repository rules and the current implementation boundary.
 
-## Status
+## Current state
 
-The room service, presenter simulation, client media pipeline, protocol inspector, provisioned relay-credential handling, network probe and Milestone 2 audio resilience are implemented with 439 automated tests across 27 files. The Objects and Latency inspector tabs expose session-local object counts, rates, sizes, IDs and ages plus capture, codec callback, MOQT request, receiver-hold, output and optional WebTransport `getStats()` timings. Complete measurements are compared with the specification's budgets or targets; diagnostic-only and partial values are labelled `Reported · no gate`. The production Worker is configured with the isolated `real-fabric-production` relay. Gate 1 transport acceptance is verified and accepted with live Chromium NetLog packet and frame traces (`reports/gate1-transport.netlog` and `reports/gate1-transport-trace.json`). A live AI pipeline, measured capacity, acoustic loopback, the audible ten-minute run and two clean venue-network runs remain open.
+The React/Vite client, SQLite Durable Object room service, control-plane WebSocket, presenter simulation, browser audio pipeline, inspector, telemetry and failure registry are implemented. The latest recorded suite has 447 automated tests across 27 files. The inspector exposes actual publication and accepted subscriptions, with unavailable measurements shown as **Not exposed** and partial figures as **Reported · no gate**.
 
-### Recent security hardening
+Gate 1 transport acceptance passed on 10 September 2026: a browser-to-relay trace proved draft-16 MOQT negotiation, publication and subscription over WebTransport and HTTP/3/QUIC with 0.0% loss in the sampled frame exchange. Evidence is in the local `reports/gate1-transport-trace.json` and `reports/gate1-transport.netlog`; `wrangler.jsonc` sets `MOQT_TRANSPORT_VERIFIED=true`. This does not qualify draft 20, Safari, acoustic latency or the full demo run. Presenter AI responses remain scripted and labelled; there is no live recognition, model, synthesis or AI-worker audio pipeline.
 
-Recent security review findings and test outcome-proof audit defects have been remediated in code and validated with automated tests:
+The configured Cloudflare relay uses `moqtail@0.12.1` and MOQT draft 16. The adapter attempts only the configured draft; it does not fall back to another draft, WebRTC or WebSocket audio. A missing, malformed or expired relay credential produces a named failure before audio transport starts. The production relay token last observed on 9 September 2026 was expired. `/api/health` exposes only non-secret credential status.
 
-- **SEC-02 (Room authorization):** Room creator stored as `owner_id` in `room_meta`; `assertPresenter` in `src/worker/room.ts` enforces presenter-only authority for AI lifecycle, floor administration, and simulation controls.
-- **SEC-04 (Participant privacy):** Public room snapshots omit detailed routing choices; authenticated HTTP and WebSocket snapshots contain only the viewer's rows, while an anonymous aggregate preserves the required `Partial context` state.
-- **SEC-05 (Credential exposure):** Reusable participant credentials removed from the control-plane WebSocket query string; authentication is performed via an initial in-socket message.
-- **SEC-06 (Resource exhaustion):** Enforced at most one active control socket per participant in the Durable Object, terminating superseded connections cleanly.
-- **SEC-07 (Resource exhaustion):** Client IP-based rate limiting (`enforceJoinRateLimit`) throttles rapid room join bursts before participant allocation.
-- **SEC-08 (Resource exhaustion):** Bounded streaming JSON body reader enforces a 32 KiB payload ceiling (`MAX_BODY_BYTES`) before parsing.
-- **SEC-09 (Resource exhaustion):** Playback deduplication retains at most 100 object identifiers per second group (`MAXIMUM_OBJECTS_PER_GROUP`).
-- **SEC-10 (Resource exhaustion):** Bounded media bursts at jitter buffer insertion, stale-frame pruning, per-tick draining, and decoder submission queues.
-- **SEC-11 (Resource allocation):** Deferred DDL schema migration prevents unknown room probes from initialising persistent SQLite Durable Object storage.
-- **SEC-12 (Microphone privacy):** Explicit capture capability checks before starting microphone capture transition unsupported or read-only environments directly to `listen_only`.
-- **Relay credential validation:** Expired or malformed relay JWTs are rejected fail-closed at the Worker boundary before delivery to clients.
-- **Session storage and telemetry audit fixes (PR #202):** Normalised key unification across `storeSession`, `loadSession` and `clearSession`; `loadSession` client-side `REJOIN_WINDOW_MS` enforcement with fail-closed expiry; strict telemetry export field allow-listing (AC-14); and receive-side counter reporting distinguishing absence from unobserved state (H15).
+### Known P1: shared relay credential
 
-### Known security issue — shared relay credential disclosure (P1)
+Unauthenticated room creation and open room joining return the locally current `MOQ_RELAY_TOKEN` to the browser. It grants publish and subscribe across the whole relay and can be reused outside the room service until expiry or revocation. Cloudflare's current V1 MoQ tokens cannot enforce room, namespace, track or participant scope; labels are metadata and the ten-token-per-relay limit conflicts with open membership. Token rotation or a distinct relay per room does not fully enforce participant namespaces. Treat this as unresolved: do not use the shared-relay path for sensitive audio or claim tenant isolation or relay-enforced routing. See [SEC-01](security/security_issues.md#sec-01--room-creation-and-joining-disclose-a-relay-wide-publishsubscribe-bearer).
 
-Unauthenticated room creation and open room joining currently return the configured `MOQ_RELAY_TOKEN` to the browser. That token grants publish and subscribe operations across the whole configured relay, so a caller can reuse it outside the room service, publish outside its participant namespace, subscribe outside application routing choices or access another room on the same relay until the token expires or is revoked. Keeping the token out of share links, storage, telemetry and logs does not reduce that authority.
+Other recorded security findings are tracked in [security issues](security/security_issues.md). SEC-02 and SEC-04–SEC-12 have code and automated-test mitigations; SEC-03 is partial because an AI-bound turn lease is missing, and SEC-13 remains open. The security scan's canonical evidence is retained in `security/findings.json`, `security/coverage.json` and `security/scan-manifest.json`.
 
-Cloudflare's current [MoQ token API](https://developers.cloudflare.com/api/resources/moq/subresources/relays/subresources/tokens/methods/create/) does not present a compatible complete fix. Its V1 tokens apply to an entire relay and constrain only `publish` and `subscribe`; labels are metadata, not room, namespace, track or participant enforcement, and a relay accepts at most ten registered tokens. Unique short-lived per-client tokens would improve expiry and revocation but would not close cross-room or participant-namespace reuse, while the ten-token limit conflicts with Real Fabric's open-membership invariant. A distinct relay per room would isolate rooms but still would not enforce participant namespaces.
+## Platform and media contract
 
-This P1 is therefore a known unresolved issue, not an accepted production risk or a completed Gate 1 control. The code is intentionally unchanged pending a relay credential model that can enforce room and participant scope without imposing a participant cap. Do not use the current shared-relay path for sensitive audio, claim tenant isolation or label cooperative routing as relay-enforced.
+Room entry establishes membership and control state. **Start audio** and **Resume audio** initiate capture, AudioContext activation and MOQT from a user action. Permission denial or missing hardware enters a visible listen-only state. Backgrounding, locking, hiding the page or an already-running AudioContext suspension tears audio down to `resume_required`; capture never restarts automatically.
 
-Milestones 1 and 2 of the §11 release plan are built in code. Milestones 3 and 4 are not.
-
-**The build attempts a real MOQT session when the relay and its provisioned credential are configured, and still claims nothing it has not traced.** Those are separate facts, and the code keeps them separate:
-
-- **Attempting** is gated on a relay endpoint, a Cloudflare-provisioned publish-and-subscribe token, and a draft the pinned client can frame. `moqtail@0.12.1` frames `moqt-16`, so the build is pinned there (§11.2). A missing token is a named blocking state and produces no WebTransport attempt.
-- **Claiming** is gated on `MOQT_TRANSPORT_VERIFIED`, which stays `false` until a browser-to-relay trace is recorded. When a live attempt is possible, the inspector reads "attempted live but not yet claimed as verified"; when configuration blocks it, the inspector says so. The negotiated draft reads **Not exposed** until a SERVER_SETUP has actually been validated.
-
-Conflating the two would have meant never attempting the connection that produces the trace. There is still no second transport to fall back to, and presenter simulation never stands in for a working relay or AI pipeline.
-
-**Draft configuration change, not a rewrite.** `DRAFT_REGISTRY` in [`MoqTransportAdapter`](src/client/transport/MoqTransportAdapter.ts) already carries `moqt-14`, `moqt-16`, `moqt-18` and `moqt-20`, each with the reason it is or is not currently usable. For draft 20 the remaining steps are therefore only to bump `moqtail` to a version that frames it and to repoint `MOQT_DRAFT` and `MOQ_RELAY_URL`; a draft outside that registry needs one entry added first. No room, UI or audio-pipeline code changes.
-
-### Next steps and vision statements
-
-Forward-looking goals and unachieved acceptance criteria are tracked here:
-
-1. **Gate 1 transport acceptance (Completed 10 September 2026):** Recorded a reproducible browser-to-relay trace over WebTransport and HTTP/3/QUIC proving draft-16 interoperability with Cloudflare's isolated relay (`draft-16.cloudflare.mediaoverquic.com`), verifying QUIC handshake, TLS Let's Encrypt certificate, CLIENT_SETUP/SERVER_SETUP, PUBLISH/PUBLISH_OK, SUBSCRIBE/SUBSCRIBE_OK, and 5 sequential 20 ms synthetic Opus audio frames delivered with 0.0% loss. `MOQT_TRANSPORT_VERIFIED` is set to `true`.
-2. **MOQT draft 20 migration (Next step):** Bump `moqtail` when a draft-20 compatible release is published and repoint Worker configuration to the draft-20 relay without altering client audio or room state.
-3. **Tenant-scoped relay credentials (Next step):** Replace the coarse relay-wide JWT with participant- and room-scoped credentials when supported by the relay API, resolving the P1 disclosure.
-4. **Gate 2 acoustic acceptance (Vision target):** Conduct physical acoustic loopback latency testing (§9.4) and a continuous ten-minute reference composition run on reference hardware without drift or buffer overflow (H13).
-5. **Measured capacity benchmark (Next step):** Benchmark degradation ladder triggers on target reference hardware to establish empirical participant capacity (§9.2, H7).
-6. **Milestone 3 — AI orchestration and floor authority (Next step):** Implement authoritative Durable Object floor control, publishable AI audio tracks carrying labelled synthetic voice, publisher-side barge-in cancellation markers, and live speech pipeline interfaces (§11.4).
-7. **Milestone 4 — Venue network validation (Vision target):** Complete two full clean runs of the §12 demonstration script on a venue network or mobile hotspot (H16).
-8. **Physical mobile acceptance (Next step):** Execute the full browser acceptance suite on physical iPhone hardware for top-level Safari 27+ and Chrome for iOS 141+ under iOS 27.
-
-### H1–H16
-
-| ID | Where it lives | Verified by |
-|---|---|---|
-| H1 — MOQT over WebTransport only, no fallback | [`MoqTransportAdapter`](src/client/transport/MoqTransportAdapter.ts) is the sole transport and the only module holding draft constants; [`RoomSession`](src/client/session/RoomSession.ts) imports no alternative | `test/milestone-1-transport.test.ts` asserts the draft registry refuses an unframeable draft by name without downgrading. **A live browser-to-relay trace is still outstanding.** |
-| H2 — one track per participant, no upstream mixing | [`tracks.ts`](src/shared/tracks.ts), [`mixer-worklet.js`](public/audio/mixer-worklet.js) — the only mixing point, on the listener's machine | `test/invariants.test.ts` |
-| H3 — supported browser matrix, others warned | [`pinnedConfiguration.ts`](src/shared/pinnedConfiguration.ts), [`usePinnedConfiguration`](src/client/hooks/usePinnedConfiguration.ts), [`PinnedConfigBanner`](src/client/components/PinnedConfigBanner.tsx), [`UniversalAudioCaptureAdapter`](src/client/audio/UniversalAudioCaptureAdapter.ts) | Configuration detection, required local browser probes, capture-path selection and exact frame assembly are unit-tested. Provisional Chrome 141+ on macOS, top-level Safari 27+ on macOS, top-level Safari 27+ on the iOS 27 iPhone target and top-level Chrome for iOS 141+ on that target are recognised; real-browser acceptance is still outstanding. |
-| H4 — headphones required and stated | Entry page, pre-flight page and room top bar | Visual |
-| H5 — each AI addressed, silent otherwise | [`AiDirector.address`](src/client/ai/AiDirector.ts) is the only path to a turn | `test/invariants.test.ts`, `test/room-service.test.ts` |
-| H6 — barge-in inside 300 ms, including in flight | `AiDirector.bargeIn`, [`AdaptiveJitterBuffer.cancelGroup`](src/client/audio/AdaptiveJitterBuffer.ts), `TrackPlayer.cancelGroup` | `test/invariants.test.ts` measures the latency and the discarded objects |
-| H7 — no cap, visible degradation | [`DegradationLadder`](src/client/audio/DegradationLadder.ts); the room service never refuses a join | `test/invariants.test.ts`, `test/room-service.test.ts`. **Measured capacity figures are outstanding — see below.** |
-| H8 — any composition with ≥1 human | `evaluateComposition` in [`contracts.ts`](src/shared/contracts.ts) | `test/room-service.test.ts` |
-| H9 — per-AI routing, honestly labelled | Room service `routing` table, [`ParticipantCard`](src/client/components/ParticipantCard.tsx), [`SubscriptionGraph`](src/client/components/SubscriptionGraph.tsx); every real remote card also exposes this listener's actual subscribe/unsubscribe intent and accepted state | `test/invariants.test.ts`, `test/room-service.test.ts`, `test/milestone-1-transport.test.ts` |
-| H10 — no AI-to-AI by default | Off by default with a hard turn cap and a visible counter | `test/invariants.test.ts`, `test/room-service.test.ts` |
-| H11 — presenter mode runs solo | Configurable simulated counts, reconciled server-side, labelled everywhere | `test/room-service.test.ts` |
-| H12 — 60-second reclaim, no duplicate playback | [`useRoomSession`](src/client/hooks/useRoomSession.ts) spends the token on mount; [`PlaybackDeduplicator`](src/client/audio/PlaybackDeduplicator.ts) refuses repeats | `test/invariants.test.ts`, `test/room-service.test.ts` |
-| H13 — ten minutes, no drift artefact, no unbounded buffers | [`DriftEstimator`](src/client/audio/DriftEstimator.ts), bounded jitter buffer, [`PacketLossConcealer`](src/client/audio/PacketLossConcealer.ts) and the silence-gated rebuild in [`TrackPlayer`](src/client/audio/TrackPlayer.ts) | `test/invariants.test.ts` runs 30,000 frames; `test/milestone-2-audio.test.ts` covers concealment, the 5% drift threshold and the deferred rebuild. **The live ten-minute run is outstanding.** |
-| H14 — every §10 failure distinct and non-silent | [`failures.ts`](src/shared/failures.ts) registry, [`FailureBanner`](src/client/components/FailureBanner.tsx) and [`NetworkProbe`](src/client/transport/NetworkProbe.ts) | Registry and probe logic are tested. The production endpoint is configured; a browser-run direct probe remains outstanding. |
-| H15 — unobservable reads **Not exposed** | [`Measurement<T>`](src/shared/measurement.ts) and [`MeasurementValue`](src/client/components/MeasurementValue.tsx); no figure bypasses it | `test/invariants.test.ts` |
-| H16 — §12 script twice clean | [`DemoScript`](src/client/presenter/DemoScript.ts) runner with per-cue pass/fail and a two-clean-run gate | `test/invariants.test.ts`. **The venue-network runs are outstanding.** |
-
-### Currently recognised configuration (H3 gap)
-
-The admitted candidates are **Google Chrome 141 or later on macOS**, **top-level Safari 27 or later on macOS**, **top-level Safari 27 or later on the iOS 27 iPhone target** and **top-level Chrome for iOS 141 or later on that target**. Safari 27.x and iOS 27 form the initial Safari acceptance target; later browser majors may run capability pre-flight but remain explicitly unverified. Safari deliberately freezes the iPhone OS user-agent value at an iOS 18 compatibility token, so that value is not treated as the phone's actual OS or used as an audio veto. The iPhone classifier uses `Version/` or `CriOS/` to identify the admitted top-level browser, then tests secure context, WebTransport, actual Opus encoder and decoder configurations, AudioWorklet capture and AudioWorklet playout before making live audio eligible. The macOS Safari pin similarly names a browser major only because Safari freezes its `Mac OS X 10_15_7` token. Chromium browsers are never admitted as Safari despite carrying a `Safari/` build token, and iPadOS Safari in desktop mode — which reports the same Macintosh token as a Mac, distinguishable only by `navigator.maxTouchPoints` — stays read-only. Firefox, Edge and Opera on iOS, embedded web views and installed Home Screen mode remain read-only.
-
-All four are **provisional configurations**, not completion of H3. iPhone audio is foreground-only: room membership completes first, then **Start audio** begins capture and transport from the user's tap. Backgrounding, locking or an audio interruption tears down audio and requires an explicit **Resume audio** tap. There is no automatic microphone restart and no fallback transport.
-
-### Measured capacity (H7, §9.2)
-
-**Not yet measured.** H7 forbids a participant cap and makes measured capacity a deliverable, so this section stays empty rather than carrying an estimate:
-
-- participant count at which degradation step one engages: *not measured*
-- participant count at which step three engages: *not measured*
-- reference hardware and network: *not defined*
-
-The ladder is implemented and unit-tested, and it announces every step. Its current synthetic strain trigger includes more than eight active speakers, a worst buffer of at least 180 ms, or more than three underruns in an evaluation window. Those are implementation triggers, not measured capacity claims. Reference-hardware measurements still need Gate 2.
-
-### Milestone 1 — live transport and relay interoperability (§11.2)
-
-| Deliverable | State |
-|---|---|
-| Relay endpoint integration on draft 16 | Built. `DRAFT_REGISTRY` holds `moqt-14`, `moqt-16`, `moqt-18` and `moqt-20`, and the adapter refuses by name any entry the pinned `moqtail` cannot frame, as well as any future library that would offer more than the single requested version. It permits `moqtail` to add its pinned `SUPPORTED_VERSIONS` exactly once. This prevents Chrome rejecting duplicate WebTransport protocols and prevents an unrequested draft from being negotiated. |
-| CLIENT_SETUP / SERVER_SETUP negotiation | Built. Cloudflare draft-16 authentication places its provisioned token in the WebTransport URL path; the adapter constructs that URL in memory and redacts it from errors and inspection. Before returning a configured token to a browser, the Worker rejects malformed JWTs and JWTs whose `exp` claim has passed; Cloudflare remains the signature authority. A session with no SERVER_SETUP, or a `MAX_REQUEST_ID` of zero, is closed as a non-retryable protocol failure rather than left to present as dead air. |
-| Publication and subscription request lifecycle | Built. Draft-16 publication sends `PUBLISH` directly and waits for `PUBLISH_OK` before showing an uplink or publish event. Every other permitted real-party track is interested by default: namespace-pushed `PUBLISH` requests receive `PUBLISH_OK` and enter the ordinary player path, while an explicit local opt-out receives `UNINTERESTED`. A publication refusal stops capture and retains its exact code and reason in same-tab inspector history. Missing remote tracks use capped exponential retries, wake immediately on a namespace publication announcement or accepted push, and expose listener-owned subscribe/unsubscribe controls. |
-| Pre-flight HTTP/3 and UDP probe | Built, in [`NetworkProbe`](src/client/transport/NetworkProbe.ts). Non-blocking, runs alongside the join, and compares a QUIC leg against a TCP leg to separate filtered UDP from a dead connection. It says so when the two are indistinguishable. |
-| Bounded session recovery | Built. Full jitter across the whole backoff window (equal jitter re-synchronises a roomful of clients), 30-second terminal threshold, and a floor so an unlucky draw is not a tight retry loop. |
-| **Gate 1 exit: `MOQT_TRANSPORT_VERIFIED = true`** | **Accepted (10 September 2026).** Verified by browser-to-relay Chromium NetLog trace (`reports/gate1-transport.netlog`, 3.68 MB) and acceptance report (`reports/gate1-transport-trace.json`) proving QUIC handshake, TLS, CLIENT_SETUP/SERVER_SETUP, PUBLISH/SUBSCRIBE, and 0.0% loss frame delivery over Cloudflare isolated relay. |
-
-**Observed during development:** On 25 August 2026, Chrome reached `draft-16.cloudflare.mediaoverquic.com` over HTTP/3 and completed MOQT draft-16 `SERVER_SETUP`. The earlier `MOQ_DISCOVERY=unknown` path selected the control channel without testing `SUBSCRIBE_NAMESPACE`; it therefore did not record that endpoint capability. Unknown discovery now performs the live request and records its result in the inspector. This remains draft-16 evidence only and cannot satisfy the draft-20 Gate 1 exit.
-
-### Milestone 2 — hardware resilience and audio pipeline (§11.3)
-
-| Deliverable | State |
-|---|---|
-| Graceful hardware fallback | Built. Room entry starts `startPublishing` automatically; a denied, missing or unsupported microphone enters a named listen-only mode with subscriptions, mixer and inspector untouched, and offers a retry where it gives the reason. |
-| Dynamic device tracking | Built, in [`DeviceWatcher`](src/client/audio/DeviceWatcher.ts). A headset plugged in after a listen-only join clears the failure and offers calibration. Device labels are never read, so they cannot reach telemetry (AC-14). |
-| Adaptive jitter buffer and Opus PLC | Built. The buffer was already bounded 40–200 ms; concealment was not. [`PacketLossConcealer`](src/client/audio/PacketLossConcealer.ts) fills a sequence gap by repeating the last pitch period with decay, and switches to comfort noise at the track's own noise floor once loss is sustained. Both are counted and shown. |
-| Drift estimation and silence rebuilding | Built. The threshold now matches §10.6 (5%, previously 2%), correction is applied at most 2% per step so it stays inaudible, and a rebuild waits for a pause instead of firing mid-word — bounded at 10 seconds so a continuous speaker cannot defer it forever. |
-| **Gate 2 exit: ten-minute run and acoustic loopback latency** | **Outstanding.** Both need the reference composition on reference hardware. |
-
-### Gate outcomes still open
-
-These are read from Worker configuration rather than assumed, so recording a result is a configuration change, not a code change:
-
-| Variable | Current | Meaning |
-|---|---|---|
-| `MOQT_TRANSPORT_VERIFIED` | `true` | Gate 1 transport acceptance passed (10 September 2026) with reproducible browser-to-relay packet and frame trace over WebTransport and HTTP/3/QUIC against the isolated Cloudflare relay (`reports/gate1-transport-trace.json`, `reports/gate1-transport.netlog`). Physical Safari 27/iOS 27 and Gate 2 acoustic loopback acceptance remain open. |
-| `MOQ_ROUTING_ENFORCEMENT` | `cooperative` | The current Cloudflare token grants relay-level publish and subscribe operations rather than per-participant track scope, so inbound routing is labelled cooperative, not enforced (FR8). |
-| `MOQ_DISCOVERY` | `unknown` | The client probes `SUBSCRIBE_NAMESPACE` after live MOQT setup, records the observed result in the inspector, and uses control-channel discovery only if the request is refused (FR7). |
-| `MOQ_RELAY_TOKEN` | configured · expired · known P1 | Cloudflare-provisioned publish-and-subscribe JWT stored as a Worker secret. Create and join responses disclose a locally current token to browsers, and Cloudflare V1 cannot restrict it to one room or participant. The production token observed on 9 September 2026 expired at `2026-09-01T20:38:32Z` and requires an explicitly authorised out-of-band rotation. Rotation limits lifetime but does not fix the scope issue. |
-
-The production relay is `real-fabric-production` (`5266d64d9209fb9a8961f009745806ef`) with upstream fallback disabled. The endpoint remains `https://draft-16.cloudflare.mediaoverquic.com`; the relay token selects the isolated scope. `/api/health` reports the endpoint and a non-secret local credential status while `transportVerified` is `true` for draft 16. Gate 2 acoustic loopback, measured capacity, and physical device runs remain outstanding.
-
-## Product invariants
-
-- Every human and AI publishes one independent audio track; the relay never mixes audio.
-- Membership is open, with at least one human required and no configured participant cap.
-- Each AI speaks only when addressed and does not subscribe to other AIs by default.
-- Each human independently controls whether each AI hears them and whether they hear that AI.
-- Barge-in must silence the addressed AI audibly within 300 ms.
-- Reload within 60 seconds must reclaim identity and routing without duplicate playback.
-- Unobservable measurements display **Not exposed**, never zero.
-- No audio or transcript content is retained.
-
-## Layout
-
-- `Standards.md` — current browser/API requirements, compatibility matrix and acceptance evidence.
-- `src/shared` — contracts, the draft list, the §10 failure registry, `Measurement<T>`, track addressing, the §9.3 latency budget and the pinned configuration.
-- `src/client/transport` — `MoqTransportAdapter` (the only module holding draft constants, wire versions or ALPN identifiers) and the draft-free HTTP/3 reachability probe.
-- `src/client/session` — `RoomSession`, the bounded reconnection policy and the inspector event log.
-- `src/client/audio` — bounded capture adapters and Opus encode, per-track receive path, adaptive jitter buffer, packet loss concealment, drift estimation, device tracking, degradation ladder, playback deduplication and the mixer graph.
-- `public/audio/capture-worklet.js` — the same-origin AudioWorklet capture path, with a fixed transferable-buffer pool and exact 20 ms frames.
-- `src/client/ai` — the addressing, floor-control and barge-in state machine, plus the labelled scripted responder.
-- `src/client/presenter` — the §12 demo-script runner.
-- `src/client/components`, `src/client/pages` — entry, pre-flight, room, inspector and presenter surfaces.
-- `public/audio/mixer-worklet.js` — the single mixing point, served same-origin so it satisfies the existing `script-src 'self'` policy.
-- `src/worker` — API routing, security headers, redacted structured logs, provisioned relay credential handling and the SQLite Durable Object room service.
-- `test` — 439 automated tests across 27 files covering the requirements above.
-
-## Local setup
-
-The canonical checkout and Git metadata are stored in OneDrive, while linked Codex worktrees may live elsewhere. In every checkout or worktree, the physical dependency tree must remain outside OneDrive at `/Users/mccannstuart/.node_modules`, with the repository path symlinked to it:
-
-```sh
-test -L node_modules && test "$(readlink node_modules)" = "/Users/mccannstuart/.node_modules"
+```text
+microphone → mono 960-sample frames → WebCodecs Opus encoder
+  → MoqTransportAdapter → MOQT objects over WebTransport/HTTP/3/QUIC → relay
+  → one decoder and bounded jitter buffer per remote track
+  → one listener-side AudioWorklet mixer and output clock
 ```
 
-If `/Users/mccannstuart/.node_modules` already exists but the repository link is absent, recreate only the link:
+`MediaStreamTrackProcessor` is the preferred Chrome capture path; an exact-frame AudioWorklet path serves browsers without it. Capture requests echo cancellation, noise suppression and automatic gain where available. Opus is 48 kHz mono at 32 kbit/s in 20 ms frames; DTX is used only if the encoder exposes it. Audio Session, Screen Wake Lock, DTX and low-latency congestion control are optional diagnostics, not support gates. `MoqTransportAdapter` contains all MOQT-version and library compatibility code.
+
+| Standard or API | Role in this build |
+|---|---|
+| [QUIC RFC 9000](https://www.rfc-editor.org/info/rfc9000), [HTTP/3 RFC 9114](https://www.rfc-editor.org/info/rfc9114), [Extended CONNECT RFC 9220](https://www.rfc-editor.org/info/rfc9220) | Required UDP-capable transport beneath WebTransport. |
+| [HTTP Datagrams and Capsules RFC 9297](https://www.rfc-editor.org/info/rfc9297), [QUIC DATAGRAM RFC 9221](https://www.rfc-editor.org/info/rfc9221) | WebTransport prerequisites; Real Fabric audio objects currently use streams and the adapter sets `enableDatagrams: false`. |
+| [WebTransport](https://www.w3.org/TR/webtransport/), [WebTransport over HTTP/3 draft 16](https://datatracker.ietf.org/doc/draft-ietf-webtrans-http3/16/) | The client requires `requireUnreliable: true` and then `reliability === "supports-unreliable"`; a reliable-only HTTP/2/TCP first hop is refused. |
+| [Media Capture and Streams](https://www.w3.org/TR/mediacapture-streams/), [Web Audio](https://www.w3.org/TR/webaudio/) | Microphone capture, exact frames, output clock and listener-side mixing. |
+| [WebCodecs](https://www.w3.org/TR/webcodecs/), [Opus RFC 6716](https://www.rfc-editor.org/info/rfc6716), [Opus registration](https://w3c.github.io/webcodecs/opus_codec_registration.html) | Opus encode/decode; optional `application`, `signal` and `usedtx` settings are retained only when `isConfigSupported()` echoes them. |
+| [HTML user activation](https://html.spec.whatwg.org/multipage/interaction.html#tracking-user-activation), [Page Visibility](https://www.w3.org/TR/page-visibility-2/), `pagehide`/`pageshow` | Explicit foreground Start/Resume and interruption teardown. |
+| [Audio Session](https://www.w3.org/TR/audio-session/), [Screen Wake Lock](https://www.w3.org/TR/screen-wake-lock/) | Optional foreground hints; wake-lock denial does not block audio. |
+| [CSS Environment Variables](https://www.w3.org/TR/css-env-1/) | Keep the iPhone action rail clear of the safe area. |
+
+Media Session capture controls and installed Home Screen mode are not admitted to working audio without separate lifecycle acceptance. The app contains no audio fallback over WebRTC, WebSocket or HTTP/2.
+
+## Browser and operating-system matrix
+
+**Provisional** means the client recognises the configuration and runs local capability gates, while real-browser acceptance remains open. **Read-only** permits membership and inspection without capture. **Supported** requires the applicable live relay, acoustic, endurance and demo-run evidence; no row below has that status yet.
+
+| Device | Browser | Current behaviour | Remaining evidence |
+|---|---|---|---|
+| macOS | Chrome 141+ | Provisional desktop candidate. | Full real-browser suite, acoustic and endurance acceptance. |
+| macOS | Top-level Safari 27+ | Provisional desktop candidate. The `Mac OS X 10_15_7` user-agent token is frozen and does not prove a macOS major. | Safari-specific transport, capture, acoustic and endurance acceptance. |
+| macOS | Chrome below 141 or Safari below 27 | Unsupported; names the missed browser floor. | Upgrade to the declared floor. |
+| iPhone on the iOS 27 target | Top-level Safari 27+ | Provisional after all required capability probes pass. The frozen iOS 18 token is informational. | Physical full-duplex, interruption/resume, trace, acoustic and endurance runs. |
+| iPhone on the iOS 27 target | Top-level Chrome for iOS 141+ | Provisional after all required capability probes pass; `CriOS` identifies a WebKit shell, not Blink capability. | Physical WKWebView WebTransport/WebCodecs, full-duplex, interruption/resume, trace, acoustic and endurance runs. |
+| iPhone | Older Safari/Chrome or a missing required capability | Read-only with the exact reason. | Browser floor and secure-context, WebTransport, Opus, capture and playout probes. |
+| iPhone | Firefox, Edge, Opera, embedded views or installed Home Screen mode | Read-only. | Separately approved lifecycle and real-device scope. |
+| iPadOS, Android or other narrow devices | Any browser | Read-only. iPadOS desktop mode is distinguished from macOS by `navigator.maxTouchPoints`. | Separate product scope and acceptance matrix. |
+| Other desktop combinations | Any browser | Unsupported or unverified. | Capability implementation and the full H3 suite. |
+
+The iPhone classifier uses `Version/` or `CriOS/` to identify the top-level browser, then probes secure context, WebTransport, Opus encode/decode, AudioWorklet capture and playout. A probe still in progress reads **Checking**; a failure names the missing capability. Chromium's `Safari/` build token never admits it as Safari. [WebKit's user-agent guidance](https://webkit.org/blog/17333/webkit-features-in-safari-26-0/#update-to-ua-string) explains why the frozen OS token is not an audio veto.
+
+On iPhone, returning from an interruption requires an explicit **Resume audio** tap. It revalidates identity, rebuilds the audio graph and subscriptions, and avoids replaying retained objects. Uninterrupted background calling is not promised.
+
+### Measured capacity
+
+**Not yet measured.** The room has no configured participant cap. The degradation ladder is implemented and unit-tested, but the participant counts at which its steps engage on reference hardware and network are unknown. Its synthetic triggers are implementation rules, not capacity measurements. The [roadmap](design/ROADMAP.md) records the benchmark and acceptance work.
+
+## Local setup and verification
+
+The canonical checkout is OneDrive-backed. Keep the physical dependency tree at `/Users/mccannstuart/.node_modules`, with `node_modules` in each checkout as a symlink to that exact directory. If the external directory exists and a checkout lacks only the link, create it with `ln -s /Users/mccannstuart/.node_modules node_modules`. Do not replace a physical directory or differing external data without inspection.
 
 ```sh
-ln -s /Users/mccannstuart/.node_modules node_modules
-```
-
-```sh
+test -L node_modules
+test "$(readlink node_modules)" = "/Users/mccannstuart/.node_modules"
+test "$(realpath node_modules)" = "/Users/mccannstuart/.node_modules"
 pnpm install --frozen-lockfile --modules-dir /Users/mccannstuart/.node_modules
 ```
 
-Use the pinned pnpm 11.22.0 from `package.json` and always pass the explicit external `--modules-dir` shown above. Plain `pnpm install` refuses to reify a symlink target outside the project root. Never run `npm install`: npm 11 removes a symlinked top-level `node_modules` and would put dependency churn back under OneDrive.
-
-After installation, verify both the link text and resolved target before running package scripts:
-
-```sh
-test "$(readlink node_modules)" = "/Users/mccannstuart/.node_modules"
-test "$(realpath node_modules)" = "/Users/mccannstuart/.node_modules"
-```
-
-## Development commands
+Use the pinned pnpm 11.22.0 and recheck the link after dependency changes. Never use `npm install` here. For development and the complete local gate:
 
 ```sh
 pnpm dev
-```
-
-Run the full check set with:
-
-```sh
 pnpm check
 ```
 
-That is `pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm deploy:dry-run`.
+`pnpm check` runs lint, typecheck, tests, build and Wrangler deploy dry run. `WORKERS_CI=1` invokes the guarded build hook for Cloudflare Workers Builds; local installation does not. Browser acceptance and production deployment are separate activities and require the evidence and authority in [AGENTS.md](AGENTS.md).
 
-Cloudflare Workers Builds sets `WORKERS_CI=1` during dependency installation.
-The guarded `postinstall` hook builds `dist/` in that environment because Workers
-Builds does not run Wrangler custom-build configuration before its default
-`npx wrangler deploy` command. The hook exits without building during local
-dependency installs.
+## Documentation map and next work
 
-## Next steps and unverified vision statements
+- [Product specification](design/PRODUCT_SPEC_v1-demo_1.md) — binding product requirements, H1–H16, failure states and release gates.
+- [Roadmap](design/ROADMAP.md) — outstanding gates, physical browser qualification, security fixes and deferred engineering ideas.
+- [Milestone 3 plan](design/plan-milestone-3-optimized-kernighan.md) — detailed, forward-looking AI floor and audio proposal; recheck its source line references before implementation.
+- [Security issues](security/security_issues.md) — finding-level remediation status and verification criteria, backed by the retained scan JSON.
+- [Repository instructions](AGENTS.md) — current implementation snapshot, dependency discipline and Git/Cloudflare boundaries.
 
-Automated checks cover the implemented requirements. All forward-looking, unachieved, and unverified items are tracked as next steps:
-
-- **MOQT draft 20 migration (Next step):** Upgrading from verified draft-16 transport to draft 20 once published and deployed on Cloudflare's relay;
-- **Live network probe:** a live UDP/HTTP-3 network-probe result;
-- **Relay token lifecycle & scope (P1):** relay acceptance and expiry behaviour for the provisioned credential, or relay-level enforcement beyond coarse publish/subscribe operations, including room, namespace, track or participant enforcement for the relay credential (the known P1);
-- **Acoustic packet loss concealment:** audible quality of the packet loss concealment. Its behaviour is unit-tested; nobody has listened to it;
-- **Live AI pipeline & voice:** a live recognition, model or speech-synthesis pipeline, or publication of the barge-in cancellation marker over MOQT;
-- **Acoustic latency budget (Gate 2):** the §9.3 latency budget, which needs the §9.4 acoustic loopback method;
-- **Empirical capacity limits:** measured capacity on reference hardware;
-- **Endurance run (Gate 2):** the ten-minute reference-composition run (H13);
-- **Milestones 3 and 4:** multi-agent AI audio orchestration, floor authority, and conference stage hardening;
-- **Venue network validation (Gate 4 / H16):** the §12 script on a venue network;
-- **Physical mobile acceptance (H3 matrix):** physical-device Safari 27 and Chrome for iOS behaviour, including whether WKWebView exposes the required WebTransport and WebCodecs surface, and browser behaviour beyond the four provisional configurations, including the complete supported-browser acceptance matrix required by H3;
-- **Audio capture parity:** real-browser and acoustic parity of the AudioWorklet capture path against `MediaStreamTrackProcessor`.
-
-Production deployment requires separate, explicit authorisation. A successful local build or GitHub push is not a production deployment.
+No audio or transcript content is retained. Production deployment, relay changes and credential rotation require separate, explicit authorisation.

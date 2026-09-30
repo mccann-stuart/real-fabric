@@ -9,9 +9,9 @@ This document turns the completed Codex Security review into an implementation b
 - Scan date: 26 August 2026
 - Coverage: 93 of 93 authorised files
 - Validated findings: 13 — 2 high, 10 medium and 1 low
-- Canonical sources: [`report.md`](./report.md), [`findings.json`](./findings.json), [`coverage.json`](./coverage.json) and [`scan-manifest.json`](./scan-manifest.json)
+- Canonical scan sources: [`findings.json`](./findings.json), [`coverage.json`](./coverage.json) and [`scan-manifest.json`](./scan-manifest.json). The superseded generated Markdown report remains available in Git history.
 
-The line numbers and excerpts below are pinned to the scanned revision (`a784122aa18c6b7fbee1ae53d34b054a24d71f0b`). As reconciled on 30 September 2026, ten findings have been remediated in code and validated by automated tests (SEC-02, SEC-04–SEC-12), while three findings remain open (SEC-01, SEC-03, SEC-13). SEC-03 now has application-level target and stale-state checks, but still lacks a turn lease bound to the active AI. SEC-13's original cross-participant target is blocked; the remaining activity source is untrusted self-reporting.
+The line numbers and excerpts below are pinned to the scanned revision (`a784122aa18c6b7fbee1ae53d34b054a24d71f0b`). As reconciled on 30 September 2026, ten findings have been remediated in code and validated by automated tests (SEC-02, SEC-04–SEC-12), while three findings are not closed (SEC-01, SEC-03, SEC-13). SEC-03 has application-level target and stale-state checks but lacks an AI-bound turn lease. SEC-13 rejects cross-participant targets in current source and has a negative room-service test, but activity remains caller-reported.
 
 ## Priority summary
 
@@ -821,7 +821,7 @@ Trade-off: structurally prevents accidental publishing, but duplicates some orch
 - **Rule:** `authorization.activity-target-spoofing`
 - **Taxonomy:** CWE-639
 - **Severity / confidence:** Low / High
-- **Status:** Open (partially mitigated). `markActive` now requires the caller's authenticated participant ID to match the target ID, and a room-service test expects a 403 for another participant's ID. The server still accepts self-reported activity without proof of publication or observed audio, so shared recency is not authoritative.
+- **Status:** Open (partially mitigated). `markActive` requires the caller's authenticated participant ID to match the target ID, and `test/room-service.test.ts` expects a 403 for another participant's ID. The server still accepts self-reported activity without proof of publication or observed audio, so shared recency is not authoritative.
 
 ### Evidence
 
@@ -842,13 +842,15 @@ Trade-off: structurally prevents accidental publishing, but duplicates some orch
 
 **Reviewer comment:** Authentication proves who submitted the request, not that the target published audio or that the caller observed an authorised track. Participant IDs are available in room snapshots.
 
+**Current-source reconciliation:** `Room.markActive` now rejects a `participantId` different from the authenticated caller with `403 unauthorized_target` before updating SQLite; a room-service test covers that denial. This blocks the original cross-participant target path. The caller can still report its own activity without a trusted publication event, so the finding remains open.
+
 ### Impact
 
-An attendee can make another participant appear recently active and influence shared participant ordering or prominence. The impact is presentation integrity rather than media routing or confidentiality.
+At the scanned revision, an attendee could make another participant appear recently active and influence shared ordering or prominence. The current target check blocks that cross-participant request, while caller-reported self-activity can still be inaccurate. The remaining impact is presentation integrity rather than media routing or confidentiality.
 
 ### Fix option A — Keep activity local to each listener (recommended for v1)
 
-Remove the shared arbitrary-target mutation and derive speaking/recency presentation from each listener's own `TrackPlayer` object-arrival state. Do not persist or broadcast activity that the server cannot verify.
+Complete the current target check by deriving speaking/recency presentation from each listener's own `TrackPlayer` object-arrival state. Do not persist or broadcast activity that the server cannot verify.
 
 Trade-off: different listeners may briefly show different activity based on network arrival, but this is truthful and avoids a new trust protocol.
 
@@ -884,7 +886,7 @@ Trade-off: produces shared authoritative recency, but depends on a trusted trans
 ### Partial mitigation
 
 - **SEC-03 partial mitigation:** Floor snapshots and queues now exclude departed or invalid AI targets. A new request promotes an existing waiter before accepting a later requester when the stored holder has left. Expired AI reconnect windows release their floor state. Regression tests cover these paths; turn-lease validation remains open.
-- **SEC-13 partial mitigation:** Authenticated participants cannot update another participant's activity target. The remaining self-report path is not tied to trusted audio publication or receiver observation.
+- **SEC-13 partial mitigation:** Authenticated participants cannot update another participant's activity target, with a negative room-service test. The remaining self-report path is not tied to trusted audio publication or receiver observation.
 
 ### Next steps and vision statements (Remaining backlog order)
 
