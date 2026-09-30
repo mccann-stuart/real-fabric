@@ -112,7 +112,33 @@ export const SubscriptionGraph = memo(function SubscriptionGraph({
   return (
     <div className="graph-view">
       <div id="subscription-graph-desc" className="sr-only">
-        {graphSummary}
+        <p>{graphSummary}</p>
+        <ul>
+          {active.map((p) => {
+            const isSelf = p.id === viewerId;
+            const subEdge = edges.find(
+              (e) => e.kind === "subscription" && e.to === viewerId && e.id === `sub:${p.id}`,
+            );
+            const aiEdge = edges.find(
+              (e) => e.kind === "ai_inbound" && e.from === viewerId && e.to === p.id,
+            );
+            return (
+              <li key={p.id}>
+                {p.displayName} ({p.role === "ai" ? "AI" : "Human"}
+                {p.simulated ? ", simulated" : ""})
+                {isSelf
+                  ? publishing
+                    ? ": Publishing track to relay"
+                    : ": Not publishing"
+                  : p.role === "ai"
+                    ? `: Subscribed (${subEdge?.live ? "active" : "inactive"}), AI hears me (${
+                        aiEdge?.live ? "active" : "consent off"
+                      })`
+                    : `: Subscribed (${subEdge?.live ? "active" : "inactive"})`}
+              </li>
+            );
+          })}
+        </ul>
       </div>
       <svg
         viewBox={`0 0 ${size} ${size}`}
