@@ -76,6 +76,22 @@ describe("request validation", () => {
       }
     });
 
+    it("throws HttpError 400 invalid_request when string contains ASCII control characters", () => {
+      const invalidControlStrings = ["wake\x00Name", "address\x08"];
+      for (const str of invalidControlStrings) {
+        expect(() => optionalString({ val: str }, "val", 20)).toThrowError();
+        try {
+          optionalString({ val: str }, "val", 20);
+        } catch (error) {
+          expect(error).toMatchObject({
+            status: 400,
+            code: "invalid_request",
+            message: "Field 'val' contains invalid control characters.",
+          } satisfies Partial<HttpError>);
+        }
+      }
+    });
+
     it("throws HttpError 400 invalid_request when field is present but non-string", () => {
       const invalidCases: Array<[string, Record<string, unknown>]> = [
         ["null value", { field: null }],
@@ -230,6 +246,22 @@ describe("request validation", () => {
           code: "invalid_request",
           message: "Field 'name' must be at most 10 characters.",
         } satisfies Partial<HttpError>);
+      }
+    });
+
+    it("throws HttpError 400 invalid_request when string contains ASCII control characters", () => {
+      const invalidControlStrings = ["Ada\x00Admin", "Ada\x07", "Ada\x1F", "Ada\x7F"];
+      for (const str of invalidControlStrings) {
+        expect(() => requiredString({ name: str }, "name", 20)).toThrowError();
+        try {
+          requiredString({ name: str }, "name", 20);
+        } catch (error) {
+          expect(error).toMatchObject({
+            status: 400,
+            code: "invalid_request",
+            message: "Field 'name' contains invalid control characters.",
+          } satisfies Partial<HttpError>);
+        }
       }
     });
   });
