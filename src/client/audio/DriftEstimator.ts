@@ -171,6 +171,40 @@ function correctionForSkew(skewPpm: number): number {
   return 1 / (1 + skewPpm / 1_000_000);
 }
 
+// ⚡ Bolt Optimization: Reuse a Float64Array buffer for slope observations to avoid Array allocations
+// and garbage collection pauses during continuous media drift estimation (~80 samples generate ~3160 slopes).
+let slopesBuffer = new Float64Array(4096);
+
+/**
+ * ⚡ Bolt Optimization: Quickselect (Hoare selection) finds the k-th element in O(N) average time
+ * instead of O(N log N) array sorting.
+ */
+function quickselect(arr: Float64Array, left: number, right: number, k: number): number {
+  let l = left;
+  let r = right;
+  while (l < r) {
+    const pivotIndex = (l + r) >> 1;
+    const pivot = arr[pivotIndex] ?? 0;
+    let i = l;
+    let j = r;
+    while (i <= j) {
+      while ((arr[i] ?? 0) < pivot) i += 1;
+      while ((arr[j] ?? 0) > pivot) j -= 1;
+      if (i <= j) {
+        const tmp = arr[i] ?? 0;
+        arr[i] = arr[j] ?? 0;
+        arr[j] = tmp;
+        i += 1;
+        j -= 1;
+      }
+    }
+    if (k <= j) r = j;
+    else if (k >= i) l = i;
+    else break;
+  }
+  return arr[k] ?? 0;
+}
+
 function robustSkewPpm(samples: ClockObservation[]): number | null {
   const first = samples[0];
   const last = samples[samples.length - 1];
@@ -178,27 +212,40 @@ function robustSkewPpm(samples: ClockObservation[]): number | null {
     return null;
   }
 
-  const slopes: number[] = [];
-  for (let leftIndex = 0; leftIndex < samples.length; leftIndex += 1) {
+  const count = samples.length;
+  const maxPossibleSlopes = (count * (count - 1)) / 2;
+  if (slopesBuffer.length < maxPossibleSlopes) {
+    slopesBuffer = new Float64Array(maxPossibleSlopes);
+  }
+
+  let slopeCount = 0;
+  for (let leftIndex = 0; leftIndex < count; leftIndex += 1) {
     const left = samples[leftIndex];
     if (!left) continue;
-    for (let rightIndex = leftIndex + 1; rightIndex < samples.length; rightIndex += 1) {
+    for (let rightIndex = leftIndex + 1; rightIndex < count; rightIndex += 1) {
       const right = samples[rightIndex];
       if (!right) continue;
       const mediaElapsed = right.mediaTimestampMs - left.mediaTimestampMs;
       if (mediaElapsed < MINIMUM_PAIR_SPAN_MS) continue;
       const outputElapsed = right.outputTimeMs - left.outputTimeMs;
       if (outputElapsed <= 0) continue;
-      slopes.push(outputElapsed / mediaElapsed);
+      slopesBuffer[slopeCount] = outputElapsed / mediaElapsed;
+      slopeCount += 1;
     }
   }
-  if (slopes.length < MINIMUM_SLOPES) return null;
-  slopes.sort((left, right) => left - right);
-  const middle = Math.floor(slopes.length / 2);
-  const median =
-    slopes.length % 2 === 0
-      ? ((slopes[middle - 1] ?? 1) + (slopes[middle] ?? 1)) / 2
-      : (slopes[middle] ?? 1);
+
+  if (slopeCount < MINIMUM_SLOPES) return null;
+
+  const middle = slopeCount >> 1;
+  let median: number;
+  if ((slopeCount & 1) === 0) {
+    const v1 = quickselect(slopesBuffer, 0, slopeCount - 1, middle - 1);
+    const v2 = quickselect(slopesBuffer, 0, slopeCount - 1, middle);
+    median = (v1 + v2) / 2;
+  } else {
+    median = quickselect(slopesBuffer, 0, slopeCount - 1, middle);
+  }
+
   return (median - 1) * 1_000_000;
 }
 
