@@ -116,7 +116,7 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(capturing).toContain('value="40"');
   });
 
-  it("renders invite feedback states in the live status region", () => {
+  it("renders invite feedback states and accessible labels on RoomTopBar copy button", () => {
     const baseProps = {
       code: "TEST1234567890123456",
       onCopyInvite: () => {},
@@ -130,13 +130,24 @@ describe("Micro-UX & Accessibility Improvements", () => {
       React.createElement(RoomTopBar, { ...baseProps, copyState: "idle" }),
     );
     expect(idle).toContain("Copy invite");
+    expect(idle).toContain('aria-label="Copy invite link to clipboard"');
+    expect(idle).toContain('title="Copy invite link to clipboard"');
 
     const copied = renderToStaticMarkup(
       React.createElement(RoomTopBar, { ...baseProps, copyState: "copied" }),
     );
     expect(copied).toContain("Invite copied");
     expect(copied).toContain("button--success");
+    expect(copied).toContain('aria-label="Invite link copied to clipboard"');
+    expect(copied).toContain('title="Invite link copied to clipboard"');
     expect(copied).toContain("Invite link copied to the clipboard.");
+
+    const failed = renderToStaticMarkup(
+      React.createElement(RoomTopBar, { ...baseProps, copyState: "failed" }),
+    );
+    expect(failed).toContain("Retry copy");
+    expect(failed).toContain('aria-label="Retry copying invite link"');
+    expect(failed).toContain('title="Retry copying invite link"');
   });
 
   it("makes the active inspector panel keyboard reachable", () => {
