@@ -1,0 +1,3 @@
+## 2026-10-02 - Float32Array Iterator Avoidance in Audio Hot Paths
+**Learning:** Iterating over `Float32Array` using `for..of` creates temporary iterator objects on every call. On 50Hz audio frame processing paths (20ms frames across all active tracks), these iterator allocations create unnecessary garbage collection pressure. Additionally, element indexing within array bounds (`0 <= index < length`) is guaranteed to return primitive numbers, so redundant checks for `undefined` add dead branches.
+**Action:** Always prefer indexed `for` loops over `for..of` for typed arrays in high-frequency audio streaming methods like `rootMeanSquare`.
