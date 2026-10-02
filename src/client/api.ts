@@ -55,26 +55,27 @@ export async function createRoom(displayName: string): Promise<CreateRoomRespons
   return post<CreateRoomResponse>("/api/rooms", { displayName });
 }
 
+function roomPath(code: string, action?: string): string {
+  return `/api/rooms/${normaliseCode(code)}${action ? `/${action}` : ""}`;
+}
+
 export async function joinRoom(
   code: string,
   displayName: string,
   rejoinToken?: string,
 ): Promise<JoinRoomResponse> {
-  return post<JoinRoomResponse>(`/api/rooms/${normaliseCode(code)}/join`, {
+  return post<JoinRoomResponse>(roomPath(code, "join"), {
     displayName,
     ...(rejoinToken ? { rejoinToken } : {}),
   });
 }
 
 export async function fetchRoom(session: StoredSession): Promise<RoomSnapshot> {
-  return post<RoomSnapshot>(
-    `/api/rooms/${normaliseCode(session.code)}/snapshot`,
-    credential(session),
-  );
+  return post<RoomSnapshot>(roomPath(session.code, "snapshot"), credential(session));
 }
 
 export async function leaveRoom(session: StoredSession): Promise<RoomSnapshot> {
-  return post<RoomSnapshot>(`/api/rooms/${session.code}/leave`, credential(session));
+  return post<RoomSnapshot>(roomPath(session.code, "leave"), credential(session));
 }
 
 /**
@@ -83,7 +84,7 @@ export async function leaveRoom(session: StoredSession): Promise<RoomSnapshot> {
  * `keepalive`. Failure is acceptable — the participant then times out instead.
  */
 export function signalLeaveOnUnload(session: StoredSession): void {
-  void fetch(`/api/rooms/${session.code}/leave`, {
+  void fetch(roomPath(session.code, "leave"), {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(credential(session)),
@@ -97,7 +98,7 @@ export async function updateRouting(
   hearsMe: boolean,
   iHearIt: boolean,
 ): Promise<RoomSnapshot> {
-  return post<RoomSnapshot>(`/api/rooms/${session.code}/routing`, {
+  return post<RoomSnapshot>(roomPath(session.code, "routing"), {
     ...credential(session),
     aiId,
     hearsMe,
@@ -110,7 +111,7 @@ export async function addAi(
   displayName: string,
   options: { address?: string; wakeName?: string; simulated: boolean },
 ): Promise<RoomSnapshot> {
-  return post<RoomSnapshot>(`/api/rooms/${session.code}/ai`, {
+  return post<RoomSnapshot>(roomPath(session.code, "ai"), {
     ...credential(session),
     displayName,
     ...(options.address ? { address: options.address } : {}),
@@ -120,7 +121,7 @@ export async function addAi(
 }
 
 export async function removeAi(session: StoredSession, aiId: string): Promise<RoomSnapshot> {
-  return send<RoomSnapshot>(`/api/rooms/${session.code}/ai`, "DELETE", {
+  return send<RoomSnapshot>(roomPath(session.code, "ai"), "DELETE", {
     ...credential(session),
     aiId,
   });
@@ -131,7 +132,7 @@ export async function setAiPipeline(
   aiId: string,
   pipeline: AiPipelineState,
 ): Promise<RoomSnapshot> {
-  return post<RoomSnapshot>(`/api/rooms/${session.code}/ai-pipeline`, {
+  return post<RoomSnapshot>(roomPath(session.code, "ai-pipeline"), {
     ...credential(session),
     aiId,
     pipeline,
@@ -142,7 +143,7 @@ export async function requestFloor(
   session: StoredSession,
   aiId: string,
 ): Promise<FloorRequestResult> {
-  return post<FloorRequestResult>(`/api/rooms/${session.code}/floor`, {
+  return post<FloorRequestResult>(roomPath(session.code, "floor"), {
     ...credential(session),
     aiId,
     operation: "request",
@@ -154,7 +155,7 @@ export async function releaseFloor(
   aiId: string,
   turnId: string,
 ): Promise<FloorReleaseResult> {
-  return post<FloorReleaseResult>(`/api/rooms/${session.code}/floor`, {
+  return post<FloorReleaseResult>(roomPath(session.code, "floor"), {
     ...credential(session),
     aiId,
     turnId,
@@ -166,7 +167,7 @@ export async function cancelFloorRequest(
   session: StoredSession,
   aiId: string,
 ): Promise<RoomSnapshot> {
-  return post<RoomSnapshot>(`/api/rooms/${session.code}/floor`, {
+  return post<RoomSnapshot>(roomPath(session.code, "floor"), {
     ...credential(session),
     aiId,
     operation: "cancel",
@@ -177,7 +178,7 @@ export async function setAiToAi(
   session: StoredSession,
   operation: "enable" | "disable" | "reset",
 ): Promise<RoomSnapshot> {
-  return post<RoomSnapshot>(`/api/rooms/${session.code}/ai-to-ai`, {
+  return post<RoomSnapshot>(roomPath(session.code, "ai-to-ai"), {
     ...credential(session),
     operation,
   });
@@ -186,7 +187,7 @@ export async function setAiToAi(
 export async function recordAiToAiTurn(
   session: StoredSession,
 ): Promise<{ allowed: boolean; room: RoomSnapshot }> {
-  return post<{ allowed: boolean; room: RoomSnapshot }>(`/api/rooms/${session.code}/ai-to-ai`, {
+  return post<{ allowed: boolean; room: RoomSnapshot }>(roomPath(session.code, "ai-to-ai"), {
     ...credential(session),
     operation: "turn",
   });
@@ -196,7 +197,7 @@ export async function configurePresenter(
   session: StoredSession,
   configuration: PresenterConfiguration,
 ): Promise<RoomSnapshot> {
-  return post<RoomSnapshot>(`/api/rooms/${session.code}/presenter`, {
+  return post<RoomSnapshot>(roomPath(session.code, "presenter"), {
     ...credential(session),
     ...configuration,
   });
@@ -207,7 +208,7 @@ export async function configurePresenter(
  * Authentication is performed in the initial WebSocket message.
  */
 export function roomEventsUrl(session: StoredSession): string {
-  const url = new URL(`/api/rooms/${session.code}/events`, location.href);
+  const url = new URL(roomPath(session.code, "events"), location.href);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   return url.toString();
 }
