@@ -297,9 +297,11 @@ export function RoomPage({
               type="button"
               aria-expanded={inspectorOpen}
               aria-controls="inspector-panel"
-              onClick={() => setInspectorOpen(true)}
+              aria-label={inspectorOpen ? "Close inspector" : "Open inspector"}
+              title={inspectorOpen ? "Close inspector" : "Open inspector"}
+              onClick={() => setInspectorOpen((open) => !open)}
             >
-              Open inspector →
+              {inspectorOpen ? "Close inspector" : "Open inspector →"}
             </button>
           </div>
         </section>
@@ -407,7 +409,9 @@ export function RoomPage({
             type="button"
             aria-expanded={inspectorOpen}
             aria-controls="inspector-panel"
-            onClick={() => setInspectorOpen(true)}
+            aria-label={inspectorOpen ? "Close inspector" : "Open inspector"}
+            title={inspectorOpen ? "Close inspector" : "Open inspector"}
+            onClick={() => setInspectorOpen((open) => !open)}
           >
             Inspector
           </button>
@@ -429,9 +433,11 @@ export function RoomPage({
           type="button"
           aria-expanded={inspectorOpen}
           aria-controls="inspector-panel"
-          onClick={() => setInspectorOpen(true)}
+          aria-label={inspectorOpen ? "Close inspector" : "Open inspector"}
+          title={inspectorOpen ? "Close inspector" : "Open inspector"}
+          onClick={() => setInspectorOpen((open) => !open)}
         >
-          Open inspector
+          {inspectorOpen ? "Close inspector" : "Open inspector"}
         </button>
       )}
     </main>
