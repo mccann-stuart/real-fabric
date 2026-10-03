@@ -1,10 +1,16 @@
 import {
+  FilterType,
   FullTrackName,
+  GroupOrder,
+  MOQtailClient,
   Publish,
   PublishOk,
   ReasonPhrase,
   RequestError,
   RequestErrorCode,
+  Subscribe,
+  SubscribeOk,
+  Unsubscribe,
 } from "moqtail";
 import { describe, expect, it, vi } from "vitest";
 import { ReconnectionPolicy, TERMINAL_AFTER_MS } from "../src/client/session/ReconnectionPolicy";
@@ -1202,6 +1208,77 @@ describe("M1 — bounded session recovery", () => {
     expect(internal.client).toBeNull();
   });
 
+  it("ends an explicit subscription reader and retires its alias on unsubscribe", async () => {
+    const client = Reflect.construct(MOQtailClient, []) as MOQtailClient;
+    const send = vi.fn(async (message: { requestId: bigint }) => {
+      if (message instanceof Subscribe) {
+        const pending = client.requests.get(message.requestId) as {
+          resolve: (response: SubscribeOk) => void;
+        };
+        pending.resolve(SubscribeOk.create(message.requestId, 11n, []));
+      }
+    });
+    client.controlStream = { send } as unknown as typeof client.controlStream;
+    const subscription = await client.subscribe({
+      fullTrackName: FullTrackName.tryNew("demo/room", "audio/participant"),
+      priority: 0,
+      groupOrder: GroupOrder.Original,
+      forward: true,
+      filterType: FilterType.LatestObject,
+    });
+    if (subscription instanceof RequestError) throw new Error("The test subscription was refused.");
+    const reader = subscription.stream.getReader();
+    const waitingForObject = reader.read();
+
+    await client.unsubscribe(subscription.requestId);
+
+    await expect(waitingForObject).resolves.toMatchObject({ done: true });
+    expect(send).toHaveBeenCalledWith(expect.any(Unsubscribe));
+    expect(client.subscriptions.size).toBe(0);
+    expect(client.aliasFullTrackNameMap.size).toBe(0);
+    expect(client.subscriptionAliasMap.size).toBe(0);
+    reader.releaseLock();
+  });
+
+  it("sends UNSUBSCRIBE and retires a publisher-pushed alias", async () => {
+    const client = Reflect.construct(MOQtailClient, []) as MOQtailClient;
+    const send = vi.fn().mockResolvedValue(undefined);
+    client.controlStream = { send } as unknown as typeof client.controlStream;
+    const message = new Publish(7n, FullTrackName.tryNew("demo/room", "audio/participant"), 3n, []);
+    const reader = client.acceptPushedTrack(message).getReader();
+    const waitingForObject = reader.read();
+
+    await client.unsubscribe(message.requestId);
+
+    await expect(waitingForObject).resolves.toMatchObject({ done: true });
+    expect(send).toHaveBeenCalledWith(expect.any(Unsubscribe));
+    expect(client.subscriptions.size).toBe(0);
+    expect(client.aliasFullTrackNameMap.size).toBe(0);
+    expect(client.subscriptionAliasMap.size).toBe(0);
+    await client.unsubscribe(message.requestId);
+    expect(send).toHaveBeenCalledOnce();
+    reader.releaseLock();
+  });
+
+  it("closes WebTransport before reporting an unexpected MOQtail termination", async () => {
+    const client = Reflect.construct(MOQtailClient, []) as MOQtailClient;
+    let releaseClosed: (() => void) | undefined;
+    const closed = new Promise<void>((resolve) => {
+      releaseClosed = resolve;
+    });
+    const close = vi.fn();
+    const terminated = vi.fn();
+    client.webTransport = { close, closed } as unknown as WebTransport;
+    client.onSessionTerminated = terminated;
+
+    const disconnecting = client.disconnect("control stream ended");
+    await vi.waitFor(() => expect(close).toHaveBeenCalledOnce());
+    expect(terminated).not.toHaveBeenCalled();
+    releaseClosed?.();
+    await disconnecting;
+    expect(terminated).toHaveBeenCalledOnce();
+  });
+
   it("opens one publication while concurrent audio frames wait", async () => {
     let releasePublish: (() => void) | undefined;
     const publishReady = new Promise<void>((resolve) => {
@@ -1355,6 +1432,34 @@ describe("M1 — bounded session recovery", () => {
     expect(unsubscribe).toHaveBeenCalledWith(7n);
   });
 
+  it("cancels a pushed publication before it is consumed when listening stops", async () => {
+    const adapter = new MoqTransportAdapter();
+    const send = vi.fn().mockResolvedValue(undefined);
+    const unsubscribe = vi.fn().mockResolvedValue(undefined);
+    const client = { controlStream: { send }, unsubscribe };
+    const internal = adapter as unknown as {
+      client: typeof client;
+      stats: ReturnType<MoqTransportAdapter["sessionStats"]>;
+      handlePeerPublish: (message: Publish, stream: ReadableStream<never>) => Promise<void>;
+    };
+    internal.client = client;
+    internal.stats = { ...adapter.sessionStats(), state: "connected" };
+    const track = { namespace: "demo/room/participant", name: "audio/participant" };
+    const message = new Publish(7n, FullTrackName.tryNew(track.namespace, track.name), 3n, []);
+    const cancel = vi.fn().mockResolvedValue(undefined);
+    const stream = { cancel } as unknown as ReadableStream<never>;
+
+    await internal.handlePeerPublish(message, stream);
+    await adapter.unsubscribe(track);
+
+    expect(unsubscribe).toHaveBeenCalledWith(7n);
+    expect(cancel).toHaveBeenCalledWith("publication no longer selected");
+    expect(
+      (adapter as unknown as { pushedSubscriptions: Map<string, unknown> }).pushedSubscriptions
+        .size,
+    ).toBe(0);
+  });
+
   it("defaults every other real room party to interested in pushed audio tracks", async () => {
     const session = new RoomSession({
       session: {
@@ -1404,7 +1509,7 @@ describe("M1 — bounded session recovery", () => {
   it("sends UNINTERESTED only when the local track control opts out", async () => {
     const adapter = new MoqTransportAdapter({ shouldAcceptPublishedTrack: () => false });
     const send = vi.fn().mockResolvedValue(undefined);
-    const client = { controlStream: { send } };
+    const client = { controlStream: { send }, subscriptions: new Map() };
     const internal = adapter as unknown as {
       client: typeof client;
       stats: ReturnType<MoqTransportAdapter["sessionStats"]>;
@@ -1425,6 +1530,43 @@ describe("M1 — bounded session recovery", () => {
     expect(response).toBeInstanceOf(RequestError);
     expect(response.requestId).toBe(8n);
     expect(response.errorCode).toBe(RequestErrorCode.Uninterested);
+  });
+
+  it("removes MOQtail's eager alias state when a pushed publication is refused", async () => {
+    const adapter = new MoqTransportAdapter({ shouldAcceptPublishedTrack: () => false });
+    const send = vi.fn().mockResolvedValue(undefined);
+    const removeMappingByRequestId = vi.fn();
+    const message = new Publish(
+      8n,
+      FullTrackName.tryNew("demo/room/participant", "audio/participant"),
+      4n,
+      [],
+    );
+    const receiver = { requestId: 2n, publishedRequestId: 8n, isCanceled: false };
+    const client = {
+      controlStream: { send },
+      subscriptions: new Map([[4n, receiver]]),
+      aliasFullTrackNameMap: new Map([[4n, message.fullTrackName]]),
+      subscriptionAliasMap: new Map([[2n, 4n]]),
+      requestIdMap: { removeMappingByRequestId },
+      retiredTrackAliases: new Set<bigint>(),
+    };
+    const internal = adapter as unknown as {
+      client: typeof client;
+      stats: ReturnType<MoqTransportAdapter["sessionStats"]>;
+      handlePeerPublish: (message: Publish, stream: ReadableStream<never>) => Promise<void>;
+    };
+    internal.client = client;
+    internal.stats = { ...adapter.sessionStats(), state: "connected" };
+
+    await internal.handlePeerPublish(message, new ReadableStream<never>());
+
+    expect(receiver.isCanceled).toBe(true);
+    expect(client.subscriptions.size).toBe(0);
+    expect(client.aliasFullTrackNameMap.size).toBe(0);
+    expect(client.subscriptionAliasMap.size).toBe(0);
+    expect(client.retiredTrackAliases.has(4n)).toBe(true);
+    expect(removeMappingByRequestId).toHaveBeenCalledWith(2n);
   });
 
   it("classifies only code-16 Track not found subscriptions as publisher-not-ready", () => {

@@ -1,8 +1,126 @@
 diff --git a/dist/client.cjs b/dist/client.cjs
-index 6c5336193179bb210c0a5aba80903c1167bab169..71e08cb083abc44c42326bf84e91897fcd626624 100644
+index 6c53361..accbac0 100644
 --- a/dist/client.cjs
 +++ b/dist/client.cjs
-@@ -7848,7 +7848,7 @@ var MOQtailClient = class _MOQtailClient {
+@@ -5218,6 +5218,8 @@ var handlerPublish = async (client, msg) => {
+   client.aliasFullTrackNameMap.set(msg.trackAlias, msg.fullTrackName);
+   const receiver = {
+     requestId: localPseudoRequestId,
++    publishedRequestId: msg.requestId,
++    isCanceled: false,
+     streamsAccepted: 0,
+     largestLocation: void 0,
+     controller: streamController
+@@ -6391,6 +6393,7 @@ var MOQtailClient = class _MOQtailClient {
+    * Maps track aliases to full track names for quick resolution during data handling.
+    */
+   aliasFullTrackNameMap = /* @__PURE__ */ new Map();
++  retiredTrackAliases = /* @__PURE__ */ new Set();
+   /**
+    * Pending state updates keyed by requestId and applied once a new track alias is seen.
+    * Used to avoid premature state updates.
+@@ -6923,7 +6926,12 @@ var MOQtailClient = class _MOQtailClient {
+     if (this.#isDestroyed) return;
+     this.#isDestroyed = true;
+     await this.stopDatagrams();
+-    if (!this.webTransport.closed) this.webTransport.close();
++    try {
++      this.webTransport.close();
++    } catch {
++      // The transport may already have closed after the control stream ended.
++    }
++    await this.webTransport.closed.catch(() => {});
+     if (this.onSessionTerminated)
+       this.onSessionTerminated(
+         new InternalError("MOQtailClient.disconnect", reason instanceof Error ? reason.message : String(reason))
+@@ -7141,7 +7149,7 @@ var MOQtailClient = class _MOQtailClient {
+     }
+   }
+   /**
+-   * Stops an active subscription identified by its original SUBSCRIBE `requestId`.
++   * Stops an active subscription identified by its SUBSCRIBE or peer PUBLISH `requestId`.
+    *
+    * Sends an {@link Unsubscribe} control frame if the subscription is still active. If the id is unknown or already
+    * cleaned up, the call is a silent no-op (hence multiple calls are idempotent).
+@@ -7149,13 +7157,13 @@ var MOQtailClient = class _MOQtailClient {
+    * Use this when you no longer want incoming objects for a track (e.g. user navigated away, switching quality).
+    * Canceling the consumer stream reader does **not** auto-unsubscribe; call this explicitly for prompt cleanup.
+    *
+-   * @param requestId - The id returned from {@link MOQtailClient.subscribe}.
++   * @param requestId - The id returned from {@link MOQtailClient.subscribe} or received in a peer PUBLISH.
+    * @returns Promise that resolves when the unsubscribe control frame is sent.
+    * @throws :{@link MOQtailError} If the client is destroyed.
+    * @throws :{@link InternalError} Wrapped lower-level failure while attempting to send (session will be disconnected first).
+    *
+    * @remarks
+-   * - Only targets SUBSCRIBE requests, not fetches. Passing a fetch request id is ignored (no-op).
++   * - Targets SUBSCRIBE and accepted peer PUBLISH subscriptions, not fetches. Passing a fetch request id is ignored (no-op).
+    * - Safe to call multiple times; extra calls have no effect.
+    *
+    * @example Subscribe and later unsubscribe
+@@ -7178,13 +7186,21 @@ var MOQtailClient = class _MOQtailClient {
+     if (typeof requestId === "number") requestId = BigInt(requestId);
+     let cleanupData = null;
+     try {
+-      if (this.requests.has(requestId)) {
+-        const subscription = this.requests.get(requestId);
+-        if (subscription instanceof SubscribeRequest) {
+-          const trackAlias = this.subscriptionAliasMap.get(requestId);
+-          cleanupData = { requestId, trackAlias, subscription };
++      const subscription = this.requests.get(requestId);
++      if (subscription instanceof SubscribeRequest) {
++        const trackAlias = this.subscriptionAliasMap.get(requestId);
++        cleanupData = { requestId, trackAlias, subscription };
++        await this.controlStream.send(new Unsubscribe(requestId));
++        subscription.unsubscribe();
++      } else {
++        // A peer-initiated PUBLISH is registered under a local pseudo request
++        // id. The application only knows the publisher's original request id.
++        for (const [trackAlias, pushed] of this.subscriptions) {
++          if (pushed.publishedRequestId !== requestId) continue;
++          cleanupData = { requestId: pushed.requestId, trackAlias, subscription: pushed };
+           await this.controlStream.send(new Unsubscribe(requestId));
+-          subscription.unsubscribe();
++          pushed.isCanceled = true;
++          break;
+         }
+       }
+     } catch (error) {
+@@ -7194,9 +7210,22 @@ var MOQtailClient = class _MOQtailClient {
+       throw error;
+     } finally {
+       if (cleanupData) {
++        cleanupData.subscription.isCanceled = true;
++        try {
++          cleanupData.subscription.controller?.close();
++        } catch {
++          // The consumer may already have cancelled its readable stream.
++        }
+         this.requests.delete(cleanupData.requestId);
+-        this.subscriptions.delete(cleanupData.trackAlias);
+-        this.aliasFullTrackNameMap.delete(cleanupData.trackAlias);
++        if (cleanupData.trackAlias !== void 0) {
++          this.retiredTrackAliases.add(cleanupData.trackAlias);
++          if (this.retiredTrackAliases.size > 1024) {
++            this.retiredTrackAliases.delete(this.retiredTrackAliases.values().next().value);
++          }
++          this.subscriptions.delete(cleanupData.trackAlias);
++          this.aliasFullTrackNameMap.delete(cleanupData.trackAlias);
++        }
++        this.subscriptionAliasMap.delete(cleanupData.requestId);
+         this.requestIdMap.removeMappingByRequestId(cleanupData.requestId);
+       }
+     }
+@@ -7610,6 +7639,8 @@ var MOQtailClient = class _MOQtailClient {
+     this.aliasFullTrackNameMap.set(msg.trackAlias, msg.fullTrackName);
+     const receiver = {
+       requestId: msg.requestId,
++      publishedRequestId: msg.requestId,
++      isCanceled: false,
+       streamsAccepted: 0,
+       largestLocation: void 0,
+       controller: streamController
+@@ -7848,7 +7879,7 @@ var MOQtailClient = class _MOQtailClient {
          await handler(this, msg);
        }
      } catch (error) {
@@ -11,11 +129,254 @@ index 6c5336193179bb210c0a5aba80903c1167bab169..71e08cb083abc44c42326bf84e91897f
        throw error;
      }
    }
+@@ -7965,6 +7996,10 @@ var MOQtailClient = class _MOQtailClient {
+           }
+         }
+         if (subscription) {
++          const fullTrackName = this.aliasFullTrackNameMap.get(header.trackAlias);
++          if (!fullTrackName) {
++            throw new ProtocolViolationError("MOQtailClient", "No full track name for received track alias");
++          }
+           subscription.streamsAccepted++;
+           let firstObjectId = null;
+           let subgroupTimeoutId;
+@@ -7976,8 +8011,16 @@ var MOQtailClient = class _MOQtailClient {
+             }, effectiveDiscardPolicy.subgroupReceiveTimeout);
+           }
+           try {
++            if (subscription.isCanceled) {
++              await reader.cancel("subscription cancelled").catch(() => {});
++              return;
++            }
+             while (true) {
+               const { done, value: nextObject } = await reader.read();
++              if (subscription.isCanceled) {
++                await reader.cancel("subscription cancelled").catch(() => {});
++                break;
++              }
+               if (done) {
+                 break;
+               }
+@@ -7994,10 +8037,6 @@ var MOQtailClient = class _MOQtailClient {
+                   } else if (SubgroupHeaderType.hasExplicitSubgroupId(header.type)) {
+                     subgroupId = header.subgroupId ?? null;
+                   }
+-                  const fullTrackName = this.aliasFullTrackNameMap.get(header.trackAlias);
+-                  if (!fullTrackName) {
+-                    throw new ProtocolViolationError("MOQtailClient", "No full track name for received track alias");
+-                  }
+                   const moqtObject = MoqtObject.fromSubgroupObject(
+                     nextObject,
+                     header.groupId,
+@@ -8014,16 +8053,26 @@ var MOQtailClient = class _MOQtailClient {
+                 throw new ProtocolViolationError("MOQtailClient", "Received fetch object after subgroup header");
+               }
+             }
++          } catch (error) {
++            // A relay may reset an open subgroup stream after UNSUBSCRIBE.
++            if (!subscription.isCanceled) throw error;
+           } finally {
+             if (subgroupTimeoutId !== void 0) clearTimeout(subgroupTimeoutId);
++            reader.releaseLock();
+           }
+-          if (subscription.expectedStreams && subscription.expectedStreams === subscription.streamsAccepted) {
++          if (!subscription.isCanceled && subscription.expectedStreams && subscription.expectedStreams === subscription.streamsAccepted) {
+             subscription.controller?.close();
+             this.subscriptions.delete(header.trackAlias);
+             this.requests.delete(subscription.requestId);
+           }
+           return;
+         }
++        if (this.retiredTrackAliases.has(header.trackAlias)) {
++          await reader.cancel("subscription ended").catch(() => {});
++          reader.releaseLock();
++          return;
++        }
++        reader.releaseLock();
+         throw new ProtocolViolationError("MOQtailClient", "No subscription for received track alias");
+       }
+     } catch (error) {
+diff --git a/dist/client.d.cts b/dist/client.d.cts
+index 7b16bd0..f9182c4 100644
+--- a/dist/client.d.cts
++++ b/dist/client.d.cts
+@@ -1450,7 +1450,7 @@ declare class MOQtailClient {
+         stream: ReadableStream<MoqtObject>;
+     }>;
+     /**
+-     * Stops an active subscription identified by its original SUBSCRIBE `requestId`.
++     * Stops an active subscription identified by its SUBSCRIBE or peer PUBLISH `requestId`.
+      *
+      * Sends an {@link Unsubscribe} control frame if the subscription is still active. If the id is unknown or already
+      * cleaned up, the call is a silent no-op (hence multiple calls are idempotent).
+@@ -1458,13 +1458,13 @@ declare class MOQtailClient {
+      * Use this when you no longer want incoming objects for a track (e.g. user navigated away, switching quality).
+      * Canceling the consumer stream reader does **not** auto-unsubscribe; call this explicitly for prompt cleanup.
+      *
+-     * @param requestId - The id returned from {@link MOQtailClient.subscribe}.
++     * @param requestId - The id returned from {@link MOQtailClient.subscribe} or received in a peer PUBLISH.
+      * @returns Promise that resolves when the unsubscribe control frame is sent.
+      * @throws :{@link MOQtailError} If the client is destroyed.
+      * @throws :{@link InternalError} Wrapped lower-level failure while attempting to send (session will be disconnected first).
+      *
+      * @remarks
+-     * - Only targets SUBSCRIBE requests, not fetches. Passing a fetch request id is ignored (no-op).
++     * - Targets SUBSCRIBE and accepted peer PUBLISH subscriptions, not fetches. Passing a fetch request id is ignored (no-op).
+      * - Safe to call multiple times; extra calls have no effect.
+      *
+      * @example Subscribe and later unsubscribe
+diff --git a/dist/client.d.ts b/dist/client.d.ts
+index 4b11bae..dc47421 100644
+--- a/dist/client.d.ts
++++ b/dist/client.d.ts
+@@ -1450,7 +1450,7 @@ declare class MOQtailClient {
+         stream: ReadableStream<MoqtObject>;
+     }>;
+     /**
+-     * Stops an active subscription identified by its original SUBSCRIBE `requestId`.
++     * Stops an active subscription identified by its SUBSCRIBE or peer PUBLISH `requestId`.
+      *
+      * Sends an {@link Unsubscribe} control frame if the subscription is still active. If the id is unknown or already
+      * cleaned up, the call is a silent no-op (hence multiple calls are idempotent).
+@@ -1458,13 +1458,13 @@ declare class MOQtailClient {
+      * Use this when you no longer want incoming objects for a track (e.g. user navigated away, switching quality).
+      * Canceling the consumer stream reader does **not** auto-unsubscribe; call this explicitly for prompt cleanup.
+      *
+-     * @param requestId - The id returned from {@link MOQtailClient.subscribe}.
++     * @param requestId - The id returned from {@link MOQtailClient.subscribe} or received in a peer PUBLISH.
+      * @returns Promise that resolves when the unsubscribe control frame is sent.
+      * @throws :{@link MOQtailError} If the client is destroyed.
+      * @throws :{@link InternalError} Wrapped lower-level failure while attempting to send (session will be disconnected first).
+      *
+      * @remarks
+-     * - Only targets SUBSCRIBE requests, not fetches. Passing a fetch request id is ignored (no-op).
++     * - Targets SUBSCRIBE and accepted peer PUBLISH subscriptions, not fetches. Passing a fetch request id is ignored (no-op).
+      * - Safe to call multiple times; extra calls have no effect.
+      *
+      * @example Subscribe and later unsubscribe
 diff --git a/dist/client.js b/dist/client.js
-index 9577301c4bc7da09d5155af6f350c19bd2ef97c0..db0593a595f359b0b7030c52737f3ae7537248e1 100644
+index 9577301..071c647 100644
 --- a/dist/client.js
 +++ b/dist/client.js
-@@ -7846,7 +7846,7 @@ var MOQtailClient = class _MOQtailClient {
+@@ -5216,6 +5216,8 @@ var handlerPublish = async (client, msg) => {
+   client.aliasFullTrackNameMap.set(msg.trackAlias, msg.fullTrackName);
+   const receiver = {
+     requestId: localPseudoRequestId,
++    publishedRequestId: msg.requestId,
++    isCanceled: false,
+     streamsAccepted: 0,
+     largestLocation: void 0,
+     controller: streamController
+@@ -6389,6 +6391,7 @@ var MOQtailClient = class _MOQtailClient {
+    * Maps track aliases to full track names for quick resolution during data handling.
+    */
+   aliasFullTrackNameMap = /* @__PURE__ */ new Map();
++  retiredTrackAliases = /* @__PURE__ */ new Set();
+   /**
+    * Pending state updates keyed by requestId and applied once a new track alias is seen.
+    * Used to avoid premature state updates.
+@@ -6921,7 +6924,12 @@ var MOQtailClient = class _MOQtailClient {
+     if (this.#isDestroyed) return;
+     this.#isDestroyed = true;
+     await this.stopDatagrams();
+-    if (!this.webTransport.closed) this.webTransport.close();
++    try {
++      this.webTransport.close();
++    } catch {
++      // The transport may already have closed after the control stream ended.
++    }
++    await this.webTransport.closed.catch(() => {});
+     if (this.onSessionTerminated)
+       this.onSessionTerminated(
+         new InternalError("MOQtailClient.disconnect", reason instanceof Error ? reason.message : String(reason))
+@@ -7139,7 +7147,7 @@ var MOQtailClient = class _MOQtailClient {
+     }
+   }
+   /**
+-   * Stops an active subscription identified by its original SUBSCRIBE `requestId`.
++   * Stops an active subscription identified by its SUBSCRIBE or peer PUBLISH `requestId`.
+    *
+    * Sends an {@link Unsubscribe} control frame if the subscription is still active. If the id is unknown or already
+    * cleaned up, the call is a silent no-op (hence multiple calls are idempotent).
+@@ -7147,13 +7155,13 @@ var MOQtailClient = class _MOQtailClient {
+    * Use this when you no longer want incoming objects for a track (e.g. user navigated away, switching quality).
+    * Canceling the consumer stream reader does **not** auto-unsubscribe; call this explicitly for prompt cleanup.
+    *
+-   * @param requestId - The id returned from {@link MOQtailClient.subscribe}.
++   * @param requestId - The id returned from {@link MOQtailClient.subscribe} or received in a peer PUBLISH.
+    * @returns Promise that resolves when the unsubscribe control frame is sent.
+    * @throws :{@link MOQtailError} If the client is destroyed.
+    * @throws :{@link InternalError} Wrapped lower-level failure while attempting to send (session will be disconnected first).
+    *
+    * @remarks
+-   * - Only targets SUBSCRIBE requests, not fetches. Passing a fetch request id is ignored (no-op).
++   * - Targets SUBSCRIBE and accepted peer PUBLISH subscriptions, not fetches. Passing a fetch request id is ignored (no-op).
+    * - Safe to call multiple times; extra calls have no effect.
+    *
+    * @example Subscribe and later unsubscribe
+@@ -7176,13 +7184,21 @@ var MOQtailClient = class _MOQtailClient {
+     if (typeof requestId === "number") requestId = BigInt(requestId);
+     let cleanupData = null;
+     try {
+-      if (this.requests.has(requestId)) {
+-        const subscription = this.requests.get(requestId);
+-        if (subscription instanceof SubscribeRequest) {
+-          const trackAlias = this.subscriptionAliasMap.get(requestId);
+-          cleanupData = { requestId, trackAlias, subscription };
++      const subscription = this.requests.get(requestId);
++      if (subscription instanceof SubscribeRequest) {
++        const trackAlias = this.subscriptionAliasMap.get(requestId);
++        cleanupData = { requestId, trackAlias, subscription };
++        await this.controlStream.send(new Unsubscribe(requestId));
++        subscription.unsubscribe();
++      } else {
++        // A peer-initiated PUBLISH is registered under a local pseudo request
++        // id. The application only knows the publisher's original request id.
++        for (const [trackAlias, pushed] of this.subscriptions) {
++          if (pushed.publishedRequestId !== requestId) continue;
++          cleanupData = { requestId: pushed.requestId, trackAlias, subscription: pushed };
+           await this.controlStream.send(new Unsubscribe(requestId));
+-          subscription.unsubscribe();
++          pushed.isCanceled = true;
++          break;
+         }
+       }
+     } catch (error) {
+@@ -7192,9 +7208,22 @@ var MOQtailClient = class _MOQtailClient {
+       throw error;
+     } finally {
+       if (cleanupData) {
++        cleanupData.subscription.isCanceled = true;
++        try {
++          cleanupData.subscription.controller?.close();
++        } catch {
++          // The consumer may already have cancelled its readable stream.
++        }
+         this.requests.delete(cleanupData.requestId);
+-        this.subscriptions.delete(cleanupData.trackAlias);
+-        this.aliasFullTrackNameMap.delete(cleanupData.trackAlias);
++        if (cleanupData.trackAlias !== void 0) {
++          this.retiredTrackAliases.add(cleanupData.trackAlias);
++          if (this.retiredTrackAliases.size > 1024) {
++            this.retiredTrackAliases.delete(this.retiredTrackAliases.values().next().value);
++          }
++          this.subscriptions.delete(cleanupData.trackAlias);
++          this.aliasFullTrackNameMap.delete(cleanupData.trackAlias);
++        }
++        this.subscriptionAliasMap.delete(cleanupData.requestId);
+         this.requestIdMap.removeMappingByRequestId(cleanupData.requestId);
+       }
+     }
+@@ -7608,6 +7637,8 @@ var MOQtailClient = class _MOQtailClient {
+     this.aliasFullTrackNameMap.set(msg.trackAlias, msg.fullTrackName);
+     const receiver = {
+       requestId: msg.requestId,
++      publishedRequestId: msg.requestId,
++      isCanceled: false,
+       streamsAccepted: 0,
+       largestLocation: void 0,
+       controller: streamController
+@@ -7846,7 +7877,7 @@ var MOQtailClient = class _MOQtailClient {
          await handler(this, msg);
        }
      } catch (error) {
@@ -24,11 +385,196 @@ index 9577301c4bc7da09d5155af6f350c19bd2ef97c0..db0593a595f359b0b7030c52737f3ae7
        throw error;
      }
    }
+@@ -7963,6 +7994,10 @@ var MOQtailClient = class _MOQtailClient {
+           }
+         }
+         if (subscription) {
++          const fullTrackName = this.aliasFullTrackNameMap.get(header.trackAlias);
++          if (!fullTrackName) {
++            throw new ProtocolViolationError("MOQtailClient", "No full track name for received track alias");
++          }
+           subscription.streamsAccepted++;
+           let firstObjectId = null;
+           let subgroupTimeoutId;
+@@ -7974,8 +8009,16 @@ var MOQtailClient = class _MOQtailClient {
+             }, effectiveDiscardPolicy.subgroupReceiveTimeout);
+           }
+           try {
++            if (subscription.isCanceled) {
++              await reader.cancel("subscription cancelled").catch(() => {});
++              return;
++            }
+             while (true) {
+               const { done, value: nextObject } = await reader.read();
++              if (subscription.isCanceled) {
++                await reader.cancel("subscription cancelled").catch(() => {});
++                break;
++              }
+               if (done) {
+                 break;
+               }
+@@ -7992,10 +8035,6 @@ var MOQtailClient = class _MOQtailClient {
+                   } else if (SubgroupHeaderType.hasExplicitSubgroupId(header.type)) {
+                     subgroupId = header.subgroupId ?? null;
+                   }
+-                  const fullTrackName = this.aliasFullTrackNameMap.get(header.trackAlias);
+-                  if (!fullTrackName) {
+-                    throw new ProtocolViolationError("MOQtailClient", "No full track name for received track alias");
+-                  }
+                   const moqtObject = MoqtObject.fromSubgroupObject(
+                     nextObject,
+                     header.groupId,
+@@ -8012,16 +8051,26 @@ var MOQtailClient = class _MOQtailClient {
+                 throw new ProtocolViolationError("MOQtailClient", "Received fetch object after subgroup header");
+               }
+             }
++          } catch (error) {
++            // A relay may reset an open subgroup stream after UNSUBSCRIBE.
++            if (!subscription.isCanceled) throw error;
+           } finally {
+             if (subgroupTimeoutId !== void 0) clearTimeout(subgroupTimeoutId);
++            reader.releaseLock();
+           }
+-          if (subscription.expectedStreams && subscription.expectedStreams === subscription.streamsAccepted) {
++          if (!subscription.isCanceled && subscription.expectedStreams && subscription.expectedStreams === subscription.streamsAccepted) {
+             subscription.controller?.close();
+             this.subscriptions.delete(header.trackAlias);
+             this.requests.delete(subscription.requestId);
+           }
+           return;
+         }
++        if (this.retiredTrackAliases.has(header.trackAlias)) {
++          await reader.cancel("subscription ended").catch(() => {});
++          reader.releaseLock();
++          return;
++        }
++        reader.releaseLock();
+         throw new ProtocolViolationError("MOQtailClient", "No subscription for received track alias");
+       }
+     } catch (error) {
 diff --git a/dist/index.cjs b/dist/index.cjs
-index 0fc725784d739c96a1f4557893f117785fbc90af..6bdb0f42b4e15e045c58c215f92bcab0f7583080 100644
+index 0fc7257..4744926 100644
 --- a/dist/index.cjs
 +++ b/dist/index.cjs
-@@ -8342,7 +8342,7 @@ var MOQtailClient = class _MOQtailClient {
+@@ -5712,6 +5712,8 @@ var handlerPublish = async (client, msg) => {
+   client.aliasFullTrackNameMap.set(msg.trackAlias, msg.fullTrackName);
+   const receiver = {
+     requestId: localPseudoRequestId,
++    publishedRequestId: msg.requestId,
++    isCanceled: false,
+     streamsAccepted: 0,
+     largestLocation: void 0,
+     controller: streamController
+@@ -6885,6 +6887,7 @@ var MOQtailClient = class _MOQtailClient {
+    * Maps track aliases to full track names for quick resolution during data handling.
+    */
+   aliasFullTrackNameMap = /* @__PURE__ */ new Map();
++  retiredTrackAliases = /* @__PURE__ */ new Set();
+   /**
+    * Pending state updates keyed by requestId and applied once a new track alias is seen.
+    * Used to avoid premature state updates.
+@@ -7417,7 +7420,12 @@ var MOQtailClient = class _MOQtailClient {
+     if (this.#isDestroyed) return;
+     this.#isDestroyed = true;
+     await this.stopDatagrams();
+-    if (!this.webTransport.closed) this.webTransport.close();
++    try {
++      this.webTransport.close();
++    } catch {
++      // The transport may already have closed after the control stream ended.
++    }
++    await this.webTransport.closed.catch(() => {});
+     if (this.onSessionTerminated)
+       this.onSessionTerminated(
+         new InternalError("MOQtailClient.disconnect", reason instanceof Error ? reason.message : String(reason))
+@@ -7635,7 +7643,7 @@ var MOQtailClient = class _MOQtailClient {
+     }
+   }
+   /**
+-   * Stops an active subscription identified by its original SUBSCRIBE `requestId`.
++   * Stops an active subscription identified by its SUBSCRIBE or peer PUBLISH `requestId`.
+    *
+    * Sends an {@link Unsubscribe} control frame if the subscription is still active. If the id is unknown or already
+    * cleaned up, the call is a silent no-op (hence multiple calls are idempotent).
+@@ -7643,13 +7651,13 @@ var MOQtailClient = class _MOQtailClient {
+    * Use this when you no longer want incoming objects for a track (e.g. user navigated away, switching quality).
+    * Canceling the consumer stream reader does **not** auto-unsubscribe; call this explicitly for prompt cleanup.
+    *
+-   * @param requestId - The id returned from {@link MOQtailClient.subscribe}.
++   * @param requestId - The id returned from {@link MOQtailClient.subscribe} or received in a peer PUBLISH.
+    * @returns Promise that resolves when the unsubscribe control frame is sent.
+    * @throws :{@link MOQtailError} If the client is destroyed.
+    * @throws :{@link InternalError} Wrapped lower-level failure while attempting to send (session will be disconnected first).
+    *
+    * @remarks
+-   * - Only targets SUBSCRIBE requests, not fetches. Passing a fetch request id is ignored (no-op).
++   * - Targets SUBSCRIBE and accepted peer PUBLISH subscriptions, not fetches. Passing a fetch request id is ignored (no-op).
+    * - Safe to call multiple times; extra calls have no effect.
+    *
+    * @example Subscribe and later unsubscribe
+@@ -7672,13 +7680,21 @@ var MOQtailClient = class _MOQtailClient {
+     if (typeof requestId === "number") requestId = BigInt(requestId);
+     let cleanupData = null;
+     try {
+-      if (this.requests.has(requestId)) {
+-        const subscription = this.requests.get(requestId);
+-        if (subscription instanceof SubscribeRequest) {
+-          const trackAlias = this.subscriptionAliasMap.get(requestId);
+-          cleanupData = { requestId, trackAlias, subscription };
++      const subscription = this.requests.get(requestId);
++      if (subscription instanceof SubscribeRequest) {
++        const trackAlias = this.subscriptionAliasMap.get(requestId);
++        cleanupData = { requestId, trackAlias, subscription };
++        await this.controlStream.send(new Unsubscribe(requestId));
++        subscription.unsubscribe();
++      } else {
++        // A peer-initiated PUBLISH is registered under a local pseudo request
++        // id. The application only knows the publisher's original request id.
++        for (const [trackAlias, pushed] of this.subscriptions) {
++          if (pushed.publishedRequestId !== requestId) continue;
++          cleanupData = { requestId: pushed.requestId, trackAlias, subscription: pushed };
+           await this.controlStream.send(new Unsubscribe(requestId));
+-          subscription.unsubscribe();
++          pushed.isCanceled = true;
++          break;
+         }
+       }
+     } catch (error) {
+@@ -7688,9 +7704,22 @@ var MOQtailClient = class _MOQtailClient {
+       throw error;
+     } finally {
+       if (cleanupData) {
++        cleanupData.subscription.isCanceled = true;
++        try {
++          cleanupData.subscription.controller?.close();
++        } catch {
++          // The consumer may already have cancelled its readable stream.
++        }
+         this.requests.delete(cleanupData.requestId);
+-        this.subscriptions.delete(cleanupData.trackAlias);
+-        this.aliasFullTrackNameMap.delete(cleanupData.trackAlias);
++        if (cleanupData.trackAlias !== void 0) {
++          this.retiredTrackAliases.add(cleanupData.trackAlias);
++          if (this.retiredTrackAliases.size > 1024) {
++            this.retiredTrackAliases.delete(this.retiredTrackAliases.values().next().value);
++          }
++          this.subscriptions.delete(cleanupData.trackAlias);
++          this.aliasFullTrackNameMap.delete(cleanupData.trackAlias);
++        }
++        this.subscriptionAliasMap.delete(cleanupData.requestId);
+         this.requestIdMap.removeMappingByRequestId(cleanupData.requestId);
+       }
+     }
+@@ -8104,6 +8133,8 @@ var MOQtailClient = class _MOQtailClient {
+     this.aliasFullTrackNameMap.set(msg.trackAlias, msg.fullTrackName);
+     const receiver = {
+       requestId: msg.requestId,
++      publishedRequestId: msg.requestId,
++      isCanceled: false,
+       streamsAccepted: 0,
+       largestLocation: void 0,
+       controller: streamController
+@@ -8342,7 +8373,7 @@ var MOQtailClient = class _MOQtailClient {
          await handler(this, msg);
        }
      } catch (error) {
@@ -37,11 +583,196 @@ index 0fc725784d739c96a1f4557893f117785fbc90af..6bdb0f42b4e15e045c58c215f92bcab0
        throw error;
      }
    }
+@@ -8459,6 +8490,10 @@ var MOQtailClient = class _MOQtailClient {
+           }
+         }
+         if (subscription) {
++          const fullTrackName = this.aliasFullTrackNameMap.get(header.trackAlias);
++          if (!fullTrackName) {
++            throw new ProtocolViolationError("MOQtailClient", "No full track name for received track alias");
++          }
+           subscription.streamsAccepted++;
+           let firstObjectId = null;
+           let subgroupTimeoutId;
+@@ -8470,8 +8505,16 @@ var MOQtailClient = class _MOQtailClient {
+             }, effectiveDiscardPolicy.subgroupReceiveTimeout);
+           }
+           try {
++            if (subscription.isCanceled) {
++              await reader.cancel("subscription cancelled").catch(() => {});
++              return;
++            }
+             while (true) {
+               const { done, value: nextObject } = await reader.read();
++              if (subscription.isCanceled) {
++                await reader.cancel("subscription cancelled").catch(() => {});
++                break;
++              }
+               if (done) {
+                 break;
+               }
+@@ -8488,10 +8531,6 @@ var MOQtailClient = class _MOQtailClient {
+                   } else if (exports.SubgroupHeaderType.hasExplicitSubgroupId(header.type)) {
+                     subgroupId = header.subgroupId ?? null;
+                   }
+-                  const fullTrackName = this.aliasFullTrackNameMap.get(header.trackAlias);
+-                  if (!fullTrackName) {
+-                    throw new ProtocolViolationError("MOQtailClient", "No full track name for received track alias");
+-                  }
+                   const moqtObject = MoqtObject.fromSubgroupObject(
+                     nextObject,
+                     header.groupId,
+@@ -8508,16 +8547,26 @@ var MOQtailClient = class _MOQtailClient {
+                 throw new ProtocolViolationError("MOQtailClient", "Received fetch object after subgroup header");
+               }
+             }
++          } catch (error) {
++            // A relay may reset an open subgroup stream after UNSUBSCRIBE.
++            if (!subscription.isCanceled) throw error;
+           } finally {
+             if (subgroupTimeoutId !== void 0) clearTimeout(subgroupTimeoutId);
++            reader.releaseLock();
+           }
+-          if (subscription.expectedStreams && subscription.expectedStreams === subscription.streamsAccepted) {
++          if (!subscription.isCanceled && subscription.expectedStreams && subscription.expectedStreams === subscription.streamsAccepted) {
+             subscription.controller?.close();
+             this.subscriptions.delete(header.trackAlias);
+             this.requests.delete(subscription.requestId);
+           }
+           return;
+         }
++        if (this.retiredTrackAliases.has(header.trackAlias)) {
++          await reader.cancel("subscription ended").catch(() => {});
++          reader.releaseLock();
++          return;
++        }
++        reader.releaseLock();
+         throw new ProtocolViolationError("MOQtailClient", "No subscription for received track alias");
+       }
+     } catch (error) {
 diff --git a/dist/index.js b/dist/index.js
-index 478bb1395fb3c4b12559c8e05f99f2ac3c45450e..fe7b9d5bc4fabe1bf06837297ff821df5b8315fe 100644
+index 478bb13..1ef6583 100644
 --- a/dist/index.js
 +++ b/dist/index.js
-@@ -8340,7 +8340,7 @@ var MOQtailClient = class _MOQtailClient {
+@@ -5710,6 +5710,8 @@ var handlerPublish = async (client, msg) => {
+   client.aliasFullTrackNameMap.set(msg.trackAlias, msg.fullTrackName);
+   const receiver = {
+     requestId: localPseudoRequestId,
++    publishedRequestId: msg.requestId,
++    isCanceled: false,
+     streamsAccepted: 0,
+     largestLocation: void 0,
+     controller: streamController
+@@ -6883,6 +6885,7 @@ var MOQtailClient = class _MOQtailClient {
+    * Maps track aliases to full track names for quick resolution during data handling.
+    */
+   aliasFullTrackNameMap = /* @__PURE__ */ new Map();
++  retiredTrackAliases = /* @__PURE__ */ new Set();
+   /**
+    * Pending state updates keyed by requestId and applied once a new track alias is seen.
+    * Used to avoid premature state updates.
+@@ -7415,7 +7418,12 @@ var MOQtailClient = class _MOQtailClient {
+     if (this.#isDestroyed) return;
+     this.#isDestroyed = true;
+     await this.stopDatagrams();
+-    if (!this.webTransport.closed) this.webTransport.close();
++    try {
++      this.webTransport.close();
++    } catch {
++      // The transport may already have closed after the control stream ended.
++    }
++    await this.webTransport.closed.catch(() => {});
+     if (this.onSessionTerminated)
+       this.onSessionTerminated(
+         new InternalError("MOQtailClient.disconnect", reason instanceof Error ? reason.message : String(reason))
+@@ -7633,7 +7641,7 @@ var MOQtailClient = class _MOQtailClient {
+     }
+   }
+   /**
+-   * Stops an active subscription identified by its original SUBSCRIBE `requestId`.
++   * Stops an active subscription identified by its SUBSCRIBE or peer PUBLISH `requestId`.
+    *
+    * Sends an {@link Unsubscribe} control frame if the subscription is still active. If the id is unknown or already
+    * cleaned up, the call is a silent no-op (hence multiple calls are idempotent).
+@@ -7641,13 +7649,13 @@ var MOQtailClient = class _MOQtailClient {
+    * Use this when you no longer want incoming objects for a track (e.g. user navigated away, switching quality).
+    * Canceling the consumer stream reader does **not** auto-unsubscribe; call this explicitly for prompt cleanup.
+    *
+-   * @param requestId - The id returned from {@link MOQtailClient.subscribe}.
++   * @param requestId - The id returned from {@link MOQtailClient.subscribe} or received in a peer PUBLISH.
+    * @returns Promise that resolves when the unsubscribe control frame is sent.
+    * @throws :{@link MOQtailError} If the client is destroyed.
+    * @throws :{@link InternalError} Wrapped lower-level failure while attempting to send (session will be disconnected first).
+    *
+    * @remarks
+-   * - Only targets SUBSCRIBE requests, not fetches. Passing a fetch request id is ignored (no-op).
++   * - Targets SUBSCRIBE and accepted peer PUBLISH subscriptions, not fetches. Passing a fetch request id is ignored (no-op).
+    * - Safe to call multiple times; extra calls have no effect.
+    *
+    * @example Subscribe and later unsubscribe
+@@ -7670,13 +7678,21 @@ var MOQtailClient = class _MOQtailClient {
+     if (typeof requestId === "number") requestId = BigInt(requestId);
+     let cleanupData = null;
+     try {
+-      if (this.requests.has(requestId)) {
+-        const subscription = this.requests.get(requestId);
+-        if (subscription instanceof SubscribeRequest) {
+-          const trackAlias = this.subscriptionAliasMap.get(requestId);
+-          cleanupData = { requestId, trackAlias, subscription };
++      const subscription = this.requests.get(requestId);
++      if (subscription instanceof SubscribeRequest) {
++        const trackAlias = this.subscriptionAliasMap.get(requestId);
++        cleanupData = { requestId, trackAlias, subscription };
++        await this.controlStream.send(new Unsubscribe(requestId));
++        subscription.unsubscribe();
++      } else {
++        // A peer-initiated PUBLISH is registered under a local pseudo request
++        // id. The application only knows the publisher's original request id.
++        for (const [trackAlias, pushed] of this.subscriptions) {
++          if (pushed.publishedRequestId !== requestId) continue;
++          cleanupData = { requestId: pushed.requestId, trackAlias, subscription: pushed };
+           await this.controlStream.send(new Unsubscribe(requestId));
+-          subscription.unsubscribe();
++          pushed.isCanceled = true;
++          break;
+         }
+       }
+     } catch (error) {
+@@ -7686,9 +7702,22 @@ var MOQtailClient = class _MOQtailClient {
+       throw error;
+     } finally {
+       if (cleanupData) {
++        cleanupData.subscription.isCanceled = true;
++        try {
++          cleanupData.subscription.controller?.close();
++        } catch {
++          // The consumer may already have cancelled its readable stream.
++        }
+         this.requests.delete(cleanupData.requestId);
+-        this.subscriptions.delete(cleanupData.trackAlias);
+-        this.aliasFullTrackNameMap.delete(cleanupData.trackAlias);
++        if (cleanupData.trackAlias !== void 0) {
++          this.retiredTrackAliases.add(cleanupData.trackAlias);
++          if (this.retiredTrackAliases.size > 1024) {
++            this.retiredTrackAliases.delete(this.retiredTrackAliases.values().next().value);
++          }
++          this.subscriptions.delete(cleanupData.trackAlias);
++          this.aliasFullTrackNameMap.delete(cleanupData.trackAlias);
++        }
++        this.subscriptionAliasMap.delete(cleanupData.requestId);
+         this.requestIdMap.removeMappingByRequestId(cleanupData.requestId);
+       }
+     }
+@@ -8102,6 +8131,8 @@ var MOQtailClient = class _MOQtailClient {
+     this.aliasFullTrackNameMap.set(msg.trackAlias, msg.fullTrackName);
+     const receiver = {
+       requestId: msg.requestId,
++      publishedRequestId: msg.requestId,
++      isCanceled: false,
+       streamsAccepted: 0,
+       largestLocation: void 0,
+       controller: streamController
+@@ -8340,7 +8371,7 @@ var MOQtailClient = class _MOQtailClient {
          await handler(this, msg);
        }
      } catch (error) {
@@ -50,3 +781,70 @@ index 478bb1395fb3c4b12559c8e05f99f2ac3c45450e..fe7b9d5bc4fabe1bf06837297ff821df
        throw error;
      }
    }
+@@ -8457,6 +8488,10 @@ var MOQtailClient = class _MOQtailClient {
+           }
+         }
+         if (subscription) {
++          const fullTrackName = this.aliasFullTrackNameMap.get(header.trackAlias);
++          if (!fullTrackName) {
++            throw new ProtocolViolationError("MOQtailClient", "No full track name for received track alias");
++          }
+           subscription.streamsAccepted++;
+           let firstObjectId = null;
+           let subgroupTimeoutId;
+@@ -8468,8 +8503,16 @@ var MOQtailClient = class _MOQtailClient {
+             }, effectiveDiscardPolicy.subgroupReceiveTimeout);
+           }
+           try {
++            if (subscription.isCanceled) {
++              await reader.cancel("subscription cancelled").catch(() => {});
++              return;
++            }
+             while (true) {
+               const { done, value: nextObject } = await reader.read();
++              if (subscription.isCanceled) {
++                await reader.cancel("subscription cancelled").catch(() => {});
++                break;
++              }
+               if (done) {
+                 break;
+               }
+@@ -8486,10 +8529,6 @@ var MOQtailClient = class _MOQtailClient {
+                   } else if (SubgroupHeaderType.hasExplicitSubgroupId(header.type)) {
+                     subgroupId = header.subgroupId ?? null;
+                   }
+-                  const fullTrackName = this.aliasFullTrackNameMap.get(header.trackAlias);
+-                  if (!fullTrackName) {
+-                    throw new ProtocolViolationError("MOQtailClient", "No full track name for received track alias");
+-                  }
+                   const moqtObject = MoqtObject.fromSubgroupObject(
+                     nextObject,
+                     header.groupId,
+@@ -8506,16 +8545,26 @@ var MOQtailClient = class _MOQtailClient {
+                 throw new ProtocolViolationError("MOQtailClient", "Received fetch object after subgroup header");
+               }
+             }
++          } catch (error) {
++            // A relay may reset an open subgroup stream after UNSUBSCRIBE.
++            if (!subscription.isCanceled) throw error;
+           } finally {
+             if (subgroupTimeoutId !== void 0) clearTimeout(subgroupTimeoutId);
++            reader.releaseLock();
+           }
+-          if (subscription.expectedStreams && subscription.expectedStreams === subscription.streamsAccepted) {
++          if (!subscription.isCanceled && subscription.expectedStreams && subscription.expectedStreams === subscription.streamsAccepted) {
+             subscription.controller?.close();
+             this.subscriptions.delete(header.trackAlias);
+             this.requests.delete(subscription.requestId);
+           }
+           return;
+         }
++        if (this.retiredTrackAliases.has(header.trackAlias)) {
++          await reader.cancel("subscription ended").catch(() => {});
++          reader.releaseLock();
++          return;
++        }
++        reader.releaseLock();
+         throw new ProtocolViolationError("MOQtailClient", "No subscription for received track alias");
+       }
+     } catch (error) {
