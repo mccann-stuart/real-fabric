@@ -116,7 +116,7 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(capturing).toContain('value="40"');
   });
 
-  it("renders invite feedback states in the live status region", () => {
+  it("renders invite feedback states and accessible labels on RoomTopBar copy button", () => {
     const baseProps = {
       code: "TEST1234567890123456",
       onCopyInvite: () => {},
@@ -130,13 +130,24 @@ describe("Micro-UX & Accessibility Improvements", () => {
       React.createElement(RoomTopBar, { ...baseProps, copyState: "idle" }),
     );
     expect(idle).toContain("Copy invite");
+    expect(idle).toContain('aria-label="Copy invite link to clipboard"');
+    expect(idle).toContain('title="Copy invite link to clipboard"');
 
     const copied = renderToStaticMarkup(
       React.createElement(RoomTopBar, { ...baseProps, copyState: "copied" }),
     );
     expect(copied).toContain("Invite copied");
     expect(copied).toContain("button--success");
+    expect(copied).toContain('aria-label="Invite link copied to clipboard"');
+    expect(copied).toContain('title="Invite link copied to clipboard"');
     expect(copied).toContain("Invite link copied to the clipboard.");
+
+    const failed = renderToStaticMarkup(
+      React.createElement(RoomTopBar, { ...baseProps, copyState: "failed" }),
+    );
+    expect(failed).toContain("Retry copy");
+    expect(failed).toContain('aria-label="Retry copying invite link"');
+    expect(failed).toContain('title="Retry copying invite link"');
   });
 
   it("makes the active inspector panel keyboard reachable", () => {
@@ -241,9 +252,10 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(html).toContain('aria-label="Signal path (Shortcut: 1)"');
     expect(html).toContain('title="Signal path (Shortcut: 1)"');
     expect(html).toContain('aria-keyshortcuts="5"');
+    expect(html).toContain('<span aria-hidden="true">×</span>');
   });
 
-  it("announces the pending leave action", () => {
+  it("announces the pending leave action and sets aria-modal", () => {
     const html = renderToStaticMarkup(
       React.createElement(LeaveRoomDialog, {
         dialogRef: { current: null },
@@ -255,6 +267,7 @@ describe("Micro-UX & Accessibility Improvements", () => {
       }),
     );
 
+    expect(html).toContain('aria-modal="true"');
     expect(html).toContain('aria-busy="true"');
     expect(html).toContain("Leaving…");
   });
@@ -490,5 +503,42 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(html).toContain("Not subscribed");
     expect(html).toContain("On (cooperative)");
     expect(html).toContain("Not exposed");
+  });
+
+  it("renders SVG title elements for relay and participant graph nodes", () => {
+    const participant = (
+      id: string,
+      name: string,
+      role: "human" | "ai",
+      simulated = false,
+    ): Participant => ({
+      id,
+      displayName: name,
+      role,
+      state: "connected",
+      address: role === "ai" ? `ai/${id}` : null,
+      wakeName: role === "ai" ? id : null,
+      pipeline: role === "ai" ? "listening" : null,
+      simulated,
+      joinedAt: 1_000,
+      reconnectUntil: null,
+      lastActiveAt: 1_000,
+    });
+    const html = renderToStaticMarkup(
+      React.createElement(SubscriptionGraph, {
+        participants: [
+          participant("you", "Ada Lovelace", "human"),
+          participant("atlas", "Atlas AI", "ai", true),
+        ],
+        routing: [],
+        viewerId: "you",
+        publishing: false,
+        subscribedIds: [],
+      }),
+    );
+
+    expect(html).toContain("<title>MoQ Relay</title>");
+    expect(html).toContain("<title>Ada Lovelace (Human, You)</title>");
+    expect(html).toContain("<title>Atlas AI (AI, Simulated)</title>");
   });
 });

@@ -35,6 +35,20 @@ export function RoomTopBar({
         <button
           className={`button button--compact${copyState === "copied" ? " button--success" : ""}`}
           type="button"
+          aria-label={
+            copyState === "copied"
+              ? "Invite link copied to clipboard"
+              : copyState === "failed"
+                ? "Retry copying invite link"
+                : "Copy invite link to clipboard"
+          }
+          title={
+            copyState === "copied"
+              ? "Invite link copied to clipboard"
+              : copyState === "failed"
+                ? "Retry copying invite link"
+                : "Copy invite link to clipboard"
+          }
           onClick={onCopyInvite}
         >
           {copyState === "copied"

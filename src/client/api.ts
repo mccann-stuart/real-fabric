@@ -16,7 +16,7 @@ export interface StoredSession {
   participantId: string;
   rejoinToken: string;
   displayName: string;
-  /** H12: the reload path needs to know the token is still inside the window. */
+  /** H12: last entry or real page hide, when the rejoin window starts. */
   storedAt: number;
 }
 
@@ -84,6 +84,9 @@ export async function leaveRoom(session: StoredSession): Promise<RoomSnapshot> {
  * `keepalive`. Failure is acceptable — the participant then times out instead.
  */
 export function signalLeaveOnUnload(session: StoredSession): void {
+  // A participant may have spent many minutes in the room. Match the client's
+  // 60-second storage bound to this actual unload, not their original entry.
+  storeSession(session);
   void fetch(roomPath(session.code, "leave"), {
     method: "POST",
     headers: { "content-type": "application/json" },

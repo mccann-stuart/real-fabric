@@ -11,6 +11,14 @@ export class HttpError extends Error {
 /** Maximum allowed JSON body payload size (32 KiB) to prevent resource exhaustion (CWE-400 / CWE-770). */
 const MAX_BODY_BYTES = 32 * 1024;
 
+/** ASCII C0 control characters (excluding tab \t and newline \n) and DEL \x7F. */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: Intentionally matching control characters for input validation
+const CONTROL_CHARACTERS = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/;
+
+/** All ASCII control characters including tab \t, newline \n, return \r, and DEL \x7F. */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: Intentionally matching control characters for input validation
+const ALL_CONTROL_CHARACTERS = /[\x00-\x1F\x7F]/;
+
 export async function readJsonObject(request: Request): Promise<Record<string, unknown>> {
   const contentType = request.headers.get("content-type") ?? "";
   if (!contentType.toLowerCase().includes("application/json")) {
@@ -77,6 +85,13 @@ export function requiredString(
   if (typeof value !== "string" || value.trim().length === 0) {
     throw new HttpError(400, "invalid_request", `Field '${field}' must be a non-empty string.`);
   }
+  if (CONTROL_CHARACTERS.test(value)) {
+    throw new HttpError(
+      400,
+      "invalid_request",
+      `Field '${field}' contains invalid control characters.`,
+    );
+  }
   const trimmed = value.trim();
   if (trimmed.length > maximumLength) {
     throw new HttpError(
@@ -100,6 +115,13 @@ export function optionalString(
       400,
       "invalid_request",
       `Field '${field}' must be a string of at most ${maximumLength} characters.`,
+    );
+  }
+  if (CONTROL_CHARACTERS.test(value)) {
+    throw new HttpError(
+      400,
+      "invalid_request",
+      `Field '${field}' contains invalid control characters.`,
     );
   }
   return value;
@@ -170,13 +192,16 @@ export function parseAuthPayload(payload: unknown): AuthPayloadResult {
   const participantId = p.participantId;
   const token = p.token;
 
+  // Reject control characters in credentials to prevent control character injection (CWE-20 / CWE-116).
   if (
     typeof participantId !== "string" ||
     participantId.length === 0 ||
     participantId.length > 64 ||
+    ALL_CONTROL_CHARACTERS.test(participantId) ||
     typeof token !== "string" ||
     token.length === 0 ||
-    token.length > 128
+    token.length > 128 ||
+    ALL_CONTROL_CHARACTERS.test(token)
   ) {
     return { success: false, error: "invalid_credentials" };
   }

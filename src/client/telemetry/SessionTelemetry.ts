@@ -1,5 +1,6 @@
 import type { Measurement } from "../../shared/measurement";
 import { NOT_EXPOSED } from "../../shared/measurement";
+import type { ObjectRateSample } from "./ObjectRateWindow";
 
 /**
  * FR6: correlation ids, timings, counts, routing changes, barge-in latency,
@@ -36,24 +37,49 @@ const PERMITTED_KEYS: ReadonlySet<string> = new Set([
 ]);
 
 const RETAINED_EVENTS = 2_000;
+const RETAINED_RATE_SAMPLES = 1_200;
+
+type TimedObjectRateSample = ObjectRateSample & { at: number };
 
 export class SessionTelemetry {
   readonly correlationId = crypto.randomUUID();
   private events: TelemetryEvent[] = [];
   private measurements = new Map<string, Measurement<number | boolean>>();
+  private objectRateSamples: TimedObjectRateSample[] = [];
 
   record(event: Omit<TelemetryEvent, "at">): void {
     this.events.push({ ...sanitiseEvent(event), at: Date.now() });
     // Bounded: a ten-minute run at the reference composition must not grow
     // without limit any more than the audio buffers may (H13).
+    // ⚡ Bolt Optimization: Drop the oldest event in-place via shift() when capacity is exceeded
+    // to avoid allocating a new 2,000-element array on every event recording.
     if (this.events.length > RETAINED_EVENTS) {
-      this.events = this.events.slice(-RETAINED_EVENTS);
+      this.events.shift();
     }
   }
 
   /** H15: measurements keep their exposure state into the export. */
   recordMeasurement(key: string, measurement: Measurement<number | boolean>): void {
     this.measurements.set(key, measurement);
+  }
+
+  /** One numeric interval per sample, bounded to a full 20-minute room at 1 Hz. */
+  recordObjectRateSample(sample: ObjectRateSample): void {
+    if (!validObjectRateSample(sample)) return;
+    this.objectRateSamples.push({
+      at: Date.now(),
+      connection: sample.connection,
+      intervalMs: sample.intervalMs,
+      publishedObjects: sample.publishedObjects,
+      subscribedObjects: sample.subscribedObjects,
+      publishedObjectsPerSecond: sample.publishedObjectsPerSecond,
+      subscribedObjectsPerSecond: sample.subscribedObjectsPerSecond,
+    });
+    // ⚡ Bolt Optimization: Drop the oldest sample in-place via shift() when capacity is exceeded
+    // to avoid allocating a new 1,200-element array on every rate sample recording.
+    if (this.objectRateSamples.length > RETAINED_RATE_SAMPLES) {
+      this.objectRateSamples.shift();
+    }
   }
 
   report(roomId: string): Record<string, unknown> {
@@ -69,6 +95,18 @@ export class SessionTelemetry {
           measurement.exposed ? measurement.value : NOT_EXPOSED,
         ]),
       ),
+      // Rebuild each row from numeric fields only, including after retention.
+      objectRateSamples: this.objectRateSamples
+        .filter((sample) => Number.isSafeInteger(sample.at) && validObjectRateSample(sample))
+        .map((sample) => ({
+          at: sample.at,
+          connection: sample.connection,
+          intervalMs: sample.intervalMs,
+          publishedObjects: sample.publishedObjects,
+          subscribedObjects: sample.subscribedObjects,
+          publishedObjectsPerSecond: sample.publishedObjectsPerSecond,
+          subscribedObjectsPerSecond: sample.subscribedObjectsPerSecond,
+        })),
       // Filtered again on the way out, so an event retained before a change to
       // the permitted set cannot leave in an export.
       events: this.events.map((event) => sanitiseEvent(event)),
@@ -84,14 +122,40 @@ export class SessionTelemetry {
   clear(): void {
     this.events = [];
     this.measurements.clear();
+    this.objectRateSamples = [];
   }
 }
 
-function sanitiseEvent<Event extends Partial<TelemetryEvent>>(event: Event): Event {
-  const entries = Object.entries(event).filter(
-    ([key, value]) => PERMITTED_KEYS.has(key) && isProtocolValue(value),
+function validObjectRateSample(sample: ObjectRateSample): boolean {
+  return (
+    Number.isSafeInteger(sample.connection) &&
+    sample.connection > 0 &&
+    Number.isFinite(sample.intervalMs) &&
+    sample.intervalMs > 0 &&
+    Number.isSafeInteger(sample.publishedObjects) &&
+    sample.publishedObjects >= 0 &&
+    Number.isSafeInteger(sample.subscribedObjects) &&
+    sample.subscribedObjects >= 0 &&
+    Number.isFinite(sample.publishedObjectsPerSecond) &&
+    sample.publishedObjectsPerSecond >= 0 &&
+    Number.isFinite(sample.subscribedObjectsPerSecond) &&
+    sample.subscribedObjectsPerSecond >= 0
   );
-  return Object.fromEntries(entries) as Event;
+}
+
+// ⚡ Bolt Optimization: Iterate event keys directly to filter permitted keys and protocol values,
+// avoiding array tuple allocations from Object.entries() and Object.fromEntries() on every event.
+function sanitiseEvent<Event extends Partial<TelemetryEvent>>(event: Event): Event {
+  const result: Record<string, unknown> = {};
+  for (const key in event) {
+    if (PERMITTED_KEYS.has(key)) {
+      const value = (event as Record<string, unknown>)[key];
+      if (isProtocolValue(value)) {
+        result[key] = value;
+      }
+    }
+  }
+  return result as Event;
 }
 
 /**

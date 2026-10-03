@@ -33,6 +33,8 @@ describe("Real Fabric Worker", () => {
     expect(response.headers.get("x-content-type-options")).toBe("nosniff");
     expect(response.headers.get("x-frame-options")).toBe("DENY");
     expect(response.headers.get("cross-origin-opener-policy")).toBe("same-origin");
+    expect(response.headers.get("cross-origin-resource-policy")).toBe("same-origin");
+    expect(response.headers.get("x-permitted-cross-domain-policies")).toBe("none");
 
     const body = (await response.json()) as {
       error: { code: string; message: string; correlationId: string };
@@ -228,6 +230,34 @@ describe("Real Fabric Worker", () => {
     expect(await limited.json()).toMatchObject({
       error: { code: "room_join_limited" },
     });
+  });
+
+  it("admits a normal 20-person entry flow from one IP without a 429", async () => {
+    const headers = {
+      "content-type": "application/json",
+      "cf-connecting-ip": "203.0.113.210",
+    };
+    const createdResponse = await SELF.fetch("https://real-fabric.test/api/rooms", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ displayName: "Host" }),
+    });
+    expect(createdResponse.status).toBe(201);
+    const created = (await createdResponse.json()) as CreateRoomResponse;
+
+    for (let guest = 1; guest < 20; guest += 1) {
+      const joinedResponse = await SELF.fetch(
+        `https://real-fabric.test/api/rooms/${created.room.code}/join`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ displayName: `Guest ${guest}` }),
+        },
+      );
+      expect(joinedResponse.status, `Guest ${guest} should enter without a 429`).toBe(200);
+      const joined = (await joinedResponse.json()) as CreateRoomResponse;
+      expect(joined.room.composition.humans).toBe(guest + 1);
+    }
   });
 
   it("does not put participant credentials in a shareable room snapshot", async () => {

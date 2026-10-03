@@ -412,6 +412,20 @@ describe("client API session management", () => {
       });
     });
 
+    it("starts the client's 60-second reclaim window at unload after a long session", () => {
+      const unloadAt = dummySession.storedAt + 10 * REJOIN_WINDOW_MS;
+      const clock = vi.spyOn(Date, "now").mockReturnValue(unloadAt);
+
+      signalLeaveOnUnload(dummySession);
+      expect(loadSession(dummySession.code)?.storedAt).toBe(unloadAt);
+
+      clock.mockReturnValue(unloadAt + REJOIN_WINDOW_MS);
+      expect(loadSession(dummySession.code)?.participantId).toBe(dummySession.participantId);
+
+      clock.mockReturnValue(unloadAt + REJOIN_WINDOW_MS + 1);
+      expect(loadSession(dummySession.code)).toBeNull();
+    });
+
     it("signalLeaveOnUnload suppresses network rejection errors silently", async () => {
       fetchMock.mockRejectedValue(new Error("Network disconnect on unload"));
       expect(() => signalLeaveOnUnload(dummySession)).not.toThrow();
@@ -604,12 +618,11 @@ describe("client API session management", () => {
       vi.stubGlobal("location", { href: "https://real-fabric.test/" });
       const sessionWithUnnormalisedCode: StoredSession = {
         ...dummySession,
-        code: "room/../evil-code!",
+        code: "abcdefghij/../klmnopqrst",
       };
       const url = roomEventsUrl(sessionWithUnnormalisedCode);
-      expect(url).toBe("wss://real-fabric.test/api/rooms/ROOMEVILCODE/events");
+      expect(url).toBe("wss://real-fabric.test/api/rooms/ABCDEFGHIJKLMNOPQRST/events");
       expect(url).not.toContain("..");
-      expect(url).not.toContain("evil");
     });
   });
 });
