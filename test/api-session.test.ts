@@ -16,6 +16,7 @@ import {
   releaseFloor,
   removeAi,
   requestFloor,
+  roomEventsUrl,
   type StoredSession,
   setAiPipeline,
   setAiToAi,
@@ -380,13 +381,13 @@ describe("client API session management", () => {
       });
     });
 
-    it("leaveRoom sends POST /api/rooms/:code/leave with credentials", async () => {
+    it("leaveRoom sends POST /api/rooms/:code/leave with credentials and normalised room code", async () => {
       await leaveRoom(dummySession);
       const [url, init] = (fetchMock.mock.calls[0] ?? []) as [
         string,
         RequestInit & { body: string },
       ];
-      expect(url).toBe("/api/rooms/room-abc-123/leave");
+      expect(url).toBe("/api/rooms/ROOMABC123/leave");
       expect(init.method).toBe("POST");
       expect(JSON.parse(init.body)).toEqual({
         participantId: "p-100",
@@ -394,14 +395,14 @@ describe("client API session management", () => {
       });
     });
 
-    it("signalLeaveOnUnload sends fire-and-forget POST request with keepalive", async () => {
+    it("signalLeaveOnUnload sends fire-and-forget POST request with keepalive and normalised room code", async () => {
       signalLeaveOnUnload(dummySession);
       expect(fetchMock).toHaveBeenCalledTimes(1);
       const [url, init] = (fetchMock.mock.calls[0] ?? []) as [
         string,
         RequestInit & { body: string },
       ];
-      expect(url).toBe("/api/rooms/room-abc-123/leave");
+      expect(url).toBe("/api/rooms/ROOMABC123/leave");
       expect(init.method).toBe("POST");
       expect(init.keepalive).toBe(true);
       expect((init.headers as Record<string, string>)["content-type"]).toBe("application/json");
@@ -436,7 +437,7 @@ describe("client API session management", () => {
         string,
         RequestInit & { body: string },
       ];
-      expect(url).toBe("/api/rooms/room-abc-123/routing");
+      expect(url).toBe("/api/rooms/ROOMABC123/routing");
       expect(init.method).toBe("POST");
       expect(JSON.parse(init.body)).toEqual({
         participantId: "p-100",
@@ -453,7 +454,7 @@ describe("client API session management", () => {
         string,
         RequestInit & { body: string },
       ];
-      expect(url).toBe("/api/rooms/room-abc-123/ai");
+      expect(url).toBe("/api/rooms/ROOMABC123/ai");
       expect(init.method).toBe("POST");
       expect(JSON.parse(init.body)).toEqual({
         participantId: "p-100",
@@ -473,7 +474,7 @@ describe("client API session management", () => {
         string,
         RequestInit & { body: string },
       ];
-      expect(url).toBe("/api/rooms/room-abc-123/ai");
+      expect(url).toBe("/api/rooms/ROOMABC123/ai");
       expect(init.method).toBe("POST");
       expect(JSON.parse(init.body)).toEqual({
         participantId: "p-100",
@@ -491,7 +492,7 @@ describe("client API session management", () => {
         string,
         RequestInit & { body: string },
       ];
-      expect(url).toBe("/api/rooms/room-abc-123/ai");
+      expect(url).toBe("/api/rooms/ROOMABC123/ai");
       expect(init.method).toBe("DELETE");
       expect(JSON.parse(init.body)).toEqual({
         participantId: "p-100",
@@ -507,7 +508,7 @@ describe("client API session management", () => {
         string,
         RequestInit & { body: string },
       ];
-      expect(url).toBe("/api/rooms/room-abc-123/ai-pipeline");
+      expect(url).toBe("/api/rooms/ROOMABC123/ai-pipeline");
       expect(init.method).toBe("POST");
       expect(JSON.parse(init.body)).toEqual({
         participantId: "p-100",
@@ -523,7 +524,7 @@ describe("client API session management", () => {
         string,
         RequestInit & { body: string },
       ];
-      expect(url).toBe("/api/rooms/room-abc-123/floor");
+      expect(url).toBe("/api/rooms/ROOMABC123/floor");
       expect(init.method).toBe("POST");
       expect(JSON.parse(init.body)).toEqual({
         participantId: "p-100",
@@ -539,7 +540,7 @@ describe("client API session management", () => {
         string,
         RequestInit & { body: string },
       ];
-      expect(url).toBe("/api/rooms/room-abc-123/floor");
+      expect(url).toBe("/api/rooms/ROOMABC123/floor");
       expect(init.method).toBe("POST");
       expect(JSON.parse(init.body)).toEqual({
         participantId: "p-100",
@@ -556,7 +557,7 @@ describe("client API session management", () => {
         string,
         RequestInit & { body: string },
       ];
-      expect(url).toBe("/api/rooms/room-abc-123/floor");
+      expect(url).toBe("/api/rooms/ROOMABC123/floor");
       expect(JSON.parse(init.body)).toEqual({
         participantId: "p-100",
         rejoinToken: "rt-200",
@@ -571,7 +572,7 @@ describe("client API session management", () => {
         string,
         RequestInit & { body: string },
       ];
-      expect(url).toBe("/api/rooms/room-abc-123/ai-to-ai");
+      expect(url).toBe("/api/rooms/ROOMABC123/ai-to-ai");
       expect(init.method).toBe("POST");
       expect(JSON.parse(init.body)).toEqual({
         participantId: "p-100",
@@ -586,7 +587,7 @@ describe("client API session management", () => {
         string,
         RequestInit & { body: string },
       ];
-      expect(url).toBe("/api/rooms/room-abc-123/ai-to-ai");
+      expect(url).toBe("/api/rooms/ROOMABC123/ai-to-ai");
       expect(init.method).toBe("POST");
       expect(JSON.parse(init.body)).toEqual({
         participantId: "p-100",
@@ -602,7 +603,7 @@ describe("client API session management", () => {
         string,
         RequestInit & { body: string },
       ];
-      expect(url).toBe("/api/rooms/room-abc-123/presenter");
+      expect(url).toBe("/api/rooms/ROOMABC123/presenter");
       expect(init.method).toBe("POST");
       expect(JSON.parse(init.body)).toEqual({
         participantId: "p-100",
@@ -611,6 +612,17 @@ describe("client API session management", () => {
         simulatedAis: 2,
         scriptedResponses: true,
       });
+    });
+
+    it("roomEventsUrl generates a WebSocket URL with a normalised room code", () => {
+      vi.stubGlobal("location", { href: "https://real-fabric.test/" });
+      const sessionWithUnnormalisedCode: StoredSession = {
+        ...dummySession,
+        code: "abcdefghij/../klmnopqrst",
+      };
+      const url = roomEventsUrl(sessionWithUnnormalisedCode);
+      expect(url).toBe("wss://real-fabric.test/api/rooms/ABCDEFGHIJKLMNOPQRST/events");
+      expect(url).not.toContain("..");
     });
   });
 });
