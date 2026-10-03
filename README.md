@@ -6,7 +6,7 @@ Real Fabric is a ten-minute conference-stage demonstration. Humans publish indep
 
 ## Current state
 
-The React/Vite client, SQLite Durable Object room service, control-plane WebSocket, presenter simulation, browser audio pipeline, inspector, telemetry and failure registry are implemented. The latest recorded suite has 447 automated tests across 27 files. The inspector exposes actual publication and accepted subscriptions, with unavailable measurements shown as **Not exposed** and partial figures as **Reported · no gate**.
+The React/Vite client, SQLite Durable Object room service, control-plane WebSocket, presenter simulation, browser audio pipeline, inspector, telemetry and failure registry are implemented. The latest recorded suite has 453 automated tests across 27 files. The inspector exposes actual publication and accepted subscriptions, with unavailable measurements shown as **Not exposed** and partial figures as **Reported · no gate**.
 
 Gate 1 transport acceptance passed on 10 September 2026: a browser-to-relay trace proved draft-16 MOQT negotiation, publication and subscription over WebTransport and HTTP/3/QUIC with 0.0% loss in the sampled frame exchange. Evidence is in the local `reports/gate1-transport-trace.json` and `reports/gate1-transport.netlog`; `wrangler.jsonc` sets `MOQT_TRANSPORT_VERIFIED=true`. This does not qualify draft 20, Safari, acoustic latency or the full demo run. Presenter AI responses remain scripted and labelled; there is no live recognition, model, synthesis or AI-worker audio pipeline.
 
@@ -67,6 +67,12 @@ On iPhone, returning from an interruption requires an explicit **Resume audio** 
 ### Measured capacity
 
 **Not yet measured.** The room has no configured participant cap. The degradation ladder is implemented and unit-tested, but the participant counts at which its steps engage on reference hardware and network are unknown. Its synthetic triggers are implementation rules, not capacity measurements. The [roadmap](design/ROADMAP.md) records the benchmark and acceptance work.
+
+### Object-rate benchmark telemetry
+
+The inspector's recent outbound and inbound rates use object-count changes over live intervals, sampled at one-second cadence. Each reconnection starts a new baseline. A rate reads **Not exposed** until a full interval has been observed, and after a timer gap longer than five seconds; a measured zero means no objects arrived during a complete interval.
+
+The room's **Export sanitised JSON** action includes the latest object counts and rates in `measurements`, plus bounded `objectRateSamples` for benchmarking. Each numeric sample records its timestamp, connection number, actual interval length, object counts in that interval and rates in objects per second. Connection numbers and timestamps separate recovered sessions and observation gaps. The export contains no audio or transcript data. These local measurements do not establish measured participant capacity or acoustic acceptance.
 
 ## Local setup and verification
 

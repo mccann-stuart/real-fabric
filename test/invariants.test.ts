@@ -922,6 +922,51 @@ describe("H15 — unobservable measurements read Not exposed", () => {
 });
 
 describe("AC-14 — the sanitised export carries no identifying content", () => {
+  it("exports only numeric object-rate benchmark fields", () => {
+    const telemetry = new SessionTelemetry();
+    telemetry.recordObjectRateSample({
+      connection: 1,
+      intervalMs: 1_000,
+      publishedObjects: 50,
+      subscribedObjects: 100,
+      publishedObjectsPerSecond: 50,
+      subscribedObjectsPerSecond: 100,
+      ...({ transcript: "private speech" } as object),
+    });
+    const retained = telemetry as unknown as {
+      objectRateSamples: Array<Record<string, unknown>>;
+    };
+    const retainedSample = retained.objectRateSamples[0];
+    if (!retainedSample) throw new Error("Expected a retained object-rate sample.");
+    retainedSample.deviceLabel = "Private microphone";
+    telemetry.recordObjectRateSample({
+      connection: 1,
+      intervalMs: 1_000,
+      publishedObjects: 0,
+      subscribedObjects: 0,
+      publishedObjectsPerSecond: Number.POSITIVE_INFINITY,
+      subscribedObjectsPerSecond: 0,
+    });
+
+    const report = telemetry.report("ROOM") as {
+      objectRateSamples: Array<Record<string, unknown>>;
+    };
+    expect(report.objectRateSamples).toHaveLength(1);
+    const exportedSample = report.objectRateSamples[0];
+    if (!exportedSample) throw new Error("Expected an exported object-rate sample.");
+    expect(Object.keys(exportedSample).sort()).toEqual([
+      "at",
+      "connection",
+      "intervalMs",
+      "publishedObjects",
+      "publishedObjectsPerSecond",
+      "subscribedObjects",
+      "subscribedObjectsPerSecond",
+    ]);
+    expect(JSON.stringify(report)).not.toContain("private speech");
+    expect(JSON.stringify(report)).not.toContain("Private microphone");
+  });
+
   it("strips forbidden fields even when a caller passes them", () => {
     const telemetry = new SessionTelemetry();
     telemetry.record({

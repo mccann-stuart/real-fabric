@@ -1,5 +1,6 @@
 import type { Measurement } from "../../shared/measurement";
 import { NOT_EXPOSED } from "../../shared/measurement";
+import type { ObjectRateSample } from "./ObjectRateWindow";
 
 /**
  * FR6: correlation ids, timings, counts, routing changes, barge-in latency,
@@ -36,11 +37,15 @@ const PERMITTED_KEYS: ReadonlySet<string> = new Set([
 ]);
 
 const RETAINED_EVENTS = 2_000;
+const RETAINED_RATE_SAMPLES = 1_200;
+
+type TimedObjectRateSample = ObjectRateSample & { at: number };
 
 export class SessionTelemetry {
   readonly correlationId = crypto.randomUUID();
   private events: TelemetryEvent[] = [];
   private measurements = new Map<string, Measurement<number | boolean>>();
+  private objectRateSamples: TimedObjectRateSample[] = [];
 
   record(event: Omit<TelemetryEvent, "at">): void {
     this.events.push({ ...sanitiseEvent(event), at: Date.now() });
@@ -56,6 +61,23 @@ export class SessionTelemetry {
     this.measurements.set(key, measurement);
   }
 
+  /** One numeric interval per sample, bounded to a full 20-minute room at 1 Hz. */
+  recordObjectRateSample(sample: ObjectRateSample): void {
+    if (!validObjectRateSample(sample)) return;
+    this.objectRateSamples.push({
+      at: Date.now(),
+      connection: sample.connection,
+      intervalMs: sample.intervalMs,
+      publishedObjects: sample.publishedObjects,
+      subscribedObjects: sample.subscribedObjects,
+      publishedObjectsPerSecond: sample.publishedObjectsPerSecond,
+      subscribedObjectsPerSecond: sample.subscribedObjectsPerSecond,
+    });
+    if (this.objectRateSamples.length > RETAINED_RATE_SAMPLES) {
+      this.objectRateSamples = this.objectRateSamples.slice(-RETAINED_RATE_SAMPLES);
+    }
+  }
+
   report(roomId: string): Record<string, unknown> {
     return {
       format: "real-fabric-session-v1",
@@ -69,6 +91,18 @@ export class SessionTelemetry {
           measurement.exposed ? measurement.value : NOT_EXPOSED,
         ]),
       ),
+      // Rebuild each row from numeric fields only, including after retention.
+      objectRateSamples: this.objectRateSamples
+        .filter((sample) => Number.isSafeInteger(sample.at) && validObjectRateSample(sample))
+        .map((sample) => ({
+          at: sample.at,
+          connection: sample.connection,
+          intervalMs: sample.intervalMs,
+          publishedObjects: sample.publishedObjects,
+          subscribedObjects: sample.subscribedObjects,
+          publishedObjectsPerSecond: sample.publishedObjectsPerSecond,
+          subscribedObjectsPerSecond: sample.subscribedObjectsPerSecond,
+        })),
       // Filtered again on the way out, so an event retained before a change to
       // the permitted set cannot leave in an export.
       events: this.events.map((event) => sanitiseEvent(event)),
@@ -84,7 +118,25 @@ export class SessionTelemetry {
   clear(): void {
     this.events = [];
     this.measurements.clear();
+    this.objectRateSamples = [];
   }
+}
+
+function validObjectRateSample(sample: ObjectRateSample): boolean {
+  return (
+    Number.isSafeInteger(sample.connection) &&
+    sample.connection > 0 &&
+    Number.isFinite(sample.intervalMs) &&
+    sample.intervalMs > 0 &&
+    Number.isSafeInteger(sample.publishedObjects) &&
+    sample.publishedObjects >= 0 &&
+    Number.isSafeInteger(sample.subscribedObjects) &&
+    sample.subscribedObjects >= 0 &&
+    Number.isFinite(sample.publishedObjectsPerSecond) &&
+    sample.publishedObjectsPerSecond >= 0 &&
+    Number.isFinite(sample.subscribedObjectsPerSecond) &&
+    sample.subscribedObjectsPerSecond >= 0
+  );
 }
 
 function sanitiseEvent<Event extends Partial<TelemetryEvent>>(event: Event): Event {
