@@ -654,28 +654,36 @@ export class MoqTransportAdapter {
     const accepted = this.callbacks.shouldAcceptPublishedTrack?.(track) ?? true;
 
     if (!accepted) {
-      await client.controlStream.send(
-        new RequestError(
-          message.requestId,
-          RequestErrorCode.Uninterested,
-          0n,
-          new ReasonPhrase("uninterested"),
-        ),
-      );
-      await stream.cancel("publication not selected").catch(() => undefined);
+      try {
+        await client.controlStream.send(
+          new RequestError(
+            message.requestId,
+            RequestErrorCode.Uninterested,
+            0n,
+            new ReasonPhrase("uninterested"),
+          ),
+        );
+      } finally {
+        await stream.cancel("publication not selected").catch(() => undefined);
+        this.discardPeerPublish(client, message);
+      }
       return;
     }
 
     if (this.subscriptions.has(key) || this.pushedSubscriptions.has(key)) {
-      await client.controlStream.send(
-        new RequestError(
-          message.requestId,
-          RequestErrorCode.DuplicateSubscription,
-          0n,
-          new ReasonPhrase("duplicate subscription"),
-        ),
-      );
-      await stream.cancel("duplicate publication").catch(() => undefined);
+      try {
+        await client.controlStream.send(
+          new RequestError(
+            message.requestId,
+            RequestErrorCode.DuplicateSubscription,
+            0n,
+            new ReasonPhrase("duplicate subscription"),
+          ),
+        );
+      } finally {
+        await stream.cancel("duplicate publication").catch(() => undefined);
+        this.discardPeerPublish(client, message);
+      }
       return;
     }
 
@@ -685,9 +693,40 @@ export class MoqTransportAdapter {
     } catch (error) {
       this.pushedSubscriptions.delete(key);
       await stream.cancel("publication acknowledgement failed").catch(() => undefined);
+      this.discardPeerPublish(client, message);
       throw error;
     }
     this.callbacks.onTrackPublished?.(track);
+  }
+
+  /** Undo MOQtail's eager receiver registration when this PUBLISH was refused. */
+  private discardPeerPublish(client: MOQtailClient, message: Publish): void {
+    const receiver = client.subscriptions.get(message.trackAlias) as
+      | {
+          requestId: bigint;
+          publishedRequestId?: bigint;
+          isCanceled: boolean;
+          controller?: ReadableStreamDefaultController<MoqtObject>;
+        }
+      | undefined;
+    if (!receiver || receiver.publishedRequestId !== message.requestId) return;
+    receiver.isCanceled = true;
+    try {
+      receiver.controller?.close();
+    } catch {
+      // The rejected stream may already have been cancelled by its consumer.
+    }
+    client.subscriptions.delete(message.trackAlias);
+    client.aliasFullTrackNameMap.delete(message.trackAlias);
+    client.subscriptionAliasMap.delete(receiver.requestId);
+    client.requestIdMap.removeMappingByRequestId(receiver.requestId);
+    const retired = (client as MOQtailClient & { retiredTrackAliases?: Set<bigint> })
+      .retiredTrackAliases;
+    retired?.add(message.trackAlias);
+    if (retired && retired.size > 1024) {
+      const oldest = retired.values().next().value;
+      if (oldest !== undefined) retired.delete(oldest);
+    }
   }
 
   async subscribeNamespace(namespace: string): Promise<void> {
@@ -707,7 +746,14 @@ export class MoqTransportAdapter {
     const client = this.requireClient();
     const key = trackKey(track);
     const requestId = this.subscriptions.get(key);
-    if (requestId === undefined) return;
+    if (requestId === undefined) {
+      const pushed = this.pushedSubscriptions.get(key);
+      if (!pushed) return;
+      await client.unsubscribe(pushed.requestId);
+      this.pushedSubscriptions.delete(key);
+      await pushed.stream.cancel("publication no longer selected").catch(() => undefined);
+      return;
+    }
     await client.unsubscribe(requestId);
     this.subscriptions.delete(key);
   }
