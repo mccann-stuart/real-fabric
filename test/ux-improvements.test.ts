@@ -504,4 +504,41 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(html).toContain("On (cooperative)");
     expect(html).toContain("Not exposed");
   });
+
+  it("renders SVG title elements for relay and participant graph nodes", () => {
+    const participant = (
+      id: string,
+      name: string,
+      role: "human" | "ai",
+      simulated = false,
+    ): Participant => ({
+      id,
+      displayName: name,
+      role,
+      state: "connected",
+      address: role === "ai" ? `ai/${id}` : null,
+      wakeName: role === "ai" ? id : null,
+      pipeline: role === "ai" ? "listening" : null,
+      simulated,
+      joinedAt: 1_000,
+      reconnectUntil: null,
+      lastActiveAt: 1_000,
+    });
+    const html = renderToStaticMarkup(
+      React.createElement(SubscriptionGraph, {
+        participants: [
+          participant("you", "Ada Lovelace", "human"),
+          participant("atlas", "Atlas AI", "ai", true),
+        ],
+        routing: [],
+        viewerId: "you",
+        publishing: false,
+        subscribedIds: [],
+      }),
+    );
+
+    expect(html).toContain("<title>MoQ Relay</title>");
+    expect(html).toContain("<title>Ada Lovelace (Human, You)</title>");
+    expect(html).toContain("<title>Atlas AI (AI, Simulated)</title>");
+  });
 });
