@@ -136,27 +136,36 @@ export const SubscriptionGraph = memo(function SubscriptionGraph({
             />
           );
         })}
-        <rect
-          x={centre - RELAY_BOX_WIDTH / 2}
-          y={centre - RELAY_BOX_HEIGHT / 2}
-          width={RELAY_BOX_WIDTH}
-          height={RELAY_BOX_HEIGHT}
-          className="graph-relay"
-          rx={1}
-        />
-        <text
-          x={centre}
-          y={centre + LABEL_Y_OFFSET}
-          className="graph-relay-label"
-          textAnchor="middle"
-        >
-          relay
-        </text>
+        <g>
+          <title>MoQ Relay</title>
+          <rect
+            x={centre - RELAY_BOX_WIDTH / 2}
+            y={centre - RELAY_BOX_HEIGHT / 2}
+            width={RELAY_BOX_WIDTH}
+            height={RELAY_BOX_HEIGHT}
+            className="graph-relay"
+            rx={1}
+          />
+          <text
+            x={centre}
+            y={centre + LABEL_Y_OFFSET}
+            className="graph-relay-label"
+            textAnchor="middle"
+          >
+            relay
+          </text>
+        </g>
         {active.map((participant) => {
           const point = positions.get(participant.id);
           if (!point) return null;
+          const nodeTitle = `${participant.displayName} (${
+            participant.role === "ai" ? "AI" : "Human"
+          }${participant.simulated ? ", Simulated" : ""}${
+            participant.id === viewerId ? ", You" : ""
+          })`;
           return (
             <g key={participant.id}>
+              <title>{nodeTitle}</title>
               <circle
                 cx={point.x}
                 cy={point.y}
