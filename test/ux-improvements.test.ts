@@ -252,9 +252,10 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(html).toContain('aria-label="Signal path (Shortcut: 1)"');
     expect(html).toContain('title="Signal path (Shortcut: 1)"');
     expect(html).toContain('aria-keyshortcuts="5"');
+    expect(html).toContain('<span aria-hidden="true">×</span>');
   });
 
-  it("announces the pending leave action", () => {
+  it("announces the pending leave action and sets aria-modal", () => {
     const html = renderToStaticMarkup(
       React.createElement(LeaveRoomDialog, {
         dialogRef: { current: null },
@@ -266,6 +267,7 @@ describe("Micro-UX & Accessibility Improvements", () => {
       }),
     );
 
+    expect(html).toContain('aria-modal="true"');
     expect(html).toContain('aria-busy="true"');
     expect(html).toContain("Leaving…");
   });

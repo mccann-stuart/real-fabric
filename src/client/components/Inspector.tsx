@@ -138,7 +138,7 @@ export function Inspector({
           aria-label="Close inspector"
           title="Close inspector"
         >
-          ×
+          <span aria-hidden="true">×</span>
         </button>
       </div>
 
