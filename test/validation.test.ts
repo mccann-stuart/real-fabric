@@ -303,14 +303,18 @@ describe("request validation", () => {
       }
     });
 
-    it("returns failure invalid_credentials for bad participantId or token types/lengths", () => {
+    it("returns failure invalid_credentials for bad participantId or token types/lengths or control characters", () => {
       const invalidCredentials = [
         { type: "auth", participantId: "", token: "token123" },
         { type: "auth", participantId: "a".repeat(65), token: "token123" },
         { type: "auth", participantId: 123, token: "token123" },
+        { type: "auth", participantId: "p-1\x00", token: "token123" },
+        { type: "auth", participantId: "p-1\r\n", token: "token123" },
         { type: "auth", participantId: "p-1", token: "" },
         { type: "auth", participantId: "p-1", token: "t".repeat(129) },
         { type: "auth", participantId: "p-1", token: 123 },
+        { type: "auth", participantId: "p-1", token: "token\x00123" },
+        { type: "auth", participantId: "p-1", token: "token\x7F" },
         { type: "auth" },
       ];
 
