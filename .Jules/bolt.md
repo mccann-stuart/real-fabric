@@ -1,3 +1,6 @@
 ## 2026-03-31 - Float64Array Reuse and Quickselect for Clock Drift Median Estimation
 **Learning:** `DriftEstimator` samples inter-arrival slope pairs $O(N^2)$ to calculate median clock skew. Sorting thousands of numbers with `Array.prototype.sort()` and allocating temporary arrays on continuous audio streams generates significant GC pressure and main thread stalls. Reusing a `Float64Array` buffer and using Quickselect ($O(N)$ average complexity) speeds up median calculation by >6x (from ~315ms down to ~45ms per 1k runs).
 **Action:** For continuous numeric streams requiring median/quantile calculations, avoid `Array.prototype.sort()` on standard JS arrays; use pre-allocated TypedArrays with Quickselect.
+## 2026-10-02 - Float32Array Iterator Avoidance in Audio Hot Paths
+**Learning:** Iterating over `Float32Array` using `for..of` creates temporary iterator objects on every call. On 50Hz audio frame processing paths (20ms frames across all active tracks), these iterator allocations create unnecessary garbage collection pressure. Additionally, element indexing within array bounds (`0 <= index < length`) is guaranteed to return primitive numbers, so redundant checks for `undefined` add dead branches.
+**Action:** Always prefer indexed `for` loops over `for..of` for typed arrays in high-frequency audio streaming methods like `rootMeanSquare`.

@@ -138,7 +138,7 @@ export function Inspector({
           aria-label="Close inspector"
           title="Close inspector"
         >
-          ×
+          <span aria-hidden="true">×</span>
         </button>
       </div>
 
@@ -360,7 +360,7 @@ function Objects({ metrics, degradation }: { metrics: SessionMetrics; degradatio
           measurement={metrics.publishedObjects}
         />
         <ComparisonRow
-          label="Outbound object rate"
+          label="Recent outbound object rate"
           budget={`≈${OBJECTS_PER_SECOND_PER_ACTIVE_SPEAKER} obj/s while speaking`}
           measurement={metrics.publishedObjectsPerSecond}
           format={(value) => value.toFixed(1)}
@@ -391,7 +391,7 @@ function Objects({ metrics, degradation }: { metrics: SessionMetrics; degradatio
           measurement={metrics.subscribedObjects}
         />
         <ComparisonRow
-          label="Inbound object rate"
+          label="Recent inbound object rate"
           budget={`≈${OBJECTS_PER_SECOND_PER_ACTIVE_SPEAKER} obj/s × active speakers`}
           measurement={metrics.objectsPerSecond}
           format={(value) => value.toFixed(1)}

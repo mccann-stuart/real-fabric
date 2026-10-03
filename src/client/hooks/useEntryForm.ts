@@ -2,6 +2,7 @@ import { useState } from "react";
 import { MAX_SIMULATED_PARTICIPANTS } from "../../shared/contracts";
 import { configurePresenter, createRoom, joinRoom, normaliseCode, storeSession } from "../api";
 import { generateRandomDisplayName } from "../displayName";
+import { stageRoomEntry } from "../room/roomEntry";
 import { rememberRelayCredential } from "../session/RoomSession";
 
 export interface UseEntryFormOptions {
@@ -53,9 +54,10 @@ export function useEntryForm({ navigate, initialCode = "", stopMicrophone }: Use
       // placed in a URL that could be shared.
       rememberRelayCredential(result.participant.id, result.relayCredential);
 
+      let room = result.room;
       if (mode === "presenter") {
         sessionStorage.setItem(`real-fabric:presenter:${result.room.code}`, "true");
-        await configurePresenter(session, {
+        room = await configurePresenter(session, {
           simulatedHumans,
           simulatedAis,
           // FR4: no live pipeline exists, so scripted responses are the only
@@ -63,6 +65,7 @@ export function useEntryForm({ navigate, initialCode = "", stopMicrophone }: Use
           scriptedResponses: true,
         });
       }
+      stageRoomEntry(session, room);
       stopMicrophone();
       navigate(`/room/${result.room.code}`);
     } catch (reason) {

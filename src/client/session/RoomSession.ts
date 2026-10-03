@@ -48,6 +48,7 @@ import { TrackPlayer } from "../audio/TrackPlayer";
 import type { CapturePath } from "../audio/UniversalAudioCaptureAdapter";
 import { inspectCaptureSupport } from "../audio/UniversalAudioCaptureAdapter";
 import { projectObservedActivity } from "../room/participantLayout";
+import { ObjectRateWindow, type ObjectTotals } from "../telemetry/ObjectRateWindow";
 import { SessionTelemetry } from "../telemetry/SessionTelemetry";
 import {
   isTrackNotFoundError,
@@ -112,6 +113,7 @@ export interface SessionMetrics {
   /** MOQT object totals observed by the adapter in this browser session. */
   publishedObjects: Measurement<number>;
   subscribedObjects: Measurement<number>;
+  /** Recent live-connection counter deltas, sampled at one-second cadence. */
   publishedObjectsPerSecond: Measurement<number>;
   objectsPerSecond: Measurement<number>;
   meanPublishedObjectBytes: Measurement<number>;
@@ -192,6 +194,7 @@ const LADDER_INTERVAL_MS = 2_000;
 const ACTIVE_SPEAKER_WINDOW_MS = 2_000;
 const DRIFT_EVENT_INTERVAL_MS = 2_000;
 const DRAIN_INTERVAL_MS = 20;
+const OBJECT_RATE_INTERVAL_MS = 1_000;
 const CONTROL_RETRY_BASE_MS = 250;
 const CONTROL_RETRY_MAX_MS = 5_000;
 const STABLE_TRANSPORT_MS = 5_000;
@@ -241,6 +244,7 @@ export class RoomSession {
   private readonly lifecycle: ForegroundAudioLifecycle;
   private readonly ladder = new DegradationLadder();
   private readonly underrunWindow = new UnderrunWindowCounter();
+  private readonly objectRates = new ObjectRateWindow();
   private readonly reconnection = new ReconnectionPolicy();
   private readonly players = new Map<string, TrackPlayer>();
   private readonly floorTurnIds = new Map<string, string>();
@@ -294,6 +298,7 @@ export class RoomSession {
   private reconnects = 0;
   private ladderTimer: ReturnType<typeof setInterval> | null = null;
   private drainTimer: ReturnType<typeof setInterval> | null = null;
+  private objectRateTimer: ReturnType<typeof setInterval> | null = null;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private controlRetryTimer: ReturnType<typeof setTimeout> | null = null;
   private subscriptionRetryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -371,8 +376,10 @@ export class RoomSession {
   async start(room: RoomSnapshot): Promise<void> {
     this.startedAt = this.now();
     this.applyRoom(room);
+    this.recordObjectRateMeasurements(this.transport.sessionStats());
     this.openControlChannel();
     this.ladderTimer = setInterval(() => this.tickLadder(), LADDER_INTERVAL_MS);
+    this.objectRateTimer = setInterval(() => this.tickObjectRates(), OBJECT_RATE_INTERVAL_MS);
     // §11.3: watch for hot-plugged devices from the moment the room opens, not
     // only once capture has been attempted.
     void this.devices.start();
@@ -453,6 +460,8 @@ export class RoomSession {
 
     this.audioGeneration += 1;
     this.publishing = false;
+    this.objectRates.stop();
+    this.recordObjectRateMeasurements(this.transport.sessionStats());
     this.captureMode = { name: "resume_required", reason };
     this.setPhase({ name: "resume_required", reason });
     if (this.retryTimer) clearTimeout(this.retryTimer);
@@ -509,6 +518,9 @@ export class RoomSession {
     const room = this.room;
     if (!room) return;
 
+    this.objectRates.stop();
+    this.recordObjectRateMeasurements(this.transport.sessionStats());
+
     if (room.transport.availability !== "available") {
       const failure = room.transport.failure ?? "draft_endpoint_missing";
       this.raise(failure);
@@ -537,7 +549,8 @@ export class RoomSession {
         return;
       }
       this.transportReadyAt = this.now();
-      const negotiation = this.transport.sessionStats().negotiation;
+      const stats = this.transport.sessionStats();
+      const negotiation = stats.negotiation;
       // §11.2 deliverable two: the negotiated draft and endpoint are recorded
       // from the handshake, not restated from configuration.
       this.log.record(
@@ -553,6 +566,8 @@ export class RoomSession {
         return;
       }
       this.assertTransportConnectedBeforeLive();
+      this.objectRates.beginConnection(this.now(), this.transport.sessionStats());
+      this.recordObjectRateMeasurements(this.transport.sessionStats());
       this.setPhase({ name: "live" });
       await this.reconcileSubscriptions();
       this.startDraining();
@@ -619,6 +634,8 @@ export class RoomSession {
   }
 
   private async handleTransportFailure(error: unknown): Promise<void> {
+    this.objectRates.stop();
+    this.recordObjectRateMeasurements(this.transport.sessionStats());
     const failure = this.classifyTransportFailure(error);
     this.raise(failure);
     this.log.record("failure", error instanceof Error ? error.message : "Transport failed.");
@@ -1563,6 +1580,44 @@ export class RoomSession {
     this.emit();
   }
 
+  private tickObjectRates(): void {
+    if (this.phase.name !== "live") return;
+    const stats = this.transport.sessionStats();
+    if (stats.state !== "connected") {
+      this.objectRates.stop();
+      this.recordObjectRateMeasurements(stats);
+      this.emit();
+      return;
+    }
+    const sample = this.objectRates.observe(this.now(), stats);
+    if (sample) this.telemetry.recordObjectRateSample(sample);
+    this.recordObjectRateMeasurements(stats);
+    this.emit();
+  }
+
+  private recordObjectRateMeasurements(totals: ObjectTotals): void {
+    this.telemetry.recordMeasurement(
+      "publishedObjects",
+      this.transportReadyAt === null
+        ? notExposed("Live transport has not been established.")
+        : measured(totals.publishedObjects),
+    );
+    this.telemetry.recordMeasurement(
+      "subscribedObjects",
+      this.transportReadyAt === null
+        ? notExposed("Live transport has not been established.")
+        : measured(totals.subscribedObjects),
+    );
+    this.telemetry.recordMeasurement(
+      "publishedObjectsPerSecond",
+      this.objectRates.publishedObjectsPerSecond(),
+    );
+    this.telemetry.recordMeasurement(
+      "objectsPerSecond",
+      this.objectRates.subscribedObjectsPerSecond(),
+    );
+  }
+
   private startDraining(): void {
     if (this.drainTimer) return;
     this.drainTimer = setInterval(() => {
@@ -1741,11 +1796,15 @@ export class RoomSession {
     this.cancelledFloorAddresses.clear();
     if (this.ladderTimer) clearInterval(this.ladderTimer);
     if (this.drainTimer) clearInterval(this.drainTimer);
+    if (this.objectRateTimer) clearInterval(this.objectRateTimer);
     if (this.retryTimer) clearTimeout(this.retryTimer);
     if (this.controlRetryTimer) clearTimeout(this.controlRetryTimer);
     this.clearSubscriptionRetryTimer();
     this.ladderTimer = null;
     this.drainTimer = null;
+    this.objectRateTimer = null;
+    this.objectRates.stop();
+    this.recordObjectRateMeasurements(this.transport.sessionStats());
     this.retryTimer = null;
     this.controlRetryTimer = null;
     this.subscriptionRetries.clear();
@@ -1854,9 +1913,6 @@ export class RoomSession {
       entry.skewPpm.exposed ? [Math.abs(entry.skewPpm.value)] : [],
     );
     const captureLatency = this.capture.latencyStats();
-    const liveFor =
-      this.transportReadyAt === null ? 0 : (this.now() - this.transportReadyAt) / 1000;
-
     const unavailable = "Live transport has not been established, so this is not observable.";
     const noObjects = "No subscribed audio object has arrived yet.";
     const transportEstablished = this.transportReadyAt !== null;
@@ -1947,13 +2003,13 @@ export class RoomSession {
         ? measured(stats.subscribedObjects)
         : notExposed(unavailable),
       publishedObjectsPerSecond:
-        liveFor < 1
-          ? notExposed("Too little live time to compute an outbound object rate.")
-          : measured(stats.publishedObjects / liveFor),
+        this.phase.name === "live"
+          ? this.objectRates.publishedObjectsPerSecond()
+          : notExposed("The live transport is not connected."),
       objectsPerSecond:
-        liveFor < 1
-          ? notExposed("Too little live time to compute an inbound object rate.")
-          : measured(stats.subscribedObjects / liveFor),
+        this.phase.name === "live"
+          ? this.objectRates.subscribedObjectsPerSecond()
+          : notExposed("The live transport is not connected."),
       meanPublishedObjectBytes:
         stats.publishedObjects === 0
           ? notExposed("No audio object has been published yet.")

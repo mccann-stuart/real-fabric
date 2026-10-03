@@ -16,6 +16,7 @@ import {
   subscriptionRetryDelay,
 } from "../src/client/session/RoomSession";
 import { SessionEventLog } from "../src/client/session/SessionEventLog";
+import { ObjectRateWindow } from "../src/client/telemetry/ObjectRateWindow";
 import {
   draftsFramedByClient,
   isTrackNotFoundError,
@@ -349,6 +350,7 @@ describe("M1 — bounded session recovery", () => {
         deviceChanges: () => Measurement<number>;
       };
       metrics: () => import("../src/client/session/RoomSession").SessionMetrics;
+      objectRates: ObjectRateWindow;
     };
     internal.phase = { name: "live" };
     internal.startedAt = 0;
@@ -403,6 +405,11 @@ describe("M1 — bounded session recovery", () => {
       inputCount: () => measured(1),
       deviceChanges: () => measured(0),
     };
+    internal.objectRates.beginConnection(1_000, {
+      publishedObjects: 0,
+      subscribedObjects: 0,
+    });
+    internal.objectRates.observe(3_000, { publishedObjects: 40, subscribedObjects: 100 });
 
     const metrics = internal.metrics();
     expect(metrics.publishedObjects).toEqual(measured(40));
@@ -448,10 +455,16 @@ describe("M1 — bounded session recovery", () => {
       startedAt: number;
       transportReadyAt: number;
       metrics: () => import("../src/client/session/RoomSession").SessionMetrics;
+      objectRates: ObjectRateWindow;
     };
     internal.phase = { name: "live" };
     internal.startedAt = 0;
     internal.transportReadyAt = 1_000;
+    internal.objectRates.beginConnection(1_000, {
+      publishedObjects: 0,
+      subscribedObjects: 0,
+    });
+    internal.objectRates.observe(3_000, { publishedObjects: 0, subscribedObjects: 0 });
 
     const metrics = internal.metrics();
     expect(metrics.publishedObjects).toEqual(measured(0));
@@ -463,6 +476,98 @@ describe("M1 — bounded session recovery", () => {
     expect(metrics.concealedFrames).toEqual(measured(0));
     expect(metrics.aggregateBufferMs).toEqual(measured(0));
     expect(metrics.meanObjectBytes.exposed).toBe(false);
+  });
+
+  it("samples recent object rates across reconnects and exports benchmark intervals", () => {
+    let now = 1_000;
+    const session = new RoomSession({
+      session: {
+        code: "AAAAAAAAAAAAAAAAAAAA",
+        participantId: "participant-1",
+        rejoinToken: "rejoin-token",
+        displayName: "Test participant",
+        storedAt: 0,
+      },
+      presenterMode: false,
+      now: () => now,
+    });
+    const internal = session as unknown as {
+      phase: SessionPhase;
+      transportReadyAt: number;
+      transport: { sessionStats: () => ReturnType<MoqTransportAdapter["sessionStats"]> };
+      objectRates: ObjectRateWindow;
+      tickObjectRates: () => void;
+      metrics: () => import("../src/client/session/RoomSession").SessionMetrics;
+    };
+    let stats = {
+      ...new MoqTransportAdapter().sessionStats(),
+      state: "connected" as const,
+    };
+    internal.transport = { sessionStats: () => stats };
+    internal.phase = { name: "live" };
+    internal.transportReadyAt = now;
+    internal.objectRates.beginConnection(now, stats);
+    expect(internal.metrics().objectsPerSecond.exposed).toBe(false);
+
+    now = 2_000;
+    stats = { ...stats, publishedObjects: 50, subscribedObjects: 100 };
+    internal.tickObjectRates();
+    expect(internal.metrics().publishedObjectsPerSecond).toEqual(measured(50));
+    expect(internal.metrics().objectsPerSecond).toEqual(measured(100));
+
+    now = 3_000;
+    internal.tickObjectRates();
+    expect(internal.metrics().objectsPerSecond).toEqual(measured(0));
+
+    internal.objectRates.stop();
+    internal.phase = { name: "reconnecting", attempt: 1, nextAttemptInMs: 500 };
+    expect(internal.metrics().objectsPerSecond.exposed).toBe(false);
+
+    now = 10_000;
+    internal.phase = { name: "live" };
+    internal.objectRates.beginConnection(now, stats);
+    expect(internal.metrics().objectsPerSecond.exposed).toBe(false);
+    now = 11_000;
+    stats = { ...stats, publishedObjects: 70, subscribedObjects: 130 };
+    internal.tickObjectRates();
+    expect(internal.metrics().publishedObjectsPerSecond).toEqual(measured(20));
+    expect(internal.metrics().objectsPerSecond).toEqual(measured(30));
+
+    const report = session.telemetry.report("ROOM") as {
+      measurements: Record<string, unknown>;
+      objectRateSamples: Array<Record<string, number>>;
+    };
+    expect(report.measurements.publishedObjectsPerSecond).toBe(20);
+    expect(report.measurements.objectsPerSecond).toBe(30);
+    expect(
+      report.objectRateSamples.map((sample) => [sample.connection, sample.subscribedObjects]),
+    ).toEqual([
+      [1, 100],
+      [1, 0],
+      [2, 30],
+    ]);
+    expect(report.objectRateSamples[2]).toMatchObject({
+      intervalMs: 1_000,
+      publishedObjectsPerSecond: 20,
+      subscribedObjectsPerSecond: 30,
+    });
+  });
+
+  it("does not report a recent rate across a suspended timer or counter reset", () => {
+    const rates = new ObjectRateWindow();
+    rates.beginConnection(0, { publishedObjects: 0, subscribedObjects: 0 });
+    expect(rates.observe(1_000, { publishedObjects: 50, subscribedObjects: 50 })).toMatchObject({
+      publishedObjectsPerSecond: 50,
+      subscribedObjectsPerSecond: 50,
+    });
+    expect(rates.observe(7_000, { publishedObjects: 350, subscribedObjects: 350 })).toBeNull();
+    expect(rates.publishedObjectsPerSecond().exposed).toBe(false);
+    expect(rates.observe(8_000, { publishedObjects: 400, subscribedObjects: 400 })).toMatchObject({
+      publishedObjectsPerSecond: 50,
+      subscribedObjectsPerSecond: 50,
+    });
+    expect(rates.observe(9_000, { publishedObjects: 1, subscribedObjects: 1 })).toBeNull();
+    expect(rates.subscribedObjectsPerSecond().exposed).toBe(false);
   });
 
   it("reports Not exposed, not zero, when a subscribed track measures nothing", () => {

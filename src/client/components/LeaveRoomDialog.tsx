@@ -23,6 +23,7 @@ export function LeaveRoomDialog({
       className="leave-dialog"
       aria-labelledby="leave-dialog-title"
       aria-describedby="leave-dialog-desc"
+      aria-modal="true"
       onCancel={onCancel}
     >
       <h2 id="leave-dialog-title">Leave room {code}?</h2>
