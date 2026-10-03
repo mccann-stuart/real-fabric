@@ -51,8 +51,10 @@ export class SessionTelemetry {
     this.events.push({ ...sanitiseEvent(event), at: Date.now() });
     // Bounded: a ten-minute run at the reference composition must not grow
     // without limit any more than the audio buffers may (H13).
+    // ⚡ Bolt Optimization: Drop the oldest event in-place via shift() when capacity is exceeded
+    // to avoid allocating a new 2,000-element array on every event recording.
     if (this.events.length > RETAINED_EVENTS) {
-      this.events = this.events.slice(-RETAINED_EVENTS);
+      this.events.shift();
     }
   }
 
@@ -73,8 +75,10 @@ export class SessionTelemetry {
       publishedObjectsPerSecond: sample.publishedObjectsPerSecond,
       subscribedObjectsPerSecond: sample.subscribedObjectsPerSecond,
     });
+    // ⚡ Bolt Optimization: Drop the oldest sample in-place via shift() when capacity is exceeded
+    // to avoid allocating a new 1,200-element array on every rate sample recording.
     if (this.objectRateSamples.length > RETAINED_RATE_SAMPLES) {
-      this.objectRateSamples = this.objectRateSamples.slice(-RETAINED_RATE_SAMPLES);
+      this.objectRateSamples.shift();
     }
   }
 
@@ -139,11 +143,19 @@ function validObjectRateSample(sample: ObjectRateSample): boolean {
   );
 }
 
+// ⚡ Bolt Optimization: Iterate event keys directly to filter permitted keys and protocol values,
+// avoiding array tuple allocations from Object.entries() and Object.fromEntries() on every event.
 function sanitiseEvent<Event extends Partial<TelemetryEvent>>(event: Event): Event {
-  const entries = Object.entries(event).filter(
-    ([key, value]) => PERMITTED_KEYS.has(key) && isProtocolValue(value),
-  );
-  return Object.fromEntries(entries) as Event;
+  const result: Record<string, unknown> = {};
+  for (const key in event) {
+    if (PERMITTED_KEYS.has(key)) {
+      const value = (event as Record<string, unknown>)[key];
+      if (isProtocolValue(value)) {
+        result[key] = value;
+      }
+    }
+  }
+  return result as Event;
 }
 
 /**
