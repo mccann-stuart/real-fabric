@@ -886,6 +886,25 @@ describe("H12 — the rejoin token reclaims one identity, not two", () => {
     expect(joined.value.participant.id).not.toBe(created.participant.id);
     expect(joined.value.room.composition.humans).toBe(2);
   });
+
+  it("does not reclaim an identity after its 60-second window expires", async () => {
+    const created = await createRoom();
+    await call<RoomSnapshot>(`/api/rooms/${created.room.code}/leave`, credential(created));
+    await runInDurableObject(roomStub(created.room.code), async (_instance: Room, state) => {
+      state.storage.sql.exec(
+        "UPDATE participants SET reconnect_until = ? WHERE id = ?",
+        Date.now() - 1,
+        created.participant.id,
+      );
+    });
+
+    const joined = await call<CreateRoomResponse>(`/api/rooms/${created.room.code}/join`, {
+      displayName: "Ada",
+      rejoinToken: created.rejoinToken,
+    });
+    expect(joined.status).toBe(200);
+    expect(joined.value.participant.id).not.toBe(created.participant.id);
+  });
 });
 
 describe("Presenter actions require credentials", () => {
