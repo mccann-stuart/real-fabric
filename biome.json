@@ -9,6 +9,7 @@
       "!!.wrangler",
       "!!.claude",
       "!!.codex",
+      "!!output/playwright",
       "!!security/checkpoints",
       "!!security/coverage.json",
       "!!security/findings.json",
