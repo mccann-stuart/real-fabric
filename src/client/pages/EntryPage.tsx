@@ -65,6 +65,8 @@ export function EntryPage({
               <input
                 id="entry-room-code"
                 autoCapitalize="characters"
+                autoCorrect="off"
+                spellCheck={false}
                 maxLength={20}
                 value={roomCode}
                 onChange={(event) => setRoomCode(event.target.value)}

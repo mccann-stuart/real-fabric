@@ -7,6 +7,7 @@ import { Inspector } from "../src/client/components/Inspector";
 import { LeaveRoomDialog } from "../src/client/components/LeaveRoomDialog";
 import { ParticipantCard } from "../src/client/components/ParticipantCard";
 import { PreflightPanel } from "../src/client/components/PreflightPanel";
+import { PresenterStrip } from "../src/client/components/PresenterStrip";
 import { RoomStatusStack } from "../src/client/components/RoomStatusStack";
 import { RoomTopBar } from "../src/client/components/RoomTopBar";
 import { SubscriptionGraph } from "../src/client/components/SubscriptionGraph";
@@ -34,9 +35,101 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(html).toContain("Create demo room");
     expect(html).toContain("Join room");
     expect(html).toContain("Solo presenter mode");
+    expect(html).toContain('autoCorrect="off"');
+    expect(html).toContain('spellCheck="false"');
     expect(html).toContain("button--primary");
     expect(html).toContain('aria-label="Mic level test"');
     expect(html).toContain("Microphone level not exposed until the test runs.");
+  });
+
+  it("renders PresenterStrip export button with accessible label and title", () => {
+    const room: RoomSnapshot = {
+      code: "TEST1234",
+      createdAt: 1_000,
+      expiresAt: 100_000,
+      participants: [],
+      routing: [],
+      partialContextAiIds: [],
+      floor: { holderId: null, queue: [], heldSince: null },
+      aiToAi: { enabled: false, turnCap: 6, consecutiveTurns: 0, cappedAt: null },
+      presenter: { simulatedHumans: 0, simulatedAis: 0, scriptedResponses: false },
+      composition: { humans: 1, ais: 0, valid: true },
+      transport: {
+        endpoint: "https://relay.test",
+        endpointName: "relay.test",
+        draft: "16",
+        availability: "available",
+        reason: "Available",
+        failure: null,
+        traceVerified: false,
+        routingEnforcement: "cooperative",
+        discovery: "subscribe_namespace",
+      },
+    };
+    const html = renderToStaticMarkup(
+      React.createElement(PresenterStrip, {
+        room,
+        phase: { name: "live" },
+        metrics: {
+          transportReadyMs: notExposed<number>("Not exposed"),
+          firstAudioMs: notExposed<number>("Not exposed"),
+          publishedTracks: notExposed<number>("Not exposed"),
+          subscribedTracks: notExposed<number>("Not exposed"),
+          worstBufferMs: notExposed<number>("Not exposed"),
+          jitterTargetMs: notExposed<number>("Not exposed"),
+          captureFrameMs: notExposed<number>("Not exposed"),
+          encodeCallbackMs: notExposed<number>("Not exposed"),
+          receiverHoldMs: notExposed<number>("Not exposed"),
+          decodeCallbackMs: notExposed<number>("Not exposed"),
+          outputLatencyMs: notExposed<number>("Not exposed"),
+          transportRttMs: notExposed<number>("Not exposed"),
+          transportMinRttMs: notExposed<number>("Not exposed"),
+          transportRttVariationMs: notExposed<number>("Not exposed"),
+          publishSetupMs: notExposed<number>("Not exposed"),
+          subscribeSetupMs: notExposed<number>("Not exposed"),
+          lateDrops: notExposed<number>("Not exposed"),
+          cancelledDrops: notExposed<number>("Not exposed"),
+          concealedFrames: notExposed<number>("Not exposed"),
+          comfortNoiseFrames: notExposed<number>("Not exposed"),
+          lastBargeInMs: notExposed<number>("Not exposed"),
+          lastRoutingChangeMs: notExposed<number>("Not exposed"),
+          reconnects: notExposed<number>("Not exposed"),
+          dtxEnabled: notExposed<boolean>("Not exposed"),
+          capturePath: notExposed<CapturePath>("Not exposed"),
+          publishedObjects: notExposed<number>("Not exposed"),
+          subscribedObjects: notExposed<number>("Not exposed"),
+          publishedObjectsPerSecond: notExposed<number>("Not exposed"),
+          objectsPerSecond: notExposed<number>("Not exposed"),
+          meanPublishedObjectBytes: notExposed<number>("Not exposed"),
+          meanObjectBytes: notExposed<number>("Not exposed"),
+          lastPublishedObjectId: notExposed<number>("Not exposed"),
+          lastSubscribedObjectId: notExposed<number>("Not exposed"),
+          lastPublishedObjectAgeMs: notExposed<number>("Not exposed"),
+          lastSubscribedObjectAgeMs: notExposed<number>("Not exposed"),
+          lateDropRate: notExposed<number>("Not exposed"),
+          aggregateBufferMs: notExposed<number>("Not exposed"),
+          worstDriftPpm: notExposed<number>("Not exposed"),
+          activeDecoders: notExposed<number>("Not exposed"),
+          audioInputs: notExposed<number>("Not exposed"),
+          deviceChanges: notExposed<number>("Not exposed"),
+        },
+        degradation: {
+          step: 0,
+          nominalBufferMs: 60,
+          announcement: null,
+          releasedDecoders: [],
+          unsubscribed: [],
+        },
+        lastError: null,
+        onSimulate: () => {},
+        onAiToAi: () => {},
+        onExport: () => {},
+      }),
+    );
+
+    expect(html).toContain('aria-label="Export sanitised session telemetry JSON"');
+    expect(html).toContain('title="Export sanitised session telemetry JSON"');
+    expect(html).toContain("Export sanitised JSON");
   });
 
   it("renders accessible toggle switches inside participant card", () => {

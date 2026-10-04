@@ -401,6 +401,20 @@ export function RoomPage({
             type="button"
             disabled={!state?.publishing}
             aria-pressed={state?.muted ?? false}
+            aria-label={
+              !state?.publishing
+                ? "Mute microphone (disabled until audio is publishing)"
+                : state?.muted
+                  ? "Unmute microphone"
+                  : "Mute microphone"
+            }
+            title={
+              !state?.publishing
+                ? "Microphone cannot be muted until audio is publishing"
+                : state?.muted
+                  ? "Unmute microphone"
+                  : "Mute microphone"
+            }
             onClick={() => setMuted(!(state?.muted ?? false))}
           >
             {state?.muted ? "Unmute" : "Mute"}
