@@ -15,23 +15,42 @@ const MAXIMUM_OBJECTS_PER_GROUP = 100;
 
 export class PlaybackDeduplicator {
   private seen = new Map<string, Map<number, Set<number>>>();
+  // ⚡ Bolt Optimization: Single-entry cache for the active participant and group.
+  // Audio objects arrive sequentially for 1-second groups (50 frames per group at 50Hz),
+  // so caching the active Set<number> eliminates 98% of nested Map lookups on the media hot path.
+  private lastParticipantId: string | null = null;
+  private lastGroupId = -1;
+  private lastObjects: Set<number> | null = null;
 
   /**
    * Returns true when this object has not been played for this participant and
    * should be handed to the mixer. Returns false for a repeat.
    */
   accept(participantId: string, groupId: number, objectId: number): boolean {
-    let groups = this.seen.get(participantId);
-    if (!groups) {
-      groups = new Map<number, Set<number>>();
-      this.seen.set(participantId, groups);
-    }
+    let objects: Set<number>;
+    if (
+      participantId === this.lastParticipantId &&
+      groupId === this.lastGroupId &&
+      this.lastObjects !== null
+    ) {
+      objects = this.lastObjects;
+    } else {
+      let groups = this.seen.get(participantId);
+      if (!groups) {
+        groups = new Map<number, Set<number>>();
+        this.seen.set(participantId, groups);
+      }
 
-    let objects = groups.get(groupId);
-    if (!objects) {
-      objects = new Set<number>();
-      groups.set(groupId, objects);
-      this.prune(groups);
+      let groupObjects = groups.get(groupId);
+      if (!groupObjects) {
+        groupObjects = new Set<number>();
+        groups.set(groupId, groupObjects);
+        this.prune(groups);
+      }
+      objects = groupObjects;
+      this.lastParticipantId = participantId;
+      this.lastGroupId = groupId;
+      this.lastObjects = objects;
     }
 
     if (objects.has(objectId)) return false;
@@ -43,10 +62,18 @@ export class PlaybackDeduplicator {
 
   /** Called when a participant leaves for good, so memory does not accumulate. */
   forget(participantId: string): void {
+    if (this.lastParticipantId === participantId) {
+      this.lastParticipantId = null;
+      this.lastGroupId = -1;
+      this.lastObjects = null;
+    }
     this.seen.delete(participantId);
   }
 
   clear(): void {
+    this.lastParticipantId = null;
+    this.lastGroupId = -1;
+    this.lastObjects = null;
     this.seen.clear();
   }
 

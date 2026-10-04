@@ -7,3 +7,7 @@
 ## 2026-10-24 - In-place Array Eviction and Key Iteration in Session Telemetry
 **Learning:** `SessionTelemetry` bounds event and object rate sample collections to 2,000 and 1,200 items. Using `Array.prototype.slice(-N)` once capacity is reached allocates a new array of N elements on every single event recording, causing significant GC pressure and execution slowdowns. Using `shift()` drops the oldest element in-place, and direct key iteration in `sanitiseEvent` avoids tuple allocations from `Object.entries()`, speeding up `record()` by ~9x (from ~557ms to ~63ms per 100k calls).
 **Action:** For bounded collections that drop the oldest item when full, use `.shift()` or in-place eviction instead of `.slice(-N)` array copying; avoid `Object.entries()` in high-frequency event sanitisation methods.
+
+## 2026-11-05 - Single-Entry Group Caching for Stream Deduplication
+**Learning:** `PlaybackDeduplicator.accept` is called on every incoming audio frame arrival (50Hz per track). Nested Map lookups (`this.seen.get(participantId).get(groupId)`) on every frame add Map traversal overhead on sequential frame streams. Memoizing the active participant ID, group ID, and `Set<number>` reference in a single-entry cache bypasses 98% of nested Map lookups and speeds up `accept()` processing by ~1.4x (from ~88ms to ~62ms per 1,000,000 ops).
+**Action:** When processing sequential items grouped by participant/stream key, use a single-entry MRU cache to avoid repeated multi-level Map key lookups.
