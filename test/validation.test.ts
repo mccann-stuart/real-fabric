@@ -49,6 +49,19 @@ describe("request validation", () => {
         }
       }
     });
+
+    it("allows line breaks and tabs when allowMultiline is true", () => {
+      expect(optionalString({ val: "wake\nName" }, "val", 20, { allowMultiline: true })).toBe(
+        "wake\nName",
+      );
+      expect(optionalString({ val: "wake\tName" }, "val", 20, { allowMultiline: true })).toBe(
+        "wake\tName",
+      );
+      // NUL is still rejected even when allowMultiline is true
+      expect(() =>
+        optionalString({ val: "wake\x00Name" }, "val", 20, { allowMultiline: true }),
+      ).toThrowError();
+    });
   });
 
   describe("optionalString", () => {
@@ -77,7 +90,13 @@ describe("request validation", () => {
     });
 
     it("throws HttpError 400 invalid_request when string contains ASCII control characters", () => {
-      const invalidControlStrings = ["wake\x00Name", "address\x08"];
+      const invalidControlStrings = [
+        "wake\x00Name",
+        "address\x08",
+        "wake\nName",
+        "wake\rName",
+        "wake\tName",
+      ];
       for (const str of invalidControlStrings) {
         expect(() => optionalString({ val: str }, "val", 20)).toThrowError();
         try {
@@ -90,6 +109,19 @@ describe("request validation", () => {
           } satisfies Partial<HttpError>);
         }
       }
+    });
+
+    it("allows line breaks and tabs when allowMultiline is true", () => {
+      expect(requiredString({ name: "Ada\nAdmin" }, "name", 20, { allowMultiline: true })).toBe(
+        "Ada\nAdmin",
+      );
+      expect(requiredString({ name: "Ada\tAdmin" }, "name", 20, { allowMultiline: true })).toBe(
+        "Ada\tAdmin",
+      );
+      // NUL is still rejected even when allowMultiline is true
+      expect(() =>
+        requiredString({ name: "Ada\x00Admin" }, "name", 20, { allowMultiline: true }),
+      ).toThrowError();
     });
 
     it("throws HttpError 400 invalid_request when field is present but non-string", () => {
@@ -250,7 +282,15 @@ describe("request validation", () => {
     });
 
     it("throws HttpError 400 invalid_request when string contains ASCII control characters", () => {
-      const invalidControlStrings = ["Ada\x00Admin", "Ada\x07", "Ada\x1F", "Ada\x7F"];
+      const invalidControlStrings = [
+        "Ada\x00Admin",
+        "Ada\x07",
+        "Ada\x1F",
+        "Ada\x7F",
+        "Ada\nAdmin",
+        "Ada\rAdmin",
+        "Ada\tAdmin",
+      ];
       for (const str of invalidControlStrings) {
         expect(() => requiredString({ name: str }, "name", 20)).toThrowError();
         try {

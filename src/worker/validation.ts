@@ -19,6 +19,10 @@ const CONTROL_CHARACTERS = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/;
 // biome-ignore lint/suspicious/noControlCharactersInRegex: Intentionally matching control characters for input validation
 const ALL_CONTROL_CHARACTERS = /[\x00-\x1F\x7F]/;
 
+export interface StringValidationOptions {
+  allowMultiline?: boolean;
+}
+
 export async function readJsonObject(request: Request): Promise<Record<string, unknown>> {
   const contentType = request.headers.get("content-type") ?? "";
   if (!contentType.toLowerCase().includes("application/json")) {
@@ -80,12 +84,14 @@ export function requiredString(
   body: Record<string, unknown>,
   field: string,
   maximumLength: number,
+  options: StringValidationOptions = {},
 ): string {
   const value = body[field];
   if (typeof value !== "string" || value.trim().length === 0) {
     throw new HttpError(400, "invalid_request", `Field '${field}' must be a non-empty string.`);
   }
-  if (CONTROL_CHARACTERS.test(value)) {
+  const controlRegex = options.allowMultiline ? CONTROL_CHARACTERS : ALL_CONTROL_CHARACTERS;
+  if (controlRegex.test(value)) {
     throw new HttpError(
       400,
       "invalid_request",
@@ -107,6 +113,7 @@ export function optionalString(
   body: Record<string, unknown>,
   field: string,
   maximumLength: number,
+  options: StringValidationOptions = {},
 ): string | undefined {
   const value = body[field];
   if (value === undefined) return undefined;
@@ -117,7 +124,8 @@ export function optionalString(
       `Field '${field}' must be a string of at most ${maximumLength} characters.`,
     );
   }
-  if (CONTROL_CHARACTERS.test(value)) {
+  const controlRegex = options.allowMultiline ? CONTROL_CHARACTERS : ALL_CONTROL_CHARACTERS;
+  if (controlRegex.test(value)) {
     throw new HttpError(
       400,
       "invalid_request",
