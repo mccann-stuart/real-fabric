@@ -5,6 +5,7 @@ import type { CapturePath } from "../src/client/audio/UniversalAudioCaptureAdapt
 import { DemoScriptPanel } from "../src/client/components/DemoScriptPanel";
 import { Inspector } from "../src/client/components/Inspector";
 import { LeaveRoomDialog } from "../src/client/components/LeaveRoomDialog";
+import { MeasurementValue } from "../src/client/components/MeasurementValue";
 import { ParticipantCard } from "../src/client/components/ParticipantCard";
 import { PreflightPanel } from "../src/client/components/PreflightPanel";
 import { PresenterStrip } from "../src/client/components/PresenterStrip";
@@ -633,5 +634,17 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(html).toContain("<title>MoQ Relay</title>");
     expect(html).toContain("<title>Ada Lovelace (Human, You)</title>");
     expect(html).toContain("<title>Atlas AI (AI, Simulated)</title>");
+  });
+
+  it("renders MeasurementValue with accessible aria-label explaining unexposed reason", () => {
+    const unexposedMetric = notExposed<number>("No session setup handshake has completed");
+    const html = renderToStaticMarkup(
+      React.createElement(MeasurementValue, { measurement: unexposedMetric }),
+    );
+
+    expect(html).toContain('class="measurement measurement--not-exposed"');
+    expect(html).toContain('title="No session setup handshake has completed"');
+    expect(html).toContain('aria-label="Not exposed: No session setup handshake has completed"');
+    expect(html).toContain("Not exposed");
   });
 });
