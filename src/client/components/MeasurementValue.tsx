@@ -18,7 +18,12 @@ export function MeasurementValue<T>({
 }) {
   if (!measurement.exposed) {
     return (
-      <span className="measurement measurement--not-exposed" title={measurement.reason}>
+      <span
+        role="note"
+        className="measurement measurement--not-exposed"
+        title={measurement.reason}
+        aria-label={`${NOT_EXPOSED}: ${measurement.reason}`}
+      >
         {NOT_EXPOSED}
       </span>
     );
