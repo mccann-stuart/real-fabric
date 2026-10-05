@@ -30,6 +30,9 @@ describe("Real Fabric Worker", () => {
     const response = await worker.fetch(request, mockEnv, ctx);
     expect(response.status).toBe(500);
     expect(response.headers.get("x-correlation-id")).toBe(customCorrelationId);
+    expect(response.headers.get("strict-transport-security")).toBe(
+      "max-age=63072000; includeSubDomains; preload",
+    );
     expect(response.headers.get("x-content-type-options")).toBe("nosniff");
     expect(response.headers.get("x-frame-options")).toBe("DENY");
     expect(response.headers.get("cross-origin-opener-policy")).toBe("same-origin");
