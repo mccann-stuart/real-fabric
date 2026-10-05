@@ -387,6 +387,7 @@ function json<T>(value: T, status = HTTP_STATUS_OK): Response {
 
 function withSecurityHeaders(response: Response, correlationId: string): Response {
   const headers = new Headers(response.headers);
+  headers.set("strict-transport-security", "max-age=63072000; includeSubDomains; preload");
   headers.set("x-content-type-options", "nosniff");
   headers.set("x-frame-options", "DENY");
   headers.set("referrer-policy", "no-referrer");
