@@ -90,6 +90,15 @@ export function requiredString(
   if (typeof value !== "string" || value.trim().length === 0) {
     throw new HttpError(400, "invalid_request", `Field '${field}' must be a non-empty string.`);
   }
+  // Enforce a hard bound on raw string length before regex scanning or trimming
+  // to prevent whitespace inflation and resource exhaustion attacks (CWE-20 / CWE-400).
+  if (value.length > maximumLength * 4 + 64) {
+    throw new HttpError(
+      400,
+      "invalid_request",
+      `Field '${field}' must be at most ${maximumLength} characters.`,
+    );
+  }
   const controlRegex = options.allowMultiline ? CONTROL_CHARACTERS : ALL_CONTROL_CHARACTERS;
   if (controlRegex.test(value)) {
     throw new HttpError(
