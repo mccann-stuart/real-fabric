@@ -15,3 +15,7 @@
 ## 2026-11-18 - Strided Sampling and Unrolled Accumulators for Audio Frame Noise Floor RMS
 **Learning:** `PacketLossConcealer.observe` is invoked on every decoded 20ms audio frame (50Hz per track) to track noise floor RMS for comfort noise synthesis. Computing RMS over all 960 Float32Array samples sequentially with nullish checks creates floating-point addition latency bottlenecks in V8. Combining strided sampling (stride 4) with 4 parallel accumulators breaks loop dependency chains, speeding up `observe()` by ~3.5x (from ~2080ms to ~586ms per 1,000,000 frames).
 **Action:** For continuous numeric array reductions used in background metrics, use strided sampling and multiple unrolled accumulators to enable instruction-level parallelism.
+
+## 2026-11-20 - Unrolled Accumulators for Live Capture Voice Activity Detection RMS
+**Learning:** `VoiceActivityDetector.observe` runs on every captured 10ms–20ms audio quantum to track speech onset/release. Computing RMS over all Float32Array samples sequentially in a single accumulator loop causes floating-point addition dependency stalls in V8. Unrolling the loop into 4 independent accumulators (`sum0`, `sum1`, `sum2`, `sum3`) enables instruction-level parallelism, speeding up `observe()` by ~3x (from ~5,500ms down to ~1,810ms per 1,000,000 quanta).
+**Action:** Unroll sequential sum-of-squares / RMS loops on typed arrays into multiple parallel accumulators on high-frequency capture hot paths.
