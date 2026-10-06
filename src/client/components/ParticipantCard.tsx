@@ -5,6 +5,7 @@ import {
   type Participant,
   type RoutingPreference,
 } from "../../shared/contracts";
+import { NOT_EXPOSED } from "../../shared/measurement";
 import type { TrackSubscriptionState } from "../session/RoomSession";
 
 /**
@@ -12,6 +13,9 @@ import type { TrackSubscriptionState } from "../session/RoomSession";
  * live audio level. AI cards add the pipeline label and the two routing
  * toggles the viewing human owns (H9).
  */
+
+const UNEXPOSED_WAVEFORM_REASON =
+  "Another participant's audio level is not observable without receiving their audio stream.";
 
 export interface ParticipantCardProps {
   participant: Participant;
@@ -138,7 +142,14 @@ export const ParticipantCard = memo(function ParticipantCard({
         ) : (
           // H15: another participant's level is not observable without their
           // audio, so it says so rather than drawing a decorative waveform.
-          <span className="waveform__unavailable">Not exposed</span>
+          <span
+            role="note"
+            className="waveform__unavailable"
+            title={UNEXPOSED_WAVEFORM_REASON}
+            aria-label={`${NOT_EXPOSED}: ${UNEXPOSED_WAVEFORM_REASON}`}
+          >
+            {NOT_EXPOSED}
+          </span>
         )}
       </div>
 
