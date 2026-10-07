@@ -1370,7 +1370,15 @@ export class Room extends DurableObject<Env> {
         candidates.push(attachment.authDeadline);
       }
     }
-    await this.ctx.storage.setAlarm(Math.min(...candidates));
+    // ⚡ Bolt Optimization: Loop over candidates to find minimum alarm timestamp without array spreading.
+    let minAlarm = candidates[0] ?? meta.expires_at;
+    for (let i = 1; i < candidates.length; i += 1) {
+      const candidate = candidates[i];
+      if (candidate !== undefined && candidate < minAlarm) {
+        minAlarm = candidate;
+      }
+    }
+    await this.ctx.storage.setAlarm(minAlarm);
   }
 
   private broadcast(event: RoomEvent): void {

@@ -164,7 +164,11 @@ export class AiDirector {
       latencyMs,
       withinBudget: latencyMs <= BARGE_IN_BUDGET_MS,
     };
-    this.bargeIns = [result, ...this.bargeIns].slice(0, 20);
+    // ⚡ Bolt Optimization: In-place unshift and pop avoids array allocations on barge-in events.
+    this.bargeIns.unshift(result);
+    if (this.bargeIns.length > 20) {
+      this.bargeIns.pop();
+    }
     this.current = null;
     // An interruption is a human turn: it resets the AI-to-AI chain and clears
     // anything queued behind the interrupted answer.
