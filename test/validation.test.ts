@@ -89,6 +89,22 @@ describe("request validation", () => {
       }
     });
 
+    it("throws HttpError 400 invalid_request when string exceeds 80 characters limit for displayName", () => {
+      const longDisplayName = "A".repeat(81);
+      expect(() =>
+        requiredString({ displayName: longDisplayName }, "displayName", 80),
+      ).toThrowError();
+      try {
+        requiredString({ displayName: longDisplayName }, "displayName", 80);
+      } catch (error) {
+        expect(error).toMatchObject({
+          status: 400,
+          code: "invalid_request",
+          message: "Field 'displayName' must be at most 80 characters.",
+        } satisfies Partial<HttpError>);
+      }
+    });
+
     it("throws HttpError 400 invalid_request when raw string length exceeds raw threshold prior to trimming", () => {
       const paddedName = `Ada${" ".repeat(500)}`;
       expect(() => requiredString({ name: paddedName }, "name", 10)).toThrowError();
