@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PacketLossConcealer } from "../src/client/audio/PacketLossConcealer";
 import { PlaybackDeduplicator } from "../src/client/audio/PlaybackDeduplicator";
+import { VoiceActivityDetector } from "../src/client/audio/VoiceActivityDetector";
 
 describe("Deduplicate and PacketLossConcealer Benchmark", () => {
   it("measures PlaybackDeduplicator.accept performance over 1,000,000 frame arrivals across group transitions", () => {
@@ -41,6 +42,27 @@ describe("Deduplicate and PacketLossConcealer Benchmark", () => {
     expect(concealer.stats.concealedFrames).toBe(0);
     console.log(
       `[BENCHMARK] PacketLossConcealer.observe (${iterations} ops): ${duration.toFixed(2)} ms`,
+    );
+  });
+
+  it("measures VoiceActivityDetector.observe performance over 1,000,000 capture quanta", () => {
+    const detector = new VoiceActivityDetector();
+    const iterations = 1_000_000;
+    const sampleFrame = new Float32Array(960);
+    for (let i = 0; i < 960; i++) {
+      sampleFrame[i] = Math.sin((i / 960) * Math.PI * 2) * 0.1;
+    }
+
+    const start = performance.now();
+    for (let i = 0; i < iterations; i++) {
+      detector.observe(sampleFrame);
+    }
+    const end = performance.now();
+    const duration = end - start;
+
+    expect(detector.level).toBeGreaterThan(0);
+    console.log(
+      `[BENCHMARK] VoiceActivityDetector.observe (${iterations} ops): ${duration.toFixed(2)} ms`,
     );
   });
 });
