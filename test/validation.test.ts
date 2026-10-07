@@ -89,6 +89,20 @@ describe("request validation", () => {
       }
     });
 
+    it("throws HttpError 400 invalid_request when raw string length exceeds raw threshold prior to trimming", () => {
+      const paddedName = `Ada${" ".repeat(500)}`;
+      expect(() => requiredString({ name: paddedName }, "name", 10)).toThrowError();
+      try {
+        requiredString({ name: paddedName }, "name", 10);
+      } catch (error) {
+        expect(error).toMatchObject({
+          status: 400,
+          code: "invalid_request",
+          message: "Field 'name' must be at most 10 characters.",
+        } satisfies Partial<HttpError>);
+      }
+    });
+
     it("throws HttpError 400 invalid_request when string contains ASCII control characters", () => {
       const invalidControlStrings = [
         "wake\x00Name",
