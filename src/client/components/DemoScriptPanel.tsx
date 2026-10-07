@@ -108,8 +108,13 @@ export function DemoScriptPanel({
       <ol className="demo-script__steps">
         {DEMO_STEPS.map((step) => {
           const result = latest?.results.find((entry) => entry.stepId === step.id);
+          const isCurrent = running && currentStep?.id === step.id;
           return (
-            <li key={step.id} className={`demo-step demo-step--${result?.outcome ?? "pending"}`}>
+            <li
+              key={step.id}
+              className={`demo-step demo-step--${result?.outcome ?? "pending"}${isCurrent ? " demo-step--current" : ""}`}
+              aria-current={isCurrent ? "step" : undefined}
+            >
               <time>{formatCue(step.atSeconds)}</time>
               <span>{step.action}</span>
               <em className="demo-step__outcome">{describe(result)}</em>
