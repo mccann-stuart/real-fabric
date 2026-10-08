@@ -232,3 +232,20 @@ export function parseAuthPayload(payload: unknown): AuthPayloadResult {
     },
   };
 }
+
+/**
+ * Sanitizes and validates an incoming correlation ID (CWE-20 / CWE-116).
+ * Accepts alphanumeric characters, hyphens, underscores, dots (max 64 chars).
+ * Falls back to crypto.randomUUID() if missing or invalid.
+ */
+export function sanitizeCorrelationId(headerValue: string | null): string {
+  if (
+    typeof headerValue === "string" &&
+    headerValue.length > 0 &&
+    headerValue.length <= 64 &&
+    /^[a-zA-Z0-9_.-]+$/.test(headerValue)
+  ) {
+    return headerValue;
+  }
+  return crypto.randomUUID();
+}
