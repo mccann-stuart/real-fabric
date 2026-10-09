@@ -35,6 +35,13 @@ export function EntryPage({
     enterRoom,
   } = useEntryForm({ navigate, initialCode, stopMicrophone });
 
+  const handleInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Enter" && !busy) {
+      event.preventDefault();
+      void enterRoom(roomCode.trim() ? "join" : "create");
+    }
+  };
+
   return (
     <main className="entry-page">
       <header className="topbar">
@@ -57,6 +64,7 @@ export function EntryPage({
                 maxLength={80}
                 value={displayName}
                 onChange={(event) => setDisplayName(event.target.value)}
+                onKeyDown={handleInputKeyDown}
                 placeholder="Ada Lovelace"
               />
             </label>
@@ -70,6 +78,7 @@ export function EntryPage({
                 maxLength={20}
                 value={roomCode}
                 onChange={(event) => setRoomCode(event.target.value)}
+                onKeyDown={handleInputKeyDown}
                 placeholder="20-character code"
               />
             </label>
