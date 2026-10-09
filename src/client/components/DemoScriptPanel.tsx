@@ -38,7 +38,11 @@ export function DemoScriptPanel({
     <section className="demo-script" aria-labelledby="demo-script-title">
       <div className="section-heading">
         <h2 id="demo-script-title">Demo script (§12)</h2>
-        <span className={releaseGateMet ? "gate gate--met" : "gate"}>
+        <span
+          className={releaseGateMet ? "gate gate--met" : "gate"}
+          role="status"
+          aria-live="polite"
+        >
           {cleanRuns} / {REQUIRED_CLEAN_RUNS} clean runs
           {releaseGateMet ? " — release gate met" : ""}
         </span>

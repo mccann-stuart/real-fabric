@@ -45,7 +45,7 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(html).toContain("Microphone level not exposed until the test runs.");
   });
 
-  it("renders PresenterStrip export button with accessible label and title", () => {
+  it("renders PresenterStrip export button and live turn status with accessible attributes", () => {
     const room: RoomSnapshot = {
       code: "TEST1234",
       createdAt: 1_000,
@@ -54,7 +54,7 @@ describe("Micro-UX & Accessibility Improvements", () => {
       routing: [],
       partialContextAiIds: [],
       floor: { holderId: null, queue: [], heldSince: null },
-      aiToAi: { enabled: false, turnCap: 6, consecutiveTurns: 0, cappedAt: null },
+      aiToAi: { enabled: true, turnCap: 6, consecutiveTurns: 2, cappedAt: null },
       presenter: { simulatedHumans: 0, simulatedAis: 0, scriptedResponses: false },
       composition: { humans: 1, ais: 0, valid: true },
       transport: {
@@ -133,6 +133,9 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(html).toContain('aria-label="Export sanitised session telemetry JSON"');
     expect(html).toContain('title="Export sanitised session telemetry JSON"');
     expect(html).toContain("Export sanitised JSON");
+    expect(html).toContain('aria-hidden="true"');
+    expect(html).toContain('class="turn-counter" role="status" aria-live="polite"');
+    expect(html).toContain("AI-to-AI turns 2 / 6");
   });
 
   it("renders accessible toggle switches inside participant card", () => {
@@ -492,7 +495,7 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(html).toContain("Test microphone permission");
   });
 
-  it("renders DemoScriptPanel action buttons with descriptive aria labels when running", () => {
+  it("renders DemoScriptPanel action buttons and release gate live status with descriptive aria labels when running", () => {
     const html = renderToStaticMarkup(
       React.createElement(DemoScriptPanel, {
         currentStep: {
@@ -503,7 +506,7 @@ describe("Micro-UX & Accessibility Improvements", () => {
           verification: "presenter",
         },
         runs: [],
-        cleanRuns: 0,
+        cleanRuns: 1,
         releaseGateMet: false,
         running: true,
         onBegin: () => {},
@@ -516,6 +519,8 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(html).toContain('aria-label="Mark cue at 0:00 as not seen"');
     expect(html).toContain('aria-label="Skip cue at 0:00"');
     expect(html).toContain('aria-label="Abandon current demo run"');
+    expect(html).toContain('class="gate" role="status" aria-live="polite"');
+    expect(html).toContain("1 / 2 clean runs");
   });
 
   it("renders PreflightPanel with fieldset legend groupings for required and optional checks", () => {
