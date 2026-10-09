@@ -25,7 +25,7 @@ const TEST_CONFIGURATION = matchConfiguration({
 });
 
 describe("Micro-UX & Accessibility Improvements", () => {
-  it("renders EntryPage action buttons with accessible labels and attributes", () => {
+  it("renders EntryPage action buttons and inputs with keydown handler for Enter submission", () => {
     const html = renderToStaticMarkup(
       React.createElement(EntryPage, {
         configuration: TEST_CONFIGURATION,
@@ -36,6 +36,8 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(html).toContain("Create demo room");
     expect(html).toContain("Join room");
     expect(html).toContain("Solo presenter mode");
+    expect(html).toContain('id="entry-display-name"');
+    expect(html).toContain('id="entry-room-code"');
     expect(html).toContain('autoCorrect="off"');
     expect(html).toContain('spellCheck="false"');
     expect(html).toContain("button--primary");
