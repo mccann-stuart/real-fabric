@@ -8,6 +8,7 @@ import {
   requiredEnum,
   requiredInteger,
   requiredString,
+  sanitizeCorrelationId,
 } from "../src/worker/validation";
 
 describe("request validation", () => {
@@ -333,6 +334,27 @@ describe("request validation", () => {
           } satisfies Partial<HttpError>);
         }
       }
+    });
+  });
+
+  describe("sanitizeCorrelationId", () => {
+    it("preserves valid correlation IDs", () => {
+      expect(sanitizeCorrelationId("valid-id-123")).toBe("valid-id-123");
+      expect(sanitizeCorrelationId("UUID_01234567-89ab-cdef.test")).toBe(
+        "UUID_01234567-89ab-cdef.test",
+      );
+    });
+
+    it("falls back to crypto.randomUUID() for null, empty, oversized, or invalid strings", () => {
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+      expect(sanitizeCorrelationId(null)).toMatch(uuidRegex);
+      expect(sanitizeCorrelationId("")).toMatch(uuidRegex);
+      expect(sanitizeCorrelationId("a".repeat(65))).toMatch(uuidRegex);
+      expect(sanitizeCorrelationId("invalid id with spaces")).toMatch(uuidRegex);
+      expect(sanitizeCorrelationId("invalid\nheader")).toMatch(uuidRegex);
+      expect(sanitizeCorrelationId("invalid\x00header")).toMatch(uuidRegex);
+      expect(sanitizeCorrelationId("<script>alert(1)</script>")).toMatch(uuidRegex);
     });
   });
 

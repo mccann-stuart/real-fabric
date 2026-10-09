@@ -739,6 +739,20 @@ describe("Real Fabric Worker", () => {
     expect(JSON.parse(String(snapshot2.data))).toMatchObject({ type: "snapshot" });
     socket2.close(1000, "test complete");
   });
+
+  it("sanitizes invalid custom correlation IDs and preserves valid ones", async () => {
+    const validRes = await SELF.fetch("https://real-fabric.test/api/health", {
+      headers: { "x-correlation-id": "custom-valid_123.id" },
+    });
+    expect(validRes.headers.get("x-correlation-id")).toBe("custom-valid_123.id");
+
+    const invalidRes = await SELF.fetch("https://real-fabric.test/api/health", {
+      headers: { "x-correlation-id": "invalid header with spaces\n\r" },
+    });
+    const sanitizedId = invalidRes.headers.get("x-correlation-id");
+    expect(sanitizedId).not.toBe("invalid header with spaces\n\r");
+    expect(sanitizedId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+  });
 });
 
 function nextMessage(socket: WebSocket): Promise<MessageEvent> {

@@ -19,6 +19,7 @@ import {
   requiredEnum,
   requiredInteger,
   requiredString,
+  sanitizeCorrelationId,
 } from "./validation";
 
 export { Room };
@@ -36,7 +37,7 @@ const HTTP_SWITCHING_PROTOCOLS = 101;
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-    const correlationId = request.headers.get("x-correlation-id") ?? crypto.randomUUID();
+    const correlationId = sanitizeCorrelationId(request.headers.get("x-correlation-id"));
     const startedAt = Date.now();
     try {
       const response = await route(request, env, correlationId);
