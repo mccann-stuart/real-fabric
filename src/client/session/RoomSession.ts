@@ -1876,42 +1876,67 @@ export class RoomSession {
     const subscribed = players.map((player) => player.participantId);
     const counts = fanOut(subscribed, this.publishing);
     const objectStats = players.map((player) => player.objectStats());
-    // H15: a sum across nothing observable is not zero. Collect the exposed
-    // contributors, as the buffer depths below do, so that an empty list stays
-    // "Not exposed" instead of rendering a confident 0.
-    const lateDropCounts = objectStats.flatMap((entry) =>
-      entry.lateDrops.exposed ? [entry.lateDrops.value] : [],
-    );
-    const cancelledCounts = objectStats.flatMap((entry) =>
-      entry.cancelledDrops.exposed ? [entry.cancelledDrops.value] : [],
-    );
-    const concealedCounts = objectStats.flatMap((entry) =>
-      entry.concealedFrames.exposed ? [entry.concealedFrames.value] : [],
-    );
-    const comfortNoiseCounts = objectStats.flatMap((entry) =>
-      entry.comfortNoiseFrames.exposed ? [entry.comfortNoiseFrames.value] : [],
-    );
+    // ⚡ Bolt Optimization: Consolidate 9 flatMap/reduce passes into a single loop over objectStats
+    // to eliminate 9 intermediate array allocations and closure executions on every session metrics tick.
+    const lateDropCounts: number[] = [];
+    const cancelledCounts: number[] = [];
+    const concealedCounts: number[] = [];
+    const comfortNoiseCounts: number[] = [];
+    let lateDrops = 0;
+    let playableObjects = 0;
+
+    let maxBufferDepth = -Infinity;
+    let maxBufferTarget = -Infinity;
+    let maxReceiverHold = -Infinity;
+    let maxDecodeCallback = -Infinity;
+    let maxDriftPpm = -Infinity;
+    let aggregateBufferDepth = 0;
+
+    let hasBufferDepth = false;
+    let hasBufferTarget = false;
+    let hasReceiverHold = false;
+    let hasDecodeCallback = false;
+    let hasDriftEstimate = false;
+
+    for (let i = 0; i < objectStats.length; i += 1) {
+      const entry = objectStats[i];
+      if (!entry) continue;
+      if (entry.lateDrops.exposed) {
+        lateDropCounts.push(entry.lateDrops.value);
+        lateDrops += entry.lateDrops.value;
+      }
+      if (entry.cancelledDrops.exposed) cancelledCounts.push(entry.cancelledDrops.value);
+      if (entry.concealedFrames.exposed) concealedCounts.push(entry.concealedFrames.value);
+      if (entry.comfortNoiseFrames.exposed) comfortNoiseCounts.push(entry.comfortNoiseFrames.value);
+      if (entry.objects.exposed) playableObjects += entry.objects.value;
+
+      if (entry.depthMs.exposed) {
+        hasBufferDepth = true;
+        if (entry.depthMs.value > maxBufferDepth) maxBufferDepth = entry.depthMs.value;
+        aggregateBufferDepth += entry.depthMs.value;
+      }
+      if (entry.targetMs.exposed) {
+        hasBufferTarget = true;
+        if (entry.targetMs.value > maxBufferTarget) maxBufferTarget = entry.targetMs.value;
+      }
+      if (entry.receiverHoldMs.exposed) {
+        hasReceiverHold = true;
+        if (entry.receiverHoldMs.value > maxReceiverHold)
+          maxReceiverHold = entry.receiverHoldMs.value;
+      }
+      if (entry.decodeCallbackMs.exposed) {
+        hasDecodeCallback = true;
+        if (entry.decodeCallbackMs.value > maxDecodeCallback)
+          maxDecodeCallback = entry.decodeCallbackMs.value;
+      }
+      if (entry.skewPpm.exposed) {
+        hasDriftEstimate = true;
+        const absSkew = Math.abs(entry.skewPpm.value);
+        if (absSkew > maxDriftPpm) maxDriftPpm = absSkew;
+      }
+    }
+
     const total = (values: number[]): number => values.reduce((sum, value) => sum + value, 0);
-    const lateDrops = total(lateDropCounts);
-    const playableObjects = objectStats.reduce(
-      (sum, entry) => sum + (entry.objects.exposed ? entry.objects.value : 0),
-      0,
-    );
-    const bufferDepths = objectStats.flatMap((entry) =>
-      entry.depthMs.exposed ? [entry.depthMs.value] : [],
-    );
-    const bufferTargets = objectStats.flatMap((entry) =>
-      entry.targetMs.exposed ? [entry.targetMs.value] : [],
-    );
-    const receiverHolds = objectStats.flatMap((entry) =>
-      entry.receiverHoldMs.exposed ? [entry.receiverHoldMs.value] : [],
-    );
-    const decodeCallbacks = objectStats.flatMap((entry) =>
-      entry.decodeCallbackMs.exposed ? [entry.decodeCallbackMs.value] : [],
-    );
-    const driftEstimates = objectStats.flatMap((entry) =>
-      entry.skewPpm.exposed ? [Math.abs(entry.skewPpm.value)] : [],
-    );
     const captureLatency = this.capture.latencyStats();
     const unavailable = "Live transport has not been established, so this is not observable.";
     const noObjects = "No subscribed audio object has arrived yet.";
@@ -1940,22 +1965,18 @@ export class RoomSession {
         : notExposed("This participant is not publishing."),
       subscribedTracks:
         this.phase.name === "live" ? measured(counts.subscribedTracks) : notExposed(unavailable),
-      worstBufferMs:
-        bufferDepths.length === 0 ? notExposed(noObjects) : measured(Math.max(...bufferDepths)),
-      jitterTargetMs:
-        bufferTargets.length === 0
-          ? notExposed("No subscribed jitter buffer is active.")
-          : measured(Math.max(...bufferTargets)),
+      worstBufferMs: !hasBufferDepth ? notExposed(noObjects) : measured(maxBufferDepth),
+      jitterTargetMs: !hasBufferTarget
+        ? notExposed("No subscribed jitter buffer is active.")
+        : measured(maxBufferTarget),
       captureFrameMs: captureLatency.frameFillMs,
       encodeCallbackMs: captureLatency.encodeCallbackMs,
-      receiverHoldMs:
-        receiverHolds.length === 0
-          ? notExposed("No received object has reached a decoder yet.")
-          : measured(Math.max(...receiverHolds)),
-      decodeCallbackMs:
-        decodeCallbacks.length === 0
-          ? notExposed("No Opus decoder output callback has completed yet.")
-          : measured(Math.max(...decodeCallbacks)),
+      receiverHoldMs: !hasReceiverHold
+        ? notExposed("No received object has reached a decoder yet.")
+        : measured(maxReceiverHold),
+      decodeCallbackMs: !hasDecodeCallback
+        ? notExposed("No Opus decoder output callback has completed yet.")
+        : measured(maxDecodeCallback),
       outputLatencyMs: this.mixer.outputLatencyMs(),
       transportRttMs:
         typeof stats.transportRttMs === "number"
@@ -2037,12 +2058,11 @@ export class RoomSession {
       lateDropRate:
         playableObjects === 0 ? notExposed(noObjects) : measured(lateDrops / playableObjects),
       aggregateBufferMs: transportEstablished
-        ? measured(bufferDepths.reduce((sum, depth) => sum + depth, 0))
+        ? measured(aggregateBufferDepth)
         : notExposed(unavailable),
-      worstDriftPpm:
-        driftEstimates.length === 0
-          ? notExposed("No subscribed track has enough arrivals for a drift estimate.")
-          : measured(Math.max(...driftEstimates)),
+      worstDriftPpm: !hasDriftEstimate
+        ? notExposed("No subscribed track has enough arrivals for a drift estimate.")
+        : measured(maxDriftPpm),
       activeDecoders: transportEstablished
         ? measured(players.filter((player) => !player.released).length)
         : notExposed(unavailable),
