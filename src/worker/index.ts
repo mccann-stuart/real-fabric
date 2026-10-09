@@ -215,8 +215,8 @@ async function handleRoomAction(
     const wakeName = optionalString(body, "wakeName", 80);
     const simulated = requiredBoolean(body, "simulated");
     const room = await stub.addAi(credential, displayName, {
-      ...(address ? { address } : {}),
-      ...(wakeName ? { wakeName } : {}),
+      ...(address !== undefined ? { address } : {}),
+      ...(wakeName !== undefined ? { wakeName } : {}),
       simulated,
     });
     logRoomEvent("ai_added", correlationId, code, credential.participantId);
