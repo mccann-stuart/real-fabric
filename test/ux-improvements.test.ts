@@ -1,6 +1,6 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { CapturePath } from "../src/client/audio/UniversalAudioCaptureAdapter";
 import { DemoScriptPanel } from "../src/client/components/DemoScriptPanel";
 import { Inspector } from "../src/client/components/Inspector";
@@ -369,6 +369,41 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(html).toContain('aria-modal="true"');
     expect(html).toContain('aria-busy="true"');
     expect(html).toContain("Leaving…");
+  });
+
+  it("triggers onCancel and closes dialog when clicking LeaveRoomDialog backdrop", () => {
+    const mockCancel = vi.fn();
+    const mockClose = vi.fn();
+    const dialogElement = { close: mockClose } as unknown as HTMLDialogElement;
+
+    let dialogJsx: React.ReactElement | null = null;
+    renderToStaticMarkup(
+      React.createElement(() => {
+        dialogJsx = LeaveRoomDialog({
+          dialogRef: { current: dialogElement },
+          code: "TEST1234",
+          leaveError: null,
+          leaving: false,
+          onCancel: mockCancel,
+          onConfirmLeave: () => {},
+        });
+        return dialogJsx;
+      }),
+    );
+
+    expect(dialogJsx).not.toBeNull();
+    const props = (dialogJsx as unknown as React.ReactElement<{ onClick: (e: unknown) => void }>)
+      .props;
+
+    // Click on inner container (not backdrop)
+    props.onClick({ target: {} });
+    expect(mockCancel).not.toHaveBeenCalled();
+    expect(mockClose).not.toHaveBeenCalled();
+
+    // Click on backdrop (target is dialog ref itself)
+    props.onClick({ target: dialogElement });
+    expect(mockCancel).toHaveBeenCalledTimes(1);
+    expect(mockClose).toHaveBeenCalledTimes(1);
   });
 
   it("renders RoomTopBar live audio button with aria-busy when starting/disabled", () => {
