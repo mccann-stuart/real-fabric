@@ -195,6 +195,7 @@ describe("Real Fabric Worker", () => {
       body: JSON.stringify({ displayName: "Ada" }),
     });
     expect(limited.status).toBe(429);
+    expect(limited.headers.get("retry-after")).toBe("600");
     expect(await limited.json()).toMatchObject({
       error: { code: "room_creation_limited" },
     });
@@ -230,6 +231,7 @@ describe("Real Fabric Worker", () => {
       },
     );
     expect(limited.status).toBe(429);
+    expect(limited.headers.get("retry-after")).toBe("600");
     expect(await limited.json()).toMatchObject({
       error: { code: "room_join_limited" },
     });
