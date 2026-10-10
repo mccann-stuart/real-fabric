@@ -41,32 +41,44 @@ export class VoiceActivityDetector {
   observe(samples: Float32Array): VoiceActivityEvent {
     const sampleCount = samples.length;
 
-    // ⚡ Bolt Optimization: 4 unrolled accumulators break floating-point addition
-    // dependency chains in V8, allowing instruction-level parallelism during live
-    // audio capture quantum RMS calculation (~3.5x speedup over single accumulator loop).
+    // ⚡ Bolt Optimization: 8 unrolled accumulators break floating-point addition
+    // dependency chains in V8, maximizing instruction-level parallelism during live
+    // audio capture quantum RMS calculation.
     let sum0 = 0;
     let sum1 = 0;
     let sum2 = 0;
     let sum3 = 0;
+    let sum4 = 0;
+    let sum5 = 0;
+    let sum6 = 0;
+    let sum7 = 0;
     let index = 0;
-    const unrolledLimit = sampleCount - 3;
+    const unrolledLimit = sampleCount - 7;
 
-    for (; index < unrolledLimit; index += 4) {
+    for (; index < unrolledLimit; index += 8) {
       const s0 = samples[index] as number;
       const s1 = samples[index + 1] as number;
       const s2 = samples[index + 2] as number;
       const s3 = samples[index + 3] as number;
+      const s4 = samples[index + 4] as number;
+      const s5 = samples[index + 5] as number;
+      const s6 = samples[index + 6] as number;
+      const s7 = samples[index + 7] as number;
       sum0 += s0 * s0;
       sum1 += s1 * s1;
       sum2 += s2 * s2;
       sum3 += s3 * s3;
+      sum4 += s4 * s4;
+      sum5 += s5 * s5;
+      sum6 += s6 * s6;
+      sum7 += s7 * s7;
     }
     for (; index < sampleCount; index += 1) {
       const sample = samples[index] as number;
       sum0 += sample * sample;
     }
 
-    const sum = sum0 + sum1 + sum2 + sum3;
+    const sum = sum0 + sum1 + sum2 + sum3 + sum4 + sum5 + sum6 + sum7;
     this.lastRms = sampleCount === 0 ? 0 : Math.sqrt(sum / sampleCount);
 
     if (this.speaking) {
