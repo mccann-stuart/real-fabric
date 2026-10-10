@@ -71,8 +71,9 @@ export default {
           ? error.message
           : "The request could not be completed. No room state was changed after the failure.");
       console.error(JSON.stringify({ event: "request_failed", correlationId, code, status }));
+      const customHeaders = error instanceof HttpError ? error.headers : undefined;
       return withSecurityHeaders(
-        json<ApiError>({ error: { code, message, correlationId } }, status),
+        json<ApiError>({ error: { code, message, correlationId } }, status, customHeaders),
         correlationId,
       );
     }
@@ -364,6 +365,7 @@ async function enforceCreationRateLimit(request: Request, env: Env): Promise<voi
       429,
       "room_creation_limited",
       "Too many rooms were created recently. Try again later.",
+      { "retry-after": "600" },
     );
 }
 
@@ -375,15 +377,27 @@ async function enforceJoinRateLimit(request: Request, env: Env): Promise<void> {
   ).join("");
   const allowed = await roomStub(env, `rate-join-${key}`).checkJoinRateLimit(Date.now());
   if (!allowed)
-    throw new HttpError(429, "room_join_limited", "Too many room join attempts. Try again later.");
+    throw new HttpError(429, "room_join_limited", "Too many room join attempts. Try again later.", {
+      "retry-after": "600",
+    });
 }
 
 function roomCode(): string {
   return crypto.randomUUID().replaceAll("-", "").slice(0, 20).toUpperCase();
 }
 
-function json<T>(value: T, status = HTTP_STATUS_OK): Response {
-  return new Response(JSON.stringify(value), { status, headers: JSON_HEADERS });
+function json<T>(
+  value: T,
+  status = HTTP_STATUS_OK,
+  additionalHeaders?: Record<string, string>,
+): Response {
+  const headers = new Headers(JSON_HEADERS);
+  if (additionalHeaders) {
+    for (const [key, val] of Object.entries(additionalHeaders)) {
+      headers.set(key, val);
+    }
+  }
+  return new Response(JSON.stringify(value), { status, headers });
 }
 
 function withSecurityHeaders(response: Response, correlationId: string): Response {
