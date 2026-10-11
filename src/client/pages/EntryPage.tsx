@@ -91,6 +91,8 @@ export function EntryPage({
               className="button button--primary"
               disabled={busy}
               aria-busy={pendingMode === "create"}
+              aria-label={pendingMode === "create" ? "Creating demo room…" : "Create demo room"}
+              title={pendingMode === "create" ? "Creating demo room…" : "Create demo room"}
               type="button"
               onClick={() => void enterRoom("create")}
             >
@@ -100,6 +102,8 @@ export function EntryPage({
               className="button"
               disabled={busy}
               aria-busy={pendingMode === "join"}
+              aria-label={pendingMode === "join" ? "Joining room…" : "Join room"}
+              title={pendingMode === "join" ? "Joining room…" : "Join room"}
               type="button"
               onClick={() => void enterRoom("join")}
             >
@@ -109,6 +113,12 @@ export function EntryPage({
               className="button"
               disabled={busy}
               aria-busy={pendingMode === "presenter"}
+              aria-label={
+                pendingMode === "presenter" ? "Opening presenter mode…" : "Solo presenter mode"
+              }
+              title={
+                pendingMode === "presenter" ? "Opening presenter mode…" : "Solo presenter mode"
+              }
               type="button"
               onClick={() => void enterRoom("presenter")}
             >
@@ -133,6 +143,7 @@ export function EntryPage({
                 min={0}
                 max={MAX_SIMULATED_PARTICIPANTS}
                 value={simulatedHumans}
+                aria-describedby="simulation-config-desc"
                 onChange={(event) => setSimulatedHumans(Number(event.target.value))}
               />
             </label>
@@ -144,10 +155,11 @@ export function EntryPage({
                 min={0}
                 max={MAX_SIMULATED_PARTICIPANTS}
                 value={simulatedAis}
+                aria-describedby="simulation-config-desc"
                 onChange={(event) => setSimulatedAis(Number(event.target.value))}
               />
             </label>
-            <p>
+            <p id="simulation-config-desc">
               Simulated participants are labelled everywhere they appear and never stand in for a
               working relay or AI pipeline.
             </p>
