@@ -26,3 +26,7 @@
 ## 2026-11-25 - Bitwise Integer Truncation and Direct Indexing in AudioWorklet Resampling
 **Learning:** `TrackBuffer.read()` in `mixer-worklet.js` executes 48,000 times per second per audio track inside the AudioWorklet audio rendering process loop (375Hz quanta). Calling `Math.floor()` and using floating-point modulo (`% RING_SAMPLES`) on every audio sample calculation introduces unnecessary function call overhead and modulo instruction latency. Replacing `Math.floor()` with bitwise OR truncation (`| 0`) and using conditional index wrap (`base + 1 < RING_SAMPLES ? base + 1 : 0`) eliminates function calls and modulo operations on the 48kHz audio thread.
 **Action:** In AudioWorklet sample interpolation and circular buffer lookups, prefer bitwise truncation (`| 0`) over `Math.floor()` and conditional boundary checks over modulo (`%`) operators.
+
+## 2026-10-12 - Single-pass telemetry aggregation
+**Learning:** Scalar totals and explicit observation flags avoid temporary arrays while preserving unavailable counters as Not exposed. Cancellation already uses a bounded minimum-ID scan on main.
+**Action:** Preserve observation state when consolidating telemetry reductions.
