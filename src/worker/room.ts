@@ -776,6 +776,7 @@ export class Room extends DurableObject<Env> {
         ai_id TEXT PRIMARY KEY,
         queued_at INTEGER NOT NULL
       );
+      CREATE INDEX IF NOT EXISTS idx_routing_ai_hears ON routing(ai_id, hears_me);
       CREATE TABLE IF NOT EXISTS rate_events (created_at INTEGER NOT NULL);
     `);
     sql.exec("DELETE FROM schema_meta");
@@ -938,9 +939,9 @@ export class Room extends DurableObject<Env> {
           }),
         );
 
-        // Performance optimization (⚡ Bolt): Batch SQL inserts into 12-row chunks (84 variables: 7 per row)
+        // Performance optimization (⚡ Bolt): Batch SQL inserts into 24-row chunks (96 variables: 4 per row)
         // to maximize batching while respecting Cloudflare Workers SQLite's 100-variable limit.
-        const CHUNK_SIZE = 12;
+        const CHUNK_SIZE = 24;
         for (let i = 0; i < added.length; i += CHUNK_SIZE) {
           const chunk = added.slice(i, i + CHUNK_SIZE);
           const valuePlaceholders: string[] = [];
@@ -998,9 +999,9 @@ export class Room extends DurableObject<Env> {
           }),
         );
 
-        // Performance optimization (⚡ Bolt): Batch SQL inserts into 12-row chunks (84 variables: 7 per row)
+        // Performance optimization (⚡ Bolt): Batch SQL inserts into 16-row chunks (96 variables: 6 per row)
         // to maximize batching while respecting Cloudflare Workers SQLite's 100-variable limit.
-        const CHUNK_SIZE = 12;
+        const CHUNK_SIZE = 16;
         for (let i = 0; i < added.length; i += CHUNK_SIZE) {
           const chunk = added.slice(i, i + CHUNK_SIZE);
           const valuePlaceholders: string[] = [];
