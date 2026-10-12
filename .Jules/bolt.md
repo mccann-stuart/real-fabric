@@ -19,3 +19,7 @@
 ## 2026-11-20 - Unrolled Accumulators for Live Capture Voice Activity Detection RMS
 **Learning:** `VoiceActivityDetector.observe` runs on every captured 10ms–20ms audio quantum to track speech onset/release. Computing RMS over all Float32Array samples sequentially in a single accumulator loop causes floating-point addition dependency stalls in V8. Unrolling the loop into 4 independent accumulators (`sum0`, `sum1`, `sum2`, `sum3`) enables instruction-level parallelism, speeding up `observe()` by ~3x (from ~5,500ms down to ~1,810ms per 1,000,000 quanta).
 **Action:** Unroll sequential sum-of-squares / RMS loops on typed arrays into multiple parallel accumulators on high-frequency capture hot paths.
+
+## 2026-11-25 - Bitwise Integer Truncation and Direct Indexing in AudioWorklet Resampling
+**Learning:** `TrackBuffer.read()` in `mixer-worklet.js` executes 48,000 times per second per audio track inside the AudioWorklet audio rendering process loop (375Hz quanta). Calling `Math.floor()` and using floating-point modulo (`% RING_SAMPLES`) on every audio sample calculation introduces unnecessary function call overhead and modulo instruction latency. Replacing `Math.floor()` with bitwise OR truncation (`| 0`) and using conditional index wrap (`base + 1 < RING_SAMPLES ? base + 1 : 0`) eliminates function calls and modulo operations on the 48kHz audio thread.
+**Action:** In AudioWorklet sample interpolation and circular buffer lookups, prefer bitwise truncation (`| 0`) over `Math.floor()` and conditional boundary checks over modulo (`%`) operators.
