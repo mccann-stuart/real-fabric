@@ -30,3 +30,7 @@
 ## 2026-10-12 - Single-pass telemetry aggregation
 **Learning:** Scalar totals and explicit observation flags avoid temporary arrays while preserving unavailable counters as Not exposed. Cancellation already uses a bounded minimum-ID scan on main.
 **Action:** Preserve observation state when consolidating telemetry reductions.
+
+## 2026-11-27 - Maximize Durable Object SQL Multi-Row Batching under Parameter Cap
+**Learning:** Cloudflare Workers Durable Object SQLite enforces a strict 100 bound parameter limit per query execution. In `reconcileSimulated`, chunk sizes were hardcoded to 12. Adjusting chunk sizes based on per-row column counts (24 rows x 4 params = 96 <= 100 for humans; 16 rows x 6 params = 96 <= 100 for AIs) and adding a secondary index `idx_routing_ai_hears` on `routing(ai_id, hears_me)` reduces insert batches for larger simulations. Local correctness tests do not establish a measured speed-up.
+**Action:** When batching multi-row `INSERT` queries in Durable Object SQLite, calculate maximum chunk sizes dynamically or per-entity type against the 100-parameter limit, and index join/filter columns like `(ai_id, hears_me)`.
