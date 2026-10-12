@@ -195,6 +195,7 @@ describe("Real Fabric Worker", () => {
       body: JSON.stringify({ displayName: "Ada" }),
     });
     expect(limited.status).toBe(429);
+    expect(limited.headers.get("retry-after")).toBe("600");
     expect(await limited.json()).toMatchObject({
       error: { code: "room_creation_limited" },
     });
@@ -230,6 +231,7 @@ describe("Real Fabric Worker", () => {
       },
     );
     expect(limited.status).toBe(429);
+    expect(limited.headers.get("retry-after")).toBe("600");
     expect(await limited.json()).toMatchObject({
       error: { code: "room_join_limited" },
     });
@@ -738,6 +740,20 @@ describe("Real Fabric Worker", () => {
     const snapshot2 = await nextMessage(socket2);
     expect(JSON.parse(String(snapshot2.data))).toMatchObject({ type: "snapshot" });
     socket2.close(1000, "test complete");
+  });
+
+  it("sanitizes invalid custom correlation IDs and preserves valid ones", async () => {
+    const validRes = await SELF.fetch("https://real-fabric.test/api/health", {
+      headers: { "x-correlation-id": "custom-valid_123.id" },
+    });
+    expect(validRes.headers.get("x-correlation-id")).toBe("custom-valid_123.id");
+
+    const invalidRes = await SELF.fetch("https://real-fabric.test/api/health", {
+      headers: { "x-correlation-id": "invalid header with spaces\n\r" },
+    });
+    const sanitizedId = invalidRes.headers.get("x-correlation-id");
+    expect(sanitizedId).not.toBe("invalid header with spaces\n\r");
+    expect(sanitizedId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
   });
 });
 
