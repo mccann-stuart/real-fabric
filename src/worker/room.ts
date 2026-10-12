@@ -43,7 +43,7 @@ function endpointName(endpoint: string): string {
  * minutes, so recreating an out-of-date schema loses nothing worth keeping and
  * is preferable to serving a snapshot with missing columns.
  */
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 const CONTROL_AUTH_TIMEOUT_MS = 5_000;
 const CONTROL_AUTH_MESSAGE_MAX_LENGTH = 512;
@@ -739,6 +739,12 @@ export class Room extends DurableObject<Env> {
       sql.exec<{ version: number }>("SELECT version FROM schema_meta LIMIT 1").toArray()[0]
         ?.version ?? 0;
     if (current === SCHEMA_VERSION) return;
+    if (current === 4) {
+      // An index-only upgrade preserves active membership, routing and floor leases.
+      sql.exec("CREATE INDEX IF NOT EXISTS idx_routing_ai_hears ON routing(ai_id, hears_me)");
+      sql.exec("UPDATE schema_meta SET version = ?", SCHEMA_VERSION);
+      return;
+    }
 
     sql.exec(`
       DROP TABLE IF EXISTS participants;
@@ -790,6 +796,7 @@ export class Room extends DurableObject<Env> {
         ai_id TEXT PRIMARY KEY,
         queued_at INTEGER NOT NULL
       );
+      CREATE INDEX IF NOT EXISTS idx_routing_ai_hears ON routing(ai_id, hears_me);
       CREATE TABLE IF NOT EXISTS rate_events (created_at INTEGER NOT NULL);
     `);
     sql.exec("DELETE FROM schema_meta");
@@ -952,9 +959,8 @@ export class Room extends DurableObject<Env> {
           }),
         );
 
-        // Performance optimization (⚡ Bolt): Batch SQL inserts into 12-row chunks (84 variables: 7 per row)
-        // to maximize batching while respecting Cloudflare Workers SQLite's 100-variable limit.
-        const CHUNK_SIZE = 12;
+        // Batch 24 human rows (four parameters each) below SQLite's 100-parameter limit.
+        const CHUNK_SIZE = 24;
         for (let i = 0; i < added.length; i += CHUNK_SIZE) {
           const chunk = added.slice(i, i + CHUNK_SIZE);
           const valuePlaceholders: string[] = [];
@@ -1012,9 +1018,8 @@ export class Room extends DurableObject<Env> {
           }),
         );
 
-        // Performance optimization (⚡ Bolt): Batch SQL inserts into 12-row chunks (84 variables: 7 per row)
-        // to maximize batching while respecting Cloudflare Workers SQLite's 100-variable limit.
-        const CHUNK_SIZE = 12;
+        // Batch 16 AI rows (six parameters each) below SQLite's 100-parameter limit.
+        const CHUNK_SIZE = 16;
         for (let i = 0; i < added.length; i += CHUNK_SIZE) {
           const chunk = added.slice(i, i + CHUNK_SIZE);
           const valuePlaceholders: string[] = [];

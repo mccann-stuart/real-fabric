@@ -47,6 +47,8 @@ export function EntryPage({
     }
   };
 
+  const isRoomCodeError = Boolean(error?.toLowerCase().includes("room code"));
+
   return (
     <main className="entry-page">
       <header className="topbar">
@@ -82,10 +84,17 @@ export function EntryPage({
                 spellCheck={false}
                 maxLength={20}
                 value={roomCode}
+                aria-invalid={isRoomCodeError}
+                aria-errormessage={isRoomCodeError ? "entry-room-code-error" : undefined}
                 onChange={(event) => setRoomCode(event.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder="20-character code"
               />
+              {isRoomCodeError ? (
+                <span id="entry-room-code-error" className="form-error" role="alert">
+                  {error}
+                </span>
+              ) : null}
             </label>
             <button
               className="button button--primary"
@@ -225,7 +234,7 @@ export function EntryPage({
         <h2 className="sr-only" id="entry-alerts-title">
           Alerts and notices
         </h2>
-        {error ? (
+        {error && !isRoomCodeError ? (
           <p className="error-banner" role="alert">
             {error}
           </p>
