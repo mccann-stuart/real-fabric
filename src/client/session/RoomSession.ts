@@ -1876,12 +1876,14 @@ export class RoomSession {
     const subscribed = players.map((player) => player.participantId);
     const counts = fanOut(subscribed, this.publishing);
     const objectStats = players.map((player) => player.objectStats());
-    // ⚡ Bolt Optimization: Consolidate 9 flatMap/reduce passes into a single loop over objectStats
-    // to eliminate 9 intermediate array allocations and closure executions on every session metrics tick.
-    const lateDropCounts: number[] = [];
-    const cancelledCounts: number[] = [];
-    const concealedCounts: number[] = [];
-    const comfortNoiseCounts: number[] = [];
+    // Aggregate in one pass, retaining whether each counter was observed (H15).
+    let hasLateDrops = false;
+    let hasCancelledDrops = false;
+    let hasConcealedFrames = false;
+    let hasComfortNoiseFrames = false;
+    let cancelledDrops = 0;
+    let concealedFrames = 0;
+    let comfortNoiseFrames = 0;
     let lateDrops = 0;
     let playableObjects = 0;
 
@@ -1902,12 +1904,21 @@ export class RoomSession {
       const entry = objectStats[i];
       if (!entry) continue;
       if (entry.lateDrops.exposed) {
-        lateDropCounts.push(entry.lateDrops.value);
+        hasLateDrops = true;
         lateDrops += entry.lateDrops.value;
       }
-      if (entry.cancelledDrops.exposed) cancelledCounts.push(entry.cancelledDrops.value);
-      if (entry.concealedFrames.exposed) concealedCounts.push(entry.concealedFrames.value);
-      if (entry.comfortNoiseFrames.exposed) comfortNoiseCounts.push(entry.comfortNoiseFrames.value);
+      if (entry.cancelledDrops.exposed) {
+        hasCancelledDrops = true;
+        cancelledDrops += entry.cancelledDrops.value;
+      }
+      if (entry.concealedFrames.exposed) {
+        hasConcealedFrames = true;
+        concealedFrames += entry.concealedFrames.value;
+      }
+      if (entry.comfortNoiseFrames.exposed) {
+        hasComfortNoiseFrames = true;
+        comfortNoiseFrames += entry.comfortNoiseFrames.value;
+      }
       if (entry.objects.exposed) playableObjects += entry.objects.value;
 
       if (entry.depthMs.exposed) {
@@ -1936,7 +1947,6 @@ export class RoomSession {
       }
     }
 
-    const total = (values: number[]): number => values.reduce((sum, value) => sum + value, 0);
     const captureLatency = this.capture.latencyStats();
     const unavailable = "Live transport has not been established, so this is not observable.";
     const noObjects = "No subscribed audio object has arrived yet.";
@@ -1946,10 +1956,10 @@ export class RoomSession {
      * subscribed but none of them reporting, a sum over nothing is an absence
      * of evidence, and must read "Not exposed" rather than a confident 0.
      */
-    const aggregate = (counts: number[]): Measurement<number> => {
+    const aggregate = (total: number, observed: boolean): Measurement<number> => {
       if (!transportEstablished) return notExposed(unavailable);
-      if (players.length > 0 && counts.length === 0) return notExposed(noObjects);
-      return measured(total(counts));
+      if (players.length > 0 && !observed) return notExposed(noObjects);
+      return measured(total);
     };
     return {
       transportReadyMs:
@@ -1998,10 +2008,10 @@ export class RoomSession {
         typeof stats.subscribeSetupMs === "number"
           ? measured(stats.subscribeSetupMs)
           : notExposed("No explicit track subscription request has completed yet."),
-      lateDrops: aggregate(lateDropCounts),
-      cancelledDrops: aggregate(cancelledCounts),
-      concealedFrames: aggregate(concealedCounts),
-      comfortNoiseFrames: aggregate(comfortNoiseCounts),
+      lateDrops: aggregate(lateDrops, hasLateDrops),
+      cancelledDrops: aggregate(cancelledDrops, hasCancelledDrops),
+      concealedFrames: aggregate(concealedFrames, hasConcealedFrames),
+      comfortNoiseFrames: aggregate(comfortNoiseFrames, hasComfortNoiseFrames),
       lastBargeInMs:
         this.lastBargeIn === null
           ? notExposed("No barge-in has occurred in this session.")
