@@ -10,7 +10,7 @@ import {
   MAX_SIMULATED_PARTICIPANTS,
   type RoomSnapshot,
 } from "../src/shared/contracts";
-import type { Room } from "../src/worker/room";
+import { type Room, SCHEMA_VERSION } from "../src/worker/room";
 import { decodeRoomError } from "../src/worker/roomError";
 
 const BASE = "https://real-fabric.test";
@@ -1067,7 +1067,7 @@ describe("Room state and error paths (meta, assertActive, schema migration)", ()
       const currentVersion = state.storage.sql
         .exec<{ version: number }>("SELECT version FROM schema_meta LIMIT 1")
         .toArray()[0]?.version;
-      expect(currentVersion).toBe(5);
+      expect(currentVersion).toBe(SCHEMA_VERSION);
     });
   });
 });

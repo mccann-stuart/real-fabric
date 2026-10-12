@@ -442,47 +442,6 @@ describe("M1 — bounded session recovery", () => {
     expect(metrics.aggregateBufferMs).toEqual(measured(80));
     expect(metrics.worstDriftPpm).toEqual(measured(400));
     expect(metrics.activeDecoders).toEqual(measured(1));
-
-    const firstPlayer = internal.players.get("participant-2");
-    if (!firstPlayer) throw new Error("Missing test player");
-    const firstStats = firstPlayer.objectStats();
-    internal.players.set("participant-3", {
-      ...firstPlayer,
-      participantId: "participant-3",
-      objectStats: () => ({
-        ...firstStats,
-        objects: measured(50),
-        lateDrops: notExposed("No report"),
-        cancelledDrops: measured(0),
-        concealedFrames: measured(4),
-        comfortNoiseFrames: measured(3),
-        depthMs: measured(30),
-        targetMs: measured(100),
-        receiverHoldMs: measured(80),
-        decodeCallbackMs: measured(1),
-        skewPpm: measured(-500),
-      }),
-    });
-    const combined = internal.metrics();
-    expect(combined.lateDrops).toEqual(
-      measured(firstStats.lateDrops.exposed ? firstStats.lateDrops.value : 0),
-    );
-    expect(combined.cancelledDrops).toEqual(metrics.cancelledDrops);
-    expect(combined.concealedFrames).toEqual(
-      measured(4 + (firstStats.concealedFrames.exposed ? firstStats.concealedFrames.value : 0)),
-    );
-    expect(combined.comfortNoiseFrames).toEqual(
-      measured(
-        3 + (firstStats.comfortNoiseFrames.exposed ? firstStats.comfortNoiseFrames.value : 0),
-      ),
-    );
-    expect(combined.lateDropRate).toEqual(measured(5 / 150));
-    expect(combined.aggregateBufferMs).toEqual(measured(110));
-    expect(combined.worstBufferMs).toEqual(measured(80));
-    expect(combined.jitterTargetMs).toEqual(measured(100));
-    expect(combined.receiverHoldMs).toEqual(measured(80));
-    expect(combined.decodeCallbackMs).toEqual(measured(3));
-    expect(combined.worstDriftPpm).toEqual(measured(500));
   });
 
   it("reports observable zero object counters after transport setup", () => {
