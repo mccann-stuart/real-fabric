@@ -1067,7 +1067,7 @@ describe("Room state and error paths (meta, assertActive, schema migration)", ()
       const currentVersion = state.storage.sql
         .exec<{ version: number }>("SELECT version FROM schema_meta LIMIT 1")
         .toArray()[0]?.version;
-      expect(currentVersion).toBe(4);
+      expect(currentVersion).toBe(5);
     });
   });
 });
