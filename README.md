@@ -6,11 +6,11 @@ Real Fabric is a ten-minute conference-stage demonstration. Humans publish indep
 
 ## Current state
 
-The React/Vite client, SQLite Durable Object room service, control-plane WebSocket, presenter simulation, browser audio pipeline, inspector, telemetry and failure registry are implemented. The latest recorded suite has 453 automated tests across 27 files. The inspector exposes actual publication and accepted subscriptions, with unavailable measurements shown as **Not exposed** and partial figures as **Reported · no gate**.
+The React/Vite client, SQLite Durable Object room service, control-plane WebSocket, presenter simulation, browser audio pipeline, inspector, telemetry and failure registry are implemented. The latest recorded suite has 487 automated tests across 30 files. The inspector exposes actual publication and accepted subscriptions, with unavailable measurements shown as **Not exposed** and partial figures as **Reported · no gate**.
 
 Gate 1 transport acceptance passed on 10 September 2026: a browser-to-relay trace proved draft-16 MOQT negotiation, publication and subscription over WebTransport and HTTP/3/QUIC with 0.0% loss in the sampled frame exchange. Evidence is in the local `reports/gate1-transport-trace.json` and `reports/gate1-transport.netlog`; `wrangler.jsonc` sets `MOQT_TRANSPORT_VERIFIED=true`. This does not qualify draft 20, Safari, acoustic latency or the full demo run. Presenter AI responses remain scripted and labelled; there is no live recognition, model, synthesis or AI-worker audio pipeline.
 
-The configured Cloudflare relay uses `moqtail@0.12.1` and MOQT draft 16. The adapter attempts only the configured draft; it does not fall back to another draft, WebRTC or WebSocket audio. A missing, malformed or expired relay credential produces a named failure before audio transport starts. The production relay token last observed on 9 September 2026 was expired. `/api/health` exposes only non-secret credential status.
+The configured Cloudflare relay uses `moqtail@0.12.1` and MOQT draft 16. The adapter attempts only the configured draft; it does not fall back to another draft, WebRTC or WebSocket audio. A missing, malformed or expired relay credential produces a named failure before audio transport starts. The production relay token last observed on 9 September 2026 was expired. `/api/health` exposes only non-secret credential status. It permits 120 requests per client IP per rolling minute, independently of room creation and join limits; excess requests receive HTTP 429 with `Retry-After: 60`.
 
 ### Known P1: shared relay credential
 

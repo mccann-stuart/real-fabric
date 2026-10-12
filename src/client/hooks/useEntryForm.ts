@@ -80,7 +80,10 @@ export function useEntryForm({ navigate, initialCode = "", stopMicrophone }: Use
     displayName,
     setDisplayName,
     roomCode,
-    setRoomCode: (code: string) => setRoomCode(normaliseCode(code)),
+    setRoomCode: (code: string) => {
+      setRoomCode(normaliseCode(code));
+      setError("");
+    },
     busy,
     pendingMode,
     error,

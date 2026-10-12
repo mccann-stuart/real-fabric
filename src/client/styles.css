@@ -228,6 +228,11 @@ input::placeholder {
 .error-banner {
   margin: 18px 0 0;
 }
+.form-error {
+  color: var(--coral);
+  font: 12px var(--mono);
+  margin-top: 4px;
+}
 
 .signal-path {
   padding: 26px 36px;
