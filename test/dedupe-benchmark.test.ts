@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PacketLossConcealer } from "../src/client/audio/PacketLossConcealer";
+import { estimatePitchPeriod, PacketLossConcealer } from "../src/client/audio/PacketLossConcealer";
 import { PlaybackDeduplicator } from "../src/client/audio/PlaybackDeduplicator";
 import { VoiceActivityDetector } from "../src/client/audio/VoiceActivityDetector";
 
@@ -64,5 +64,21 @@ describe("Deduplicate and PacketLossConcealer Benchmark", () => {
     console.log(
       `[BENCHMARK] VoiceActivityDetector.observe (${iterations} ops): ${duration.toFixed(2)} ms`,
     );
+  });
+
+  it("measures estimatePitchPeriod performance over 50,000 calls", () => {
+    const sampleFrame = new Float32Array(960);
+    for (let i = 0; i < 960; i++) {
+      sampleFrame[i] = Math.sin((i / 960) * Math.PI * 8) * 0.5;
+    }
+
+    const start = performance.now();
+    for (let i = 0; i < 50_000; i++) {
+      estimatePitchPeriod(sampleFrame);
+    }
+    const end = performance.now();
+    const duration = end - start;
+
+    console.log(`[BENCHMARK] estimatePitchPeriod (50000 ops): ${duration.toFixed(2)} ms`);
   });
 });

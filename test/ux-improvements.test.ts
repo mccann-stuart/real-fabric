@@ -1,6 +1,6 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { CapturePath } from "../src/client/audio/UniversalAudioCaptureAdapter";
 import { DemoScriptPanel } from "../src/client/components/DemoScriptPanel";
 import { Inspector } from "../src/client/components/Inspector";
@@ -25,7 +25,7 @@ const TEST_CONFIGURATION = matchConfiguration({
 });
 
 describe("Micro-UX & Accessibility Improvements", () => {
-  it("renders EntryPage action buttons and input fields with keyboard navigation and submission attributes", () => {
+  it("renders EntryPage action buttons and inputs with keydown handler for Enter submission", () => {
     const html = renderToStaticMarkup(
       React.createElement(EntryPage, {
         configuration: TEST_CONFIGURATION,
@@ -33,19 +33,24 @@ describe("Micro-UX & Accessibility Improvements", () => {
       }),
     );
 
-    expect(html).toContain("Create demo room");
-    expect(html).toContain("Join room");
-    expect(html).toContain("Solo presenter mode");
+    expect(html).toContain('aria-label="Create demo room"');
+    expect(html).toContain('title="Create demo room"');
+    expect(html).toContain('aria-label="Join room"');
+    expect(html).toContain('title="Join room"');
+    expect(html).toContain('aria-label="Solo presenter mode"');
+    expect(html).toContain('title="Solo presenter mode"');
     expect(html).toContain('id="entry-display-name"');
     expect(html).toContain('id="entry-room-code"');
     expect(html).toContain('autoCorrect="off"');
     expect(html).toContain('spellCheck="false"');
     expect(html).toContain("button--primary");
+    expect(html).toContain('aria-describedby="simulation-config-desc"');
+    expect(html).toContain('id="simulation-config-desc"');
     expect(html).toContain('aria-label="Mic level test"');
     expect(html).toContain("Microphone level not exposed until the test runs.");
   });
 
-  it("renders PresenterStrip export button with accessible label and title", () => {
+  it("renders PresenterStrip export button and live turn status with accessible attributes", () => {
     const room: RoomSnapshot = {
       code: "TEST1234",
       createdAt: 1_000,
@@ -54,7 +59,7 @@ describe("Micro-UX & Accessibility Improvements", () => {
       routing: [],
       partialContextAiIds: [],
       floor: { holderId: null, queue: [], heldSince: null },
-      aiToAi: { enabled: false, turnCap: 6, consecutiveTurns: 0, cappedAt: null },
+      aiToAi: { enabled: true, turnCap: 6, consecutiveTurns: 2, cappedAt: null },
       presenter: { simulatedHumans: 0, simulatedAis: 0, scriptedResponses: false },
       composition: { humans: 1, ais: 0, valid: true },
       transport: {
@@ -133,6 +138,9 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(html).toContain('aria-label="Export sanitised session telemetry JSON"');
     expect(html).toContain('title="Export sanitised session telemetry JSON"');
     expect(html).toContain("Export sanitised JSON");
+    expect(html).toContain('aria-hidden="true"');
+    expect(html).toContain('class="turn-counter" role="status" aria-live="polite"');
+    expect(html).toContain("AI-to-AI turns 2 / 6");
   });
 
   it("renders accessible toggle switches inside participant card", () => {
@@ -368,6 +376,41 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(html).toContain("Leaving…");
   });
 
+  it("triggers onCancel and closes dialog when clicking LeaveRoomDialog backdrop", () => {
+    const mockCancel = vi.fn();
+    const mockClose = vi.fn();
+    const dialogElement = { close: mockClose } as unknown as HTMLDialogElement;
+
+    let dialogJsx: React.ReactElement | null = null;
+    renderToStaticMarkup(
+      React.createElement(() => {
+        dialogJsx = LeaveRoomDialog({
+          dialogRef: { current: dialogElement },
+          code: "TEST1234",
+          leaveError: null,
+          leaving: false,
+          onCancel: mockCancel,
+          onConfirmLeave: () => {},
+        });
+        return dialogJsx;
+      }),
+    );
+
+    expect(dialogJsx).not.toBeNull();
+    const props = (dialogJsx as unknown as React.ReactElement<{ onClick: (e: unknown) => void }>)
+      .props;
+
+    // Click on inner container (not backdrop)
+    props.onClick({ target: {} });
+    expect(mockCancel).not.toHaveBeenCalled();
+    expect(mockClose).not.toHaveBeenCalled();
+
+    // Click on backdrop (target is dialog ref itself)
+    props.onClick({ target: dialogElement });
+    expect(mockCancel).toHaveBeenCalledTimes(1);
+    expect(mockClose).toHaveBeenCalledTimes(1);
+  });
+
   it("renders RoomTopBar live audio button with aria-busy when starting/disabled", () => {
     const html = renderToStaticMarkup(
       React.createElement(RoomTopBar, {
@@ -492,7 +535,7 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(html).toContain("Test microphone permission");
   });
 
-  it("renders DemoScriptPanel action buttons with descriptive aria labels when running", () => {
+  it("renders DemoScriptPanel action buttons and release gate live status with descriptive aria labels when running", () => {
     const html = renderToStaticMarkup(
       React.createElement(DemoScriptPanel, {
         currentStep: {
@@ -503,7 +546,7 @@ describe("Micro-UX & Accessibility Improvements", () => {
           verification: "presenter",
         },
         runs: [],
-        cleanRuns: 0,
+        cleanRuns: 1,
         releaseGateMet: false,
         running: true,
         onBegin: () => {},
@@ -516,6 +559,8 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(html).toContain('aria-label="Mark cue at 0:00 as not seen"');
     expect(html).toContain('aria-label="Skip cue at 0:00"');
     expect(html).toContain('aria-label="Abandon current demo run"');
+    expect(html).toContain('class="gate" role="status" aria-live="polite"');
+    expect(html).toContain("1 / 2 clean runs");
   });
 
   it("renders PreflightPanel with fieldset legend groupings for required and optional checks", () => {

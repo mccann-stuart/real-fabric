@@ -87,8 +87,10 @@ export const ParticipantCard = memo(function ParticipantCard({
           onChange={(enabled) => onSubscription(participant.id, enabled)}
         />
         <small
+          role="note"
           className={`track-status track-status--${subscription.status}`}
           title={subscription.detail}
+          aria-label={`${subscriptionLabel(subscription.status)}: ${subscription.detail}`}
         >
           {subscriptionLabel(subscription.status)}
         </small>
