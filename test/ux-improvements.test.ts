@@ -33,14 +33,19 @@ describe("Micro-UX & Accessibility Improvements", () => {
       }),
     );
 
-    expect(html).toContain("Create demo room");
-    expect(html).toContain("Join room");
-    expect(html).toContain("Solo presenter mode");
+    expect(html).toContain('aria-label="Create demo room"');
+    expect(html).toContain('title="Create demo room"');
+    expect(html).toContain('aria-label="Join room"');
+    expect(html).toContain('title="Join room"');
+    expect(html).toContain('aria-label="Solo presenter mode"');
+    expect(html).toContain('title="Solo presenter mode"');
     expect(html).toContain('id="entry-display-name"');
     expect(html).toContain('id="entry-room-code"');
     expect(html).toContain('autoCorrect="off"');
     expect(html).toContain('spellCheck="false"');
     expect(html).toContain("button--primary");
+    expect(html).toContain('aria-describedby="simulation-config-desc"');
+    expect(html).toContain('id="simulation-config-desc"');
     expect(html).toContain('aria-label="Mic level test"');
     expect(html).toContain("Microphone level not exposed until the test runs.");
   });
