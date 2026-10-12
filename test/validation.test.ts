@@ -493,6 +493,47 @@ describe("request validation", () => {
       } satisfies Partial<HttpError>);
     });
 
+    it("throws HttpError 400 invalid_json when request body contains dangerous prototype pollution keys", async () => {
+      const dangerousBodies = [
+        '{"__proto__": {"admin": true}}',
+        '{"constructor": {"prototype": {"admin": true}}}',
+        '{"prototype": {"pollutes": true}}',
+        '{"nested": {"__proto__": {"admin": true}}}',
+        '{"arr": [{"constructor": 123}]}',
+      ];
+
+      for (const bodyString of dangerousBodies) {
+        const request = new Request("https://example.test", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: bodyString,
+        });
+        await expect(readJsonObject(request)).rejects.toMatchObject({
+          status: 400,
+          code: "invalid_json",
+          message: "Dangerous object key in request body.",
+        } satisfies Partial<HttpError>);
+      }
+    });
+
+    it("accepts valid JSON bodies containing strings that mention prototype keywords as value content", async () => {
+      const validBodies = [
+        JSON.stringify({ displayName: 'User with "constructor": text in name' }),
+        JSON.stringify({ description: 'Mentions "prototype": here' }),
+        JSON.stringify({ notes: 'Mentions "__proto__": here' }),
+      ];
+
+      for (const bodyString of validBodies) {
+        const request = new Request("https://example.test", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: bodyString,
+        });
+        const parsed = await readJsonObject(request);
+        expect(parsed).toBeDefined();
+      }
+    });
+
     it("throws HttpError 400 invalid_json when request body is not valid JSON syntax", async () => {
       const request = new Request("https://example.test", {
         method: "POST",

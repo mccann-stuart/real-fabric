@@ -3,6 +3,7 @@ export class HttpError extends Error {
     readonly status: number,
     readonly code: string,
     message: string,
+    readonly headers?: Record<string, string>,
   ) {
     super(message);
   }
@@ -21,6 +22,32 @@ const ALL_CONTROL_CHARACTERS = /[\x00-\x1F\x7F]/;
 
 export interface StringValidationOptions {
   allowMultiline?: boolean;
+}
+
+/**
+ * Recursively checks if an object or nested object/array contains dangerous prototype keys
+ * (`__proto__`, `constructor`, or `prototype`) to prevent prototype pollution (CWE-1321).
+ */
+function hasDangerousPrototypeKeys(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      if (hasDangerousPrototypeKeys(item)) return true;
+    }
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+  for (const key of Object.keys(record)) {
+    if (key === "__proto__" || key === "constructor" || key === "prototype") {
+      return true;
+    }
+    if (hasDangerousPrototypeKeys(record[key])) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export async function readJsonObject(request: Request): Promise<Record<string, unknown>> {
@@ -72,6 +99,9 @@ export async function readJsonObject(request: Request): Promise<Record<string, u
     const value: unknown = JSON.parse(text);
     if (!value || typeof value !== "object" || Array.isArray(value)) {
       throw new Error("body is not an object");
+    }
+    if (hasDangerousPrototypeKeys(value)) {
+      throw new HttpError(400, "invalid_json", "Dangerous object key in request body.");
     }
     return value as Record<string, unknown>;
   } catch (error) {
