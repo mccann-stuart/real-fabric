@@ -12,6 +12,7 @@ import { PresenterStrip } from "../src/client/components/PresenterStrip";
 import { RoomStatusStack } from "../src/client/components/RoomStatusStack";
 import { RoomTopBar } from "../src/client/components/RoomTopBar";
 import { SubscriptionGraph } from "../src/client/components/SubscriptionGraph";
+import * as useEntryFormModule from "../src/client/hooks/useEntryForm";
 import { EntryPage } from "../src/client/pages/EntryPage";
 import { PreflightPage } from "../src/client/pages/PreflightPage";
 import type { Participant, RoomSnapshot, RoutingPreference } from "../src/shared/contracts";
@@ -48,6 +49,38 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(html).toContain('id="simulation-config-desc"');
     expect(html).toContain('aria-label="Mic level test"');
     expect(html).toContain("Microphone level not exposed until the test runs.");
+  });
+
+  it("renders inline error feedback and ARIA attributes when room code validation fails", () => {
+    const spy = vi.spyOn(useEntryFormModule, "useEntryForm").mockReturnValue({
+      displayName: "",
+      setDisplayName: () => {},
+      roomCode: "INVALID",
+      setRoomCode: () => {},
+      busy: false,
+      pendingMode: null,
+      error: "Enter the complete 20-character room code.",
+      simulatedHumans: 5,
+      setSimulatedHumans: () => {},
+      simulatedAis: 2,
+      setSimulatedAis: () => {},
+      enterRoom: async () => {},
+    });
+
+    const html = renderToStaticMarkup(
+      React.createElement(EntryPage, {
+        configuration: TEST_CONFIGURATION,
+        navigate: () => {},
+      }),
+    );
+
+    expect(html).toContain('aria-invalid="true"');
+    expect(html).toContain('aria-errormessage="entry-room-code-error"');
+    expect(html).toContain('id="entry-room-code-error"');
+    expect(html).toContain('class="form-error" role="alert"');
+    expect(html).toContain("Enter the complete 20-character room code.");
+
+    spy.mockRestore();
   });
 
   it("renders PresenterStrip export button and live turn status with accessible attributes", () => {
