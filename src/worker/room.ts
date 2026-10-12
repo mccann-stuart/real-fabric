@@ -43,7 +43,7 @@ function endpointName(endpoint: string): string {
  * minutes, so recreating an out-of-date schema loses nothing worth keeping and
  * is preferable to serving a snapshot with missing columns.
  */
-const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 5;
 
 const CONTROL_AUTH_TIMEOUT_MS = 5_000;
 const CONTROL_AUTH_MESSAGE_MAX_LENGTH = 512;
