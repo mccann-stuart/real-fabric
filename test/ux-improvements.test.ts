@@ -78,6 +78,8 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(html).toContain('aria-errormessage="entry-room-code-error"');
     expect(html).toContain('id="entry-room-code-error"');
     expect(html).toContain('class="form-error" role="alert"');
+    expect(html.match(/role="alert"/g)).toHaveLength(1);
+    expect(html).not.toContain('class="error-banner"');
     expect(html).toContain("Enter the complete 20-character room code.");
 
     spy.mockRestore();

@@ -234,7 +234,7 @@ export function EntryPage({
         <h2 className="sr-only" id="entry-alerts-title">
           Alerts and notices
         </h2>
-        {error ? (
+        {error && !isRoomCodeError ? (
           <p className="error-banner" role="alert">
             {error}
           </p>
