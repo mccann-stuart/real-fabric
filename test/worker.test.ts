@@ -241,16 +241,44 @@ describe("Real Fabric Worker", () => {
     const headers = {
       "cf-connecting-ip": "198.51.100.252",
     };
-    for (let attempt = 0; attempt < 30; attempt += 1) {
+    for (let attempt = 0; attempt < 120; attempt += 1) {
       const res = await SELF.fetch("https://real-fabric.test/api/health", { headers });
       expect(res.status).toBe(200);
     }
 
     const limited = await SELF.fetch("https://real-fabric.test/api/health", { headers });
     expect(limited.status).toBe(429);
-    expect(limited.headers.get("retry-after")).toBe("600");
+    expect(limited.headers.get("retry-after")).toBe("60");
+    const otherIp = await SELF.fetch("https://real-fabric.test/api/health", {
+      headers: { "cf-connecting-ip": "198.51.100.253" },
+    });
+    expect(otherIp.status).toBe(200);
     expect(await limited.json()).toMatchObject({
       error: { code: "health_check_limited" },
+    });
+  });
+
+  it("expires the health quota after a minute without allocating room state", async () => {
+    const rooms = env.ROOMS;
+    if (!rooms) throw new Error("Missing ROOMS binding");
+    const stub = rooms.getByName("rate-health-expiry-test");
+    await runInDurableObject(stub, async (instance, state) => {
+      const now = Date.now();
+      for (let attempt = 0; attempt < 120; attempt += 1) {
+        expect(instance.checkHealthRateLimit(now)).toBe(true);
+      }
+      expect(instance.checkHealthRateLimit(now + 60_000)).toBe(false);
+      expect(instance.checkHealthRateLimit(now + 60_001)).toBe(true);
+      expect(state.storage.sql.exec("SELECT COUNT(*) AS count FROM rate_events").one().count).toBe(
+        1,
+      );
+      expect(
+        state.storage.sql
+          .exec(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('schema_meta', 'room_meta', 'participants')",
+          )
+          .toArray(),
+      ).toHaveLength(0);
     });
   });
 
@@ -268,6 +296,11 @@ describe("Real Fabric Worker", () => {
     const created = (await createdResponse.json()) as CreateRoomResponse;
 
     for (let guest = 1; guest < 20; guest += 1) {
+      // Entry and a separate pre-flight visit each fetch health on the same venue IP.
+      for (let check = 0; check < 2; check += 1) {
+        const health = await SELF.fetch("https://real-fabric.test/api/health", { headers });
+        expect(health.status).toBe(200);
+      }
       const joinedResponse = await SELF.fetch(
         `https://real-fabric.test/api/rooms/${created.room.code}/join`,
         {

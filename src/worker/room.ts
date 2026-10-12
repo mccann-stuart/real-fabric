@@ -49,6 +49,8 @@ const CONTROL_AUTH_TIMEOUT_MS = 5_000;
 const CONTROL_AUTH_MESSAGE_MAX_LENGTH = 512;
 const HTTP_SWITCHING_PROTOCOLS = 101;
 const RATE_LIMIT_WINDOW_MS = 10 * 60_000;
+const HEALTH_RATE_LIMIT_WINDOW_MS = 60_000;
+const HEALTH_RATE_LIMIT_REQUESTS = 120;
 const FLOOR_TURN_LEASE_MS = 30_000;
 
 interface ParticipantRow {
@@ -130,12 +132,12 @@ export class Room extends DurableObject<Env> {
 
   checkHealthRateLimit(now: number): boolean {
     this.ensureRateTable();
-    const cutoff = now - RATE_LIMIT_WINDOW_MS;
+    const cutoff = now - HEALTH_RATE_LIMIT_WINDOW_MS;
     this.ctx.storage.sql.exec("DELETE FROM rate_events WHERE created_at < ?", cutoff);
     const row = this.ctx.storage.sql
       .exec<{ count: number }>("SELECT COUNT(*) AS count FROM rate_events")
       .one();
-    if (row.count >= 30) return false;
+    if (row.count >= HEALTH_RATE_LIMIT_REQUESTS) return false;
     this.ctx.storage.sql.exec("INSERT INTO rate_events (created_at) VALUES (?)", now);
     return true;
   }

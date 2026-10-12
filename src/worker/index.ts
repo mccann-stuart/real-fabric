@@ -395,7 +395,7 @@ async function enforceHealthRateLimit(request: Request, env: Env): Promise<void>
       429,
       "health_check_limited",
       "Too many health check requests. Try again later.",
-      { "retry-after": "600" },
+      { "retry-after": "60" },
     );
 }
 
