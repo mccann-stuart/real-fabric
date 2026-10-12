@@ -83,7 +83,7 @@ export default {
 async function route(request: Request, env: Env, correlationId: string): Promise<Response> {
   const url = new URL(request.url);
   if (request.method === "GET" && url.pathname === "/api/health") {
-    return handleHealth(env);
+    return handleHealth(request, env);
   }
 
   if (request.method === "POST" && url.pathname === "/api/rooms") {
@@ -106,7 +106,8 @@ async function route(request: Request, env: Env, correlationId: string): Promise
   return env.ASSETS.fetch(request);
 }
 
-function handleHealth(env: Env): Response {
+async function handleHealth(request: Request, env: Env): Promise<Response> {
+  await enforceHealthRateLimit(request, env);
   // Gate 1 facts, read from configuration rather than assumed. The client
   // renders the specific §10 failure from these, never a generic error.
   // `relayEndpoint` is what the pre-flight HTTP/3 probe aims at (§11.2), so
@@ -380,6 +381,22 @@ async function enforceJoinRateLimit(request: Request, env: Env): Promise<void> {
     throw new HttpError(429, "room_join_limited", "Too many room join attempts. Try again later.", {
       "retry-after": "600",
     });
+}
+
+async function enforceHealthRateLimit(request: Request, env: Env): Promise<void> {
+  const address = request.headers.get("cf-connecting-ip") ?? "local";
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(address));
+  const key = Array.from(new Uint8Array(digest).slice(0, 8), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
+  const allowed = await roomStub(env, `rate-health-${key}`).checkHealthRateLimit(Date.now());
+  if (!allowed)
+    throw new HttpError(
+      429,
+      "health_check_limited",
+      "Too many health check requests. Try again later.",
+      { "retry-after": "600" },
+    );
 }
 
 function roomCode(): string {

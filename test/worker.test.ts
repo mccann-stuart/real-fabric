@@ -237,6 +237,23 @@ describe("Real Fabric Worker", () => {
     });
   });
 
+  it("rate-limits health check requests per IP", async () => {
+    const headers = {
+      "cf-connecting-ip": "198.51.100.252",
+    };
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      const res = await SELF.fetch("https://real-fabric.test/api/health", { headers });
+      expect(res.status).toBe(200);
+    }
+
+    const limited = await SELF.fetch("https://real-fabric.test/api/health", { headers });
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("retry-after")).toBe("600");
+    expect(await limited.json()).toMatchObject({
+      error: { code: "health_check_limited" },
+    });
+  });
+
   it("admits a normal 20-person entry flow from one IP without a 429", async () => {
     const headers = {
       "content-type": "application/json",
