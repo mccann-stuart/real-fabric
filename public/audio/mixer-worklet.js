@@ -55,18 +55,14 @@ class TrackBuffer {
   /** Returns null when there is nothing to read, so the caller can conceal. */
   read() {
     if (this.available < 2) return null;
-    // ⚡ Bolt Optimization: Fast integer truncation (`| 0`) and conditional index wrap
-    // bypass Math.floor and modulo operator overhead on 48kHz audio thread sample resampling.
-    const base = this.readIndex | 0;
+    const base = Math.floor(this.readIndex);
     const fraction = this.readIndex - base;
-    const nextIndex = base + 1 < RING_SAMPLES ? base + 1 : 0;
-    const first = this.ring[base];
-    const second = this.ring[nextIndex];
+    const first = this.ring[base % RING_SAMPLES];
+    const second = this.ring[(base + 1) % RING_SAMPLES];
     const value = first + (second - first) * fraction;
 
     this.readIndex += this.ratio;
-    const nextBase = this.readIndex | 0;
-    this.available -= nextBase - base;
+    this.available -= Math.floor(this.readIndex) - base;
     if (this.readIndex >= RING_SAMPLES) this.readIndex -= RING_SAMPLES;
     return value;
   }

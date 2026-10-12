@@ -108,10 +108,9 @@ export class PacketLossConcealer {
     const gain = REPEAT_DECAY ** this.consecutive;
     const output = new Float32Array(FRAME_SAMPLES);
     const tail = source.subarray(Math.max(0, source.length - period));
-    const tailLen = tail.length;
-    if (tailLen === 0) return output;
+    if (tail.length === 0) return output;
     for (let index = 0; index < output.length; index += 1) {
-      output[index] = (tail[index % tailLen] as number) * gain;
+      output[index] = (tail[index % tail.length] ?? 0) * gain;
     }
     return output;
   }
@@ -140,15 +139,12 @@ export function estimatePitchPeriod(samples: Float32Array): number {
   );
   if (maximumLag <= minimumLag) return Math.min(minimumLag, samples.length);
 
-  const sampleCount = samples.length;
   let bestLag = minimumLag;
   let bestScore = -Infinity;
-  // ⚡ Bolt Optimization: Use direct primitive indexing to eliminate redundant nullish coalescing (?? 0)
-  // branch checks inside the decimated autocorrelation inner loop over Float32Array samples.
   for (let lag = minimumLag; lag <= maximumLag; lag += SEARCH_DECIMATION) {
     let score = 0;
-    for (let index = lag; index < sampleCount; index += SEARCH_DECIMATION) {
-      score += (samples[index] as number) * (samples[index - lag] as number);
+    for (let index = lag; index < samples.length; index += SEARCH_DECIMATION) {
+      score += (samples[index] ?? 0) * (samples[index - lag] ?? 0);
     }
     if (score > bestScore) {
       bestScore = score;

@@ -18,7 +18,6 @@ export function LeaveRoomDialog({
   onConfirmLeave,
 }: LeaveRoomDialogProps) {
   return (
-    // biome-ignore lint/a11y/useKeyWithClickEvents: native <dialog> handles Escape cancellation via onCancel
     <dialog
       ref={dialogRef}
       className="leave-dialog"
@@ -31,12 +30,6 @@ export function LeaveRoomDialog({
           return;
         }
         onCancel();
-      }}
-      onClick={(event) => {
-        if (event.target === dialogRef.current && !leaving) {
-          onCancel();
-          dialogRef.current?.close();
-        }
       }}
     >
       <h2 id="leave-dialog-title">Leave room {code}?</h2>

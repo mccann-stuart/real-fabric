@@ -377,7 +377,6 @@ function copyMono(data: AudioData): Float32Array {
   }
 
   const plane = new Float32Array(frameCount);
-  const invChannels = 1 / numChannels;
   for (let channel = 0; channel < numChannels; channel += 1) {
     data.copyTo(plane, {
       planeIndex: channel,
@@ -385,9 +384,11 @@ function copyMono(data: AudioData): Float32Array {
       format: "f32-planar",
     });
     for (let index = 0; index < frameCount; index += 1) {
-      const pVal = plane[index] as number;
-      const mVal = mono[index] as number;
-      mono[index] = mVal + pVal * invChannels;
+      const pVal = plane[index];
+      if (pVal !== undefined) {
+        const mVal = mono[index] ?? 0;
+        mono[index] = mVal + pVal / numChannels;
+      }
     }
   }
   return mono;

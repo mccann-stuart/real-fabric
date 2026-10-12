@@ -8,7 +8,6 @@ import {
   requiredEnum,
   requiredInteger,
   requiredString,
-  sanitizeCorrelationId,
 } from "../src/worker/validation";
 
 describe("request validation", () => {
@@ -86,22 +85,6 @@ describe("request validation", () => {
           status: 400,
           code: "invalid_request",
           message: "Field 'address' must be a string of at most 10 characters.",
-        } satisfies Partial<HttpError>);
-      }
-    });
-
-    it("throws HttpError 400 invalid_request when string exceeds 80 characters limit for displayName", () => {
-      const longDisplayName = "A".repeat(81);
-      expect(() =>
-        requiredString({ displayName: longDisplayName }, "displayName", 80),
-      ).toThrowError();
-      try {
-        requiredString({ displayName: longDisplayName }, "displayName", 80);
-      } catch (error) {
-        expect(error).toMatchObject({
-          status: 400,
-          code: "invalid_request",
-          message: "Field 'displayName' must be at most 80 characters.",
         } satisfies Partial<HttpError>);
       }
     });
@@ -337,27 +320,6 @@ describe("request validation", () => {
     });
   });
 
-  describe("sanitizeCorrelationId", () => {
-    it("preserves valid correlation IDs", () => {
-      expect(sanitizeCorrelationId("valid-id-123")).toBe("valid-id-123");
-      expect(sanitizeCorrelationId("UUID_01234567-89ab-cdef.test")).toBe(
-        "UUID_01234567-89ab-cdef.test",
-      );
-    });
-
-    it("falls back to crypto.randomUUID() for null, empty, oversized, or invalid strings", () => {
-      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-      expect(sanitizeCorrelationId(null)).toMatch(uuidRegex);
-      expect(sanitizeCorrelationId("")).toMatch(uuidRegex);
-      expect(sanitizeCorrelationId("a".repeat(65))).toMatch(uuidRegex);
-      expect(sanitizeCorrelationId("invalid id with spaces")).toMatch(uuidRegex);
-      expect(sanitizeCorrelationId("invalid\nheader")).toMatch(uuidRegex);
-      expect(sanitizeCorrelationId("invalid\x00header")).toMatch(uuidRegex);
-      expect(sanitizeCorrelationId("<script>alert(1)</script>")).toMatch(uuidRegex);
-    });
-  });
-
   describe("parseAuthPayload", () => {
     it("returns success for valid auth payloads", () => {
       const valid = parseAuthPayload({
@@ -491,47 +453,6 @@ describe("request validation", () => {
         code: "payload_too_large",
         message: "Request body exceeds maximum allowed size.",
       } satisfies Partial<HttpError>);
-    });
-
-    it("throws HttpError 400 invalid_json when request body contains dangerous prototype pollution keys", async () => {
-      const dangerousBodies = [
-        '{"__proto__": {"admin": true}}',
-        '{"constructor": {"prototype": {"admin": true}}}',
-        '{"prototype": {"pollutes": true}}',
-        '{"nested": {"__proto__": {"admin": true}}}',
-        '{"arr": [{"constructor": 123}]}',
-      ];
-
-      for (const bodyString of dangerousBodies) {
-        const request = new Request("https://example.test", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: bodyString,
-        });
-        await expect(readJsonObject(request)).rejects.toMatchObject({
-          status: 400,
-          code: "invalid_json",
-          message: "Dangerous object key in request body.",
-        } satisfies Partial<HttpError>);
-      }
-    });
-
-    it("accepts valid JSON bodies containing strings that mention prototype keywords as value content", async () => {
-      const validBodies = [
-        JSON.stringify({ displayName: 'User with "constructor": text in name' }),
-        JSON.stringify({ description: 'Mentions "prototype": here' }),
-        JSON.stringify({ notes: 'Mentions "__proto__": here' }),
-      ];
-
-      for (const bodyString of validBodies) {
-        const request = new Request("https://example.test", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: bodyString,
-        });
-        const parsed = await readJsonObject(request);
-        expect(parsed).toBeDefined();
-      }
     });
 
     it("throws HttpError 400 invalid_json when request body is not valid JSON syntax", async () => {

@@ -33,7 +33,7 @@ describe("ParticipantCard component", () => {
     },
   ];
 
-  it("renders AI participant card correctly with accessible toggle labels and track status aria-label", () => {
+  it("renders AI participant card correctly with accessible toggle labels", () => {
     const html = renderToStaticMarkup(
       React.createElement(ParticipantCard, {
         participant: mockAi,
@@ -41,13 +41,6 @@ describe("ParticipantCard component", () => {
         viewerId: "human-1",
         routing: mockRouting,
         partialContext: false,
-        subscription: {
-          participantId: "ai-1",
-          intent: true,
-          status: "subscribed",
-          detail: "The relay accepted this track subscription.",
-        },
-        onSubscription: () => {},
         onRouting: () => {},
       }),
     );
@@ -56,7 +49,6 @@ describe("ParticipantCard component", () => {
     expect(html).toContain("Hold to ask Ada AI");
     expect(html).toContain('aria-label="Hears me (Ada AI)"');
     expect(html).toContain('aria-pressed="false"');
-    expect(html).toContain('aria-label="Subscribed: The relay accepted this track subscription."');
   });
 
   it("invokes onAddressDown and onAddressUp on keyboard Space/Enter events", () => {

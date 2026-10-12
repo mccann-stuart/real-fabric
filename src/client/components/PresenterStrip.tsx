@@ -40,14 +40,14 @@ export function PresenterStrip({
 
       <div className="health-item">
         <b>
-          <i className={phase.name === "live" ? "green" : "amber"} aria-hidden="true" />
+          <i className={phase.name === "live" ? "green" : "amber"} />
           Transport
         </b>
         <span>{describePhase(phase)}</span>
       </div>
       <div className="health-item">
         <b>
-          <i className="green" aria-hidden="true" />
+          <i className="green" />
           Participants
         </b>
         <span>
@@ -56,7 +56,7 @@ export function PresenterStrip({
       </div>
       <div className="health-item">
         <b>
-          <i className={phase.name === "live" ? "green" : "amber"} aria-hidden="true" />
+          <i className={phase.name === "live" ? "green" : "amber"} />
           Subscriptions
         </b>
         <span>
@@ -65,7 +65,7 @@ export function PresenterStrip({
       </div>
       <div className="health-item">
         <b>
-          <i className={degradation.step === 0 ? "green" : "amber"} aria-hidden="true" />
+          <i className={degradation.step === 0 ? "green" : "amber"} />
           Worst buffer
         </b>
         <span>
@@ -78,7 +78,7 @@ export function PresenterStrip({
       </div>
       <div className="health-item">
         <b>
-          <i className={room.floor.holderId ? "amber" : "green"} aria-hidden="true" />
+          <i className={room.floor.holderId ? "amber" : "green"} />
           AI pipelines
         </b>
         <span>
@@ -89,7 +89,7 @@ export function PresenterStrip({
       </div>
       <div className="health-item">
         <b>
-          <i className={lastError ? "amber" : "green"} aria-hidden="true" />
+          <i className={lastError ? "amber" : "green"} />
           Last error
         </b>
         <span>{lastError ?? "None"}</span>
@@ -131,11 +131,7 @@ export function PresenterStrip({
           <i aria-hidden="true" />
         </label>
         {room.aiToAi.enabled ? (
-          <span
-            className={`turn-counter${room.aiToAi.cappedAt ? " turn-counter--capped" : ""}`}
-            role="status"
-            aria-live="polite"
-          >
+          <span className={`turn-counter${room.aiToAi.cappedAt ? " turn-counter--capped" : ""}`}>
             AI-to-AI turns {room.aiToAi.consecutiveTurns} / {room.aiToAi.turnCap}
             {room.aiToAi.cappedAt ? " — cap reached, exchange stopped" : ""}
           </span>
