@@ -235,6 +235,11 @@ export function parseAuthPayload(payload: unknown): AuthPayloadResult {
     return { success: false, error: "authentication_required" };
   }
 
+  // Reject payloads with dangerous prototype keys to prevent prototype pollution (CWE-1321).
+  if (hasDangerousPrototypeKeys(payload)) {
+    return { success: false, error: "invalid_credentials" };
+  }
+
   const p = payload as Record<string, unknown>;
   const participantId = p.participantId;
   const token = p.token;

@@ -408,6 +408,15 @@ describe("request validation", () => {
         { type: "auth", participantId: "p-1", token: "token\x00123" },
         { type: "auth", participantId: "p-1", token: "token\x7F" },
         { type: "auth" },
+        JSON.parse(
+          '{"type":"auth","participantId":"p-1","token":"token123","__proto__":{"polluted":true}}',
+        ),
+        JSON.parse(
+          '{"type":"auth","participantId":"p-1","token":"token123","constructor":{"prototype":{"admin":true}}}',
+        ),
+        JSON.parse(
+          '{"type":"auth","participantId":"p-1","token":"token123","prototype":{"admin":true}}',
+        ),
       ];
 
       for (const payload of invalidCredentials) {
