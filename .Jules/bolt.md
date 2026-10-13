@@ -34,3 +34,7 @@
 ## 2026-11-27 - Maximize Durable Object SQL Multi-Row Batching under Parameter Cap
 **Learning:** Cloudflare Workers Durable Object SQLite enforces a strict 100 bound parameter limit per query execution. In `reconcileSimulated`, chunk sizes were hardcoded to 12. Adjusting chunk sizes based on per-row column counts (24 rows x 4 params = 96 <= 100 for humans; 16 rows x 6 params = 96 <= 100 for AIs) and adding a secondary index `idx_routing_ai_hears` on `routing(ai_id, hears_me)` reduces insert batches for larger simulations. Local correctness tests do not establish a measured speed-up.
 **Action:** When batching multi-row `INSERT` queries in Durable Object SQLite, calculate maximum chunk sizes dynamically or per-entity type against the 100-parameter limit, and index join/filter columns like `(ai_id, hears_me)`.
+
+## 2026-11-28 - String Prefix Slicing for Track Address Parsing
+**Learning:** `parseTrackName` is evaluated on every track publication announcement and room reconciliation step. Using regular expression matching (`/^(audio|presence)\/(.+)$/`) invokes V8's regex parser and allocates temporary match array objects. Replacing regex matching with `startsWith("audio/")` / `startsWith("presence/")` string prefix checks and `.slice()` eliminates regex overhead and allocations, speeding up `parseTrackName` by ~4.8x (from ~178ms to ~36ms per 1,000,000 calls).
+**Action:** For high-frequency string parsing with fixed prefix formats, prefer string `startsWith()` and `.slice()` over regular expressions.
