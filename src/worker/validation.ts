@@ -39,12 +39,14 @@ function hasDangerousPrototypeKeys(value: unknown): boolean {
   }
 
   const record = value as Record<string, unknown>;
-  for (const key of Object.keys(record)) {
-    if (key === "__proto__" || key === "constructor" || key === "prototype") {
-      return true;
-    }
-    if (hasDangerousPrototypeKeys(record[key])) {
-      return true;
+  for (const key in record) {
+    if (Object.prototype.hasOwnProperty.call(record, key)) {
+      if (key === "__proto__" || key === "constructor" || key === "prototype") {
+        return true;
+      }
+      if (hasDangerousPrototypeKeys(record[key])) {
+        return true;
+      }
     }
   }
   return false;
