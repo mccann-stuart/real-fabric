@@ -141,7 +141,6 @@ async function handleCreateRoom(
   const stub = roomStub(env, code);
   await stub.initialise(code, Date.now());
   const joined = await stub.join(displayName);
-  logRoomEvent("room_created", correlationId, code, joined.participant.id);
   return json<CreateRoomResponse>(
     {
       ...joined,
@@ -181,7 +180,6 @@ async function handleRoomAction(
     const displayName = requiredString(body, "displayName", 80);
     const rejoinToken = optionalString(body, "rejoinToken", 128);
     const joined = await stub.join(displayName, rejoinToken);
-    logRoomEvent("participant_joined", correlationId, code, joined.participant.id);
     return json<JoinRoomResponse>({
       ...joined,
       relayCredential: relayCredential(env),
@@ -194,7 +192,6 @@ async function handleRoomAction(
     const participantId = requiredString(body, "participantId", 64);
     const rejoinToken = requiredString(body, "rejoinToken", 128);
     const room = await stub.leave(participantId, rejoinToken);
-    logRoomEvent("participant_left", correlationId, code, participantId);
     return json(room);
   }
 
@@ -206,7 +203,6 @@ async function handleRoomAction(
     const hearsMe = requiredBoolean(body, "hearsMe");
     const iHearIt = requiredBoolean(body, "iHearIt");
     const room = await stub.updateRouting(participantId, rejoinToken, aiId, hearsMe, iHearIt);
-    logRoomEvent("routing_changed", correlationId, code, participantId);
     return json(room);
   }
 
@@ -222,7 +218,6 @@ async function handleRoomAction(
       ...(wakeName !== undefined ? { wakeName } : {}),
       simulated,
     });
-    logRoomEvent("ai_added", correlationId, code, credential.participantId);
     return json(room, 201);
   }
 
@@ -231,7 +226,6 @@ async function handleRoomAction(
     const credential = readCredential(body);
     const aiId = requiredString(body, "aiId", 64);
     const room = await stub.removeAi(credential, aiId);
-    logRoomEvent("ai_removed", correlationId, code, credential.participantId);
     return json(room);
   }
 
@@ -260,7 +254,6 @@ async function handleRoomAction(
     }
     if (operation === "cancel") return json(await stub.cancelFloorRequest(credential, aiId));
     const result = await stub.requestFloor(credential, aiId);
-    logRoomEvent("floor_requested", correlationId, code, credential.participantId);
     return json(result);
   }
 
@@ -275,7 +268,6 @@ async function handleRoomAction(
     ] as const);
     if (operation === "turn") {
       const result = await stub.recordAiToAiTurn(credential);
-      logRoomEvent("ai_to_ai_turn", correlationId, code, credential.participantId);
       return json(result);
     }
     if (operation === "reset") {
@@ -285,7 +277,6 @@ async function handleRoomAction(
       return json(room);
     }
     const room = await stub.setAiToAi(credential, operation === "enable");
-    logRoomEvent("ai_to_ai_changed", correlationId, code, credential.participantId);
     return json(room);
   }
 
@@ -297,7 +288,6 @@ async function handleRoomAction(
       simulatedAis: requiredInteger(body, "simulatedAis", 0, MAX_SIMULATED_PARTICIPANTS),
       scriptedResponses: requiredBoolean(body, "scriptedResponses"),
     });
-    logRoomEvent("presenter_configured", correlationId, code, credential.participantId);
     return json(room);
   }
 
@@ -451,13 +441,4 @@ function endpointName(endpoint: string): string | null {
   } catch {
     return null;
   }
-}
-
-function logRoomEvent(
-  event: string,
-  correlationId: string,
-  roomCodeValue: string,
-  participantId: string,
-): void {
-  console.log(JSON.stringify({ event, correlationId, roomId: roomCodeValue, participantId }));
 }
