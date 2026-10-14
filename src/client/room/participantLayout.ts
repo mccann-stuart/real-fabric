@@ -5,15 +5,36 @@ export function projectObservedActivity(
   room: RoomSnapshot,
   observedAt: ReadonlyMap<string, { readonly lastActiveAt: number }>,
 ): RoomSnapshot {
+  // ⚡ Bolt Optimization: Avoid allocating new participant objects and a new RoomSnapshot
+  // when participant lastActiveAt timestamps have not changed, reducing GC pressure and
+  // preserving referential stability across frequent RoomSession state emissions.
+  let changed = false;
+  const participants = room.participants;
+  const len = participants.length;
+  const newParticipants: Participant[] = new Array(len);
+
+  for (let index = 0; index < len; index += 1) {
+    const participant = participants[index] as Participant;
+    const newLastActiveAt = Math.max(
+      participant.joinedAt,
+      observedAt.get(participant.id)?.lastActiveAt ?? 0,
+    );
+    if (newLastActiveAt !== participant.lastActiveAt) {
+      changed = true;
+      newParticipants[index] = {
+        ...participant,
+        lastActiveAt: newLastActiveAt,
+      };
+    } else {
+      newParticipants[index] = participant;
+    }
+  }
+
+  if (!changed) return room;
+
   return {
     ...room,
-    participants: room.participants.map((participant) => ({
-      ...participant,
-      lastActiveAt: Math.max(
-        participant.joinedAt,
-        observedAt.get(participant.id)?.lastActiveAt ?? 0,
-      ),
-    })),
+    participants: newParticipants,
   };
 }
 

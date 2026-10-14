@@ -117,4 +117,19 @@ describe("SEC-13 — listener-observed activity", () => {
     expect(projected.participants.map((entry) => entry.lastActiveAt)).toEqual([100, 500]);
     expect(shared.participants.map((entry) => entry.lastActiveAt)).toEqual([10_000, 20_000]);
   });
+
+  it("preserves room reference when activity timestamps are unchanged", () => {
+    const p1 = { ...participant("human-1", "human"), joinedAt: 100, lastActiveAt: 500 };
+    const p2 = { ...participant("human-2", "human"), joinedAt: 200, lastActiveAt: 600 };
+    const shared = room([p1, p2], []);
+    const playersMap = new Map([
+      ["human-1", { lastActiveAt: 500 }],
+      ["human-2", { lastActiveAt: 600 }],
+    ]);
+
+    const firstProjection = projectObservedActivity(shared, playersMap);
+    const secondProjection = projectObservedActivity(firstProjection, playersMap);
+
+    expect(secondProjection).toBe(firstProjection);
+  });
 });
