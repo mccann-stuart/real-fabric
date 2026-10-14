@@ -28,7 +28,7 @@ export interface StringValidationOptions {
  * Recursively checks if an object or nested object/array contains dangerous prototype keys
  * (`__proto__`, `constructor`, or `prototype`) to prevent prototype pollution (CWE-1321).
  */
-function hasDangerousPrototypeKeys(value: unknown): boolean {
+export function hasDangerousPrototypeKeys(value: unknown): boolean {
   if (!value || typeof value !== "object") return false;
 
   if (Array.isArray(value)) {
@@ -39,12 +39,14 @@ function hasDangerousPrototypeKeys(value: unknown): boolean {
   }
 
   const record = value as Record<string, unknown>;
-  for (const key of Object.keys(record)) {
-    if (key === "__proto__" || key === "constructor" || key === "prototype") {
-      return true;
-    }
-    if (hasDangerousPrototypeKeys(record[key])) {
-      return true;
+  for (const key in record) {
+    if (Object.hasOwn(record, key)) {
+      if (key === "__proto__" || key === "constructor" || key === "prototype") {
+        return true;
+      }
+      if (hasDangerousPrototypeKeys(record[key])) {
+        return true;
+      }
     }
   }
   return false;
