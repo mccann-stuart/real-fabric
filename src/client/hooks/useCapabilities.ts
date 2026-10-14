@@ -144,6 +144,78 @@ export async function evaluateRequiredBrowserCapabilities(): Promise<BrowserCapa
   return (await evaluateRequiredLocalBrowserCapabilities()).evidence;
 }
 
+interface RelayEvaluation {
+  relay: CheckState;
+  relayReason: string;
+  failure: FailureCode | null;
+  relayEndpoint: string | null;
+}
+
+async function evaluateRelayCapability(
+  fetchHealthImpl: typeof fetchHealth,
+): Promise<RelayEvaluation> {
+  try {
+    const health = await fetchHealthImpl();
+    const relayEndpoint = health.relayEndpoint;
+    const framed = draftsFramedByClient();
+    const endpoint = health.relayEndpointName ?? "no configured endpoint";
+
+    if (!health.relayEndpoint) {
+      // H14: no endpoint is a different fact from an endpoint that fails.
+      return {
+        relay: "unavailable",
+        relayReason: `No relay endpoint is configured for MOQT draft ${health.draft}.`,
+        failure: "draft_endpoint_missing",
+        relayEndpoint: null,
+      };
+    }
+
+    if (!health.relayCredentialConfigured) {
+      const relayReason =
+        health.relayCredentialStatus === "expired"
+          ? `The configured relay credential for ${endpoint} has expired.`
+          : health.relayCredentialStatus === "invalid"
+            ? `The configured relay credential for ${endpoint} is not a valid current Cloudflare JWT.`
+            : `No provisioned relay credential is configured for ${endpoint}.`;
+      return {
+        relay: "unavailable",
+        relayReason,
+        failure: "relay_auth_unavailable",
+        relayEndpoint,
+      };
+    }
+
+    if (!framed.includes(health.draft as (typeof framed)[number])) {
+      return {
+        relay: "unavailable",
+        relayReason: `This build frames MOQT draft ${framed.join(", ") || "no draft"}, but the room service is pinned to draft ${health.draft}.`,
+        failure: "draft_mismatch",
+        relayEndpoint,
+      };
+    }
+
+    // Configured and frameable: a live session will be attempted. Gate 1
+    // verification is reported separately, never implied by "ready".
+    const relayReason = health.transportVerified
+      ? `MOQT draft ${health.draft} on ${endpoint} passed a browser-to-relay trace. Inbound routing is ${health.routingEnforcement}; discovery is ${health.discovery}.`
+      : `MOQT draft ${health.draft} on ${endpoint} is configured and will be attempted live. No Gate 1 trace has been recorded, so transport is not yet claimed as verified.`;
+
+    return {
+      relay: "ready",
+      relayReason,
+      failure: null,
+      relayEndpoint,
+    };
+  } catch {
+    return {
+      relay: "unavailable",
+      relayReason: "The room service or relay probe could not be reached.",
+      failure: "udp_blocked",
+      relayEndpoint: null,
+    };
+  }
+}
+
 export async function evaluateCapabilities(
   fetchHealthImpl = fetchHealth,
 ): Promise<EvaluatedCapabilities> {
@@ -169,47 +241,9 @@ export async function evaluateCapabilities(
       ? "ready"
       : "unavailable"
     : "not_tested";
-  let relay: CheckState = "unavailable";
-  let relayReason = "The room service is unreachable.";
-  let failure: FailureCode | null = null;
-  let relayEndpoint: string | null = null;
 
-  try {
-    const health = await fetchHealthImpl();
-    relayEndpoint = health.relayEndpoint;
-    const framed = draftsFramedByClient();
-    const endpoint = health.relayEndpointName ?? "no configured endpoint";
-
-    if (!health.relayEndpoint) {
-      // H14: no endpoint is a different fact from an endpoint that fails.
-      relay = "unavailable";
-      relayReason = `No relay endpoint is configured for MOQT draft ${health.draft}.`;
-      failure = "draft_endpoint_missing";
-    } else if (!health.relayCredentialConfigured) {
-      relay = "unavailable";
-      relayReason =
-        health.relayCredentialStatus === "expired"
-          ? `The configured relay credential for ${endpoint} has expired.`
-          : health.relayCredentialStatus === "invalid"
-            ? `The configured relay credential for ${endpoint} is not a valid current Cloudflare JWT.`
-            : `No provisioned relay credential is configured for ${endpoint}.`;
-      failure = "relay_auth_unavailable";
-    } else if (!framed.includes(health.draft as (typeof framed)[number])) {
-      relay = "unavailable";
-      relayReason = `This build frames MOQT draft ${framed.join(", ") || "no draft"}, but the room service is pinned to draft ${health.draft}.`;
-      failure = "draft_mismatch";
-    } else {
-      // Configured and frameable: a live session will be attempted. Gate 1
-      // verification is reported separately, never implied by "ready".
-      relay = "ready";
-      relayReason = health.transportVerified
-        ? `MOQT draft ${health.draft} on ${endpoint} passed a browser-to-relay trace. Inbound routing is ${health.routingEnforcement}; discovery is ${health.discovery}.`
-        : `MOQT draft ${health.draft} on ${endpoint} is configured and will be attempted live. No Gate 1 trace has been recorded, so transport is not yet claimed as verified.`;
-    }
-  } catch {
-    relayReason = "The room service or relay probe could not be reached.";
-    failure = "udp_blocked";
-  }
+  const relayResult = await evaluateRelayCapability(fetchHealthImpl);
+  let { failure } = relayResult;
 
   // A missing local capability outranks the relay: it is the nearer cause,
   // and its recovery advice is different.
@@ -237,10 +271,87 @@ export async function evaluateCapabilities(
     wakeLock,
     dtx,
     codecReason: `${encoder.reason} ${opusDecoder === "ready" ? "Opus decode is available." : "The required Opus decoder configuration is unavailable."}`,
-    relay,
-    relayReason,
+    relay: relayResult.relay,
+    relayReason: relayResult.relayReason,
     failure,
-    relayEndpoint,
+    relayEndpoint: relayResult.relayEndpoint,
+  };
+}
+
+async function runCapabilityReportEvaluation(
+  setReport: React.Dispatch<React.SetStateAction<CapabilityReport>>,
+  isActive: () => boolean,
+): Promise<void> {
+  const evaluation = await evaluateCapabilities();
+  if (!isActive()) return;
+
+  const { relayEndpoint, ...evaluatedReport } = evaluation;
+  setReport((current) => ({
+    ...current,
+    ...evaluatedReport,
+  }));
+
+  // §11.2 deliverable three: the probe runs in the background and never
+  // gates entry. Its result refines the failure only when nothing nearer
+  // has already claimed it.
+  setReport((current) => ({
+    ...current,
+    network: { ...current.network, state: "probing", detail: "Testing HTTP/3 and QUIC…" },
+  }));
+
+  const network = await probeRelayReachability({ relayEndpoint });
+  if (!isActive()) return;
+
+  const transportCapabilities = classifyTransportCapabilities(network);
+  setReport((current) => ({
+    ...current,
+    network,
+    ...transportCapabilities,
+    failure:
+      network.state === "reliable_only"
+        ? "transport_reliable_only"
+        : network.state === "udp_blocked" && current.failure === null
+          ? "udp_blocked"
+          : current.failure,
+  }));
+}
+
+function setupMicrophoneAnalyzer(
+  stream: MediaStream,
+  onPeakLevel: (level: number) => void,
+  onFrameId: (id: number) => void,
+): AudioContext {
+  const context = new AudioContext();
+  const source = context.createMediaStreamSource(stream);
+  const analyser = context.createAnalyser();
+  analyser.fftSize = MICROPHONE_TEST_FFT_SIZE;
+  source.connect(analyser);
+
+  const samples = new Uint8Array(analyser.frequencyBinCount);
+
+  const tick = () => {
+    analyser.getByteTimeDomainData(samples);
+    const peak = samples.reduce(
+      (maximum, value) => Math.max(maximum, Math.abs(value - AUDIO_PCM_BYTE_CENTER)),
+      0,
+    );
+    onPeakLevel(Math.min(1, peak / MICROPHONE_TEST_PEAK_SCALE));
+    onFrameId(requestAnimationFrame(tick));
+  };
+  tick();
+
+  return context;
+}
+
+function classifyMicrophoneError(error: unknown): {
+  microphone: CheckState;
+  failure: FailureCode;
+} {
+  const name = error instanceof DOMException ? error.name : "";
+  const noDevice = name === "NotFoundError" || name === "DevicesNotFoundError";
+  return {
+    microphone: noDevice ? "no_device" : "denied",
+    failure: noDevice ? "microphone_no_device" : "microphone_denied",
   };
 }
 
@@ -253,39 +364,7 @@ export function useCapabilities() {
 
   useEffect(() => {
     let active = true;
-    const run = async () => {
-      const evaluation = await evaluateCapabilities();
-      if (!active) return;
-
-      const { relayEndpoint, ...evaluatedReport } = evaluation;
-      setReport((current) => ({
-        ...current,
-        ...evaluatedReport,
-      }));
-
-      // §11.2 deliverable three: the probe runs in the background and never
-      // gates entry. Its result refines the failure only when nothing nearer
-      // has already claimed it.
-      setReport((current) => ({
-        ...current,
-        network: { ...current.network, state: "probing", detail: "Testing HTTP/3 and QUIC…" },
-      }));
-      const network = await probeRelayReachability({ relayEndpoint });
-      if (!active) return;
-      const transportCapabilities = classifyTransportCapabilities(network);
-      setReport((current) => ({
-        ...current,
-        network,
-        ...transportCapabilities,
-        failure:
-          network.state === "reliable_only"
-            ? "transport_reliable_only"
-            : network.state === "udp_blocked" && current.failure === null
-              ? "udp_blocked"
-              : current.failure,
-      }));
-    };
-    void run();
+    void runCapabilityReportEvaluation(setReport, () => active);
     return () => {
       active = false;
     };
@@ -320,31 +399,15 @@ export function useCapabilities() {
         video: false,
       });
       streamRef.current = stream;
-      const context = new AudioContext();
-      audioContextRef.current = context;
-      const source = context.createMediaStreamSource(stream);
-      const analyser = context.createAnalyser();
-      analyser.fftSize = MICROPHONE_TEST_FFT_SIZE;
-      source.connect(analyser);
-      const samples = new Uint8Array(analyser.frequencyBinCount);
-      const tick = () => {
-        analyser.getByteTimeDomainData(samples);
-        const peak = samples.reduce(
-          (maximum, value) => Math.max(maximum, Math.abs(value - AUDIO_PCM_BYTE_CENTER)),
-          0,
-        );
-        setLevel(Math.min(1, peak / MICROPHONE_TEST_PEAK_SCALE));
-        animationRef.current = requestAnimationFrame(tick);
-      };
-      tick();
+      audioContextRef.current = setupMicrophoneAnalyzer(stream, setLevel, (id) => {
+        animationRef.current = id;
+      });
       setReport((current) => ({ ...current, microphone: "ready" }));
     } catch (error) {
-      const name = error instanceof DOMException ? error.name : "";
-      const noDevice = name === "NotFoundError" || name === "DevicesNotFoundError";
+      const result = classifyMicrophoneError(error);
       setReport((current) => ({
         ...current,
-        microphone: noDevice ? "no_device" : "denied",
-        failure: noDevice ? "microphone_no_device" : "microphone_denied",
+        ...result,
       }));
     }
   }, [stopMicrophone]);
