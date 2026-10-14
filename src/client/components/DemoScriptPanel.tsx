@@ -34,6 +34,13 @@ export function DemoScriptPanel({
   onAbandon,
 }: DemoScriptPanelProps) {
   const latest = runs.at(-1);
+  const resultsByStepId = new Map<string, StepResult>();
+  if (latest?.results) {
+    for (const entry of latest.results) {
+      resultsByStepId.set(entry.stepId, entry);
+    }
+  }
+
   return (
     <section className="demo-script" aria-labelledby="demo-script-title">
       <div className="section-heading">
@@ -111,7 +118,7 @@ export function DemoScriptPanel({
 
       <ol className="demo-script__steps">
         {DEMO_STEPS.map((step) => {
-          const result = latest?.results.find((entry) => entry.stepId === step.id);
+          const result = resultsByStepId.get(step.id);
           const isCurrent = running && currentStep?.id === step.id;
           return (
             <li
