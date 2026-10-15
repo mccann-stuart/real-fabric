@@ -74,6 +74,8 @@ export function RoomTopBar({
           className="button button--compact button--danger"
           type="button"
           aria-haspopup="dialog"
+          aria-label={`Leave room ${code}`}
+          title={`Leave room ${code}`}
           onClick={onOpenLeaveDialog}
         >
           Leave room

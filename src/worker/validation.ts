@@ -235,6 +235,11 @@ export function parseAuthPayload(payload: unknown): AuthPayloadResult {
     return { success: false, error: "authentication_required" };
   }
 
+  // Security (CWE-1321): Reject dangerous prototype keys in WebSocket auth payload to prevent prototype pollution.
+  if (hasDangerousPrototypeKeys(payload)) {
+    return { success: false, error: "invalid_credentials" };
+  }
+
   const p = payload as Record<string, unknown>;
   const participantId = p.participantId;
   const token = p.token;
