@@ -152,7 +152,9 @@ class RealFabricMixer extends AudioWorkletProcessor {
       let readAny = false;
       for (let frame = 0; frame < frames; frame += 1) {
         const sample = track.read();
-        if (sample === null) continue;
+        // Writes arrive between quanta. Once depleted, this track stays empty
+        // for the rest of this synchronous render quantum.
+        if (sample === null) break;
         readAny = true;
         channel[frame] += sample;
       }
