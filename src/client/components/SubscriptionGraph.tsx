@@ -86,8 +86,8 @@ export const SubscriptionGraph = memo(function SubscriptionGraph({
   const centre = size / 2;
   const radius = centre - NODE_ORBIT_PADDING;
 
-  // Performance optimization (⚡ Bolt): Memoize active participant filtering, edge building, and trigonometric node positioning
-  const { active, edges, positions, subscribedSet } = useMemo(() => {
+  // Reuse participant positions, accepted edges and viewer-specific routing lookups.
+  const { active, edges, positions, subscribedSet, routingByAiMap } = useMemo(() => {
     const activeParticipants = participants.filter((participant) => participant.state !== "left");
     const computedEdges = buildEdges(participants, routing, viewerId, publishing, subscribedIds);
     const subscribedSet = new Set(subscribedIds);
@@ -100,7 +100,19 @@ export const SubscriptionGraph = memo(function SubscriptionGraph({
         y: centre + Math.sin(angle) * radius,
       });
     });
-    return { active: activeParticipants, edges: computedEdges, positions: posMap, subscribedSet };
+    const routingByAiMap = new Map<string, RoutingPreference>();
+    for (const row of routing) {
+      if (row.humanId === viewerId) {
+        routingByAiMap.set(row.aiId, row);
+      }
+    }
+    return {
+      active: activeParticipants,
+      edges: computedEdges,
+      positions: posMap,
+      subscribedSet,
+      routingByAiMap,
+    };
   }, [participants, routing, viewerId, publishing, subscribedIds, centre, radius]);
 
   const liveEdgeCount = edges.filter((e) => e.live).length;
@@ -205,9 +217,7 @@ export const SubscriptionGraph = memo(function SubscriptionGraph({
           <tbody>
             {active.map((participant) => {
               const isViewer = participant.id === viewerId;
-              const preference = routing.find(
-                (row) => row.humanId === viewerId && row.aiId === participant.id,
-              );
+              const preference = routingByAiMap.get(participant.id);
               return (
                 <tr key={participant.id}>
                   <th scope="row">

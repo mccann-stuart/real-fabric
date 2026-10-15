@@ -9,7 +9,3 @@
 ## 2026-10-18 - Pair unobservable metric tooltips with `role="note"` and `aria-label`
 **Learning:** `span` elements using `title` attributes for tooltips on unobservable metrics ("Not exposed") do not announce the explanation reason to screen readers, and adding `aria-label` directly to generic spans triggers linting errors.
 **Action:** Annotate unobservable measurement spans with `role="note"` and `aria-label={`${NOT_EXPOSED}: ${measurement.reason}`}` to expose technical reasons to assistive technology while keeping visual presentation identical.
-
-## 2026-10-18 - Wrap decorative Unicode glyphs in aria-hidden spans
-**Learning:** Decorative Unicode symbols (`⌁`, `→`, `←`, `◉`) embedded directly within button labels or headers are announced verbatim by screen readers (e.g. "electrolysis Headphones required" or "Protocol inspector rightwards arrow"), cluttering speech output.
-**Action:** Always isolate decorative symbols into `<span aria-hidden="true">` elements while providing clear `aria-label` and `title` attributes on interactive parent elements.

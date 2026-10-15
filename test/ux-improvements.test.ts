@@ -48,6 +48,9 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(html).toContain('aria-describedby="simulation-config-desc"');
     expect(html).toContain('id="simulation-config-desc"');
     expect(html).toContain('aria-label="Mic level test"');
+    expect(html).toContain('aria-label="Run pre-flight only"');
+    expect(html).toContain('<span aria-hidden="true">⌁ </span>Headphones required');
+    expect(html).toContain('Protocol inspector <span aria-hidden="true">→</span>');
     expect(html).toContain("Microphone level not exposed until the test runs.");
   });
 
@@ -216,6 +219,7 @@ describe("Micro-UX & Accessibility Improvements", () => {
     );
 
     expect(html).toContain('class="toggle-row"');
+    expect(html).toContain('title="Hears me (Ada AI)"');
     expect(html).toContain('type="checkbox"');
     expect(html).toContain('aria-label="Hears me (Ada AI)"');
     expect(html).toContain('aria-label="Hold to ask Ada AI (press and hold)"');
@@ -271,6 +275,8 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(idle).toContain("Copy invite");
     expect(idle).toContain('aria-label="Copy invite link to clipboard"');
     expect(idle).toContain('title="Copy invite link to clipboard"');
+    expect(idle).toContain('aria-label="Leave room TEST1234567890123456"');
+    expect(idle).toContain('title="Leave room TEST1234567890123456"');
 
     const copied = renderToStaticMarkup(
       React.createElement(RoomTopBar, { ...baseProps, copyState: "copied" }),
@@ -408,7 +414,22 @@ describe("Micro-UX & Accessibility Improvements", () => {
 
     expect(html).toContain('aria-modal="true"');
     expect(html).toContain('aria-busy="true"');
+    expect(html).toContain('aria-label="Leaving room…"');
+    expect(html).toContain('title="Leaving room…"');
     expect(html).toContain("Leaving…");
+
+    const idleHtml = renderToStaticMarkup(
+      React.createElement(LeaveRoomDialog, {
+        dialogRef: { current: null },
+        code: "TEST1234",
+        leaveError: null,
+        leaving: false,
+        onCancel: () => {},
+        onConfirmLeave: () => {},
+      }),
+    );
+    expect(idleHtml).toContain('aria-label="Leave room TEST1234"');
+    expect(idleHtml).toContain('title="Leave room TEST1234"');
   });
 
   it("triggers onCancel and closes dialog when clicking LeaveRoomDialog backdrop", () => {
@@ -568,9 +589,28 @@ describe("Micro-UX & Accessibility Improvements", () => {
     );
 
     expect(html).toContain("Test microphone permission");
+    expect(html).toContain('aria-label="Test microphone permission"');
+    expect(html).toContain('title="Test microphone permission"');
+    expect(html).toContain('<span aria-hidden="true">← </span>Back to room entry');
   });
 
-  it("renders DemoScriptPanel action buttons and release gate live status with descriptive aria labels when running", () => {
+  it("renders DemoScriptPanel action buttons and release gate live status with descriptive aria labels and title tooltips", () => {
+    const idleHtml = renderToStaticMarkup(
+      React.createElement(DemoScriptPanel, {
+        currentStep: null,
+        runs: [],
+        cleanRuns: 0,
+        releaseGateMet: false,
+        running: false,
+        onBegin: () => {},
+        onRecord: () => {},
+        onAbandon: () => {},
+      }),
+    );
+
+    expect(idleHtml).toContain('aria-label="Start run 1"');
+    expect(idleHtml).toContain('title="Start run 1"');
+
     const html = renderToStaticMarkup(
       React.createElement(DemoScriptPanel, {
         currentStep: {
@@ -591,9 +631,13 @@ describe("Micro-UX & Accessibility Improvements", () => {
     );
 
     expect(html).toContain('aria-label="Mark cue at 0:00 as seen"');
+    expect(html).toContain('title="Mark cue at 0:00 as seen"');
     expect(html).toContain('aria-label="Mark cue at 0:00 as not seen"');
+    expect(html).toContain('title="Mark cue at 0:00 as not seen"');
     expect(html).toContain('aria-label="Skip cue at 0:00"');
+    expect(html).toContain('title="Skip cue at 0:00"');
     expect(html).toContain('aria-label="Abandon current demo run"');
+    expect(html).toContain('title="Abandon current demo run"');
     expect(html).toContain('class="gate" role="status" aria-live="polite"');
     expect(html).toContain("1 / 2 clean runs");
   });
@@ -666,6 +710,22 @@ describe("Micro-UX & Accessibility Improvements", () => {
             enforcement: "cooperative",
             updatedAt: 1_000,
           },
+          {
+            humanId: "another-viewer",
+            aiId: "atlas",
+            hearsMe: false,
+            iHearIt: false,
+            enforcement: "cooperative",
+            updatedAt: 1_000,
+          },
+          {
+            humanId: "another-viewer",
+            aiId: "sage",
+            hearsMe: false,
+            iHearIt: false,
+            enforcement: "cooperative",
+            updatedAt: 1_000,
+          },
         ],
         viewerId: "you",
         publishing: false,
@@ -679,6 +739,10 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(html).toContain("Not subscribed");
     expect(html).toContain("On (cooperative)");
     expect(html).toContain("Not exposed");
+    // Another human's rows must neither override the viewer nor expose missing consent.
+    const details = html.slice(html.indexOf("<tbody>"), html.indexOf("</tbody>"));
+    expect(details).toContain("On (cooperative)");
+    expect(details).not.toContain("Off (cooperative)");
   });
 
   it("renders SVG title elements for relay and participant graph nodes", () => {

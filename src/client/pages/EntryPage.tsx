@@ -144,8 +144,8 @@ export function EntryPage({
             <button
               className="link-button link-button--large"
               type="button"
-              aria-label="Run network pre-flight checks only"
-              title="Run network pre-flight checks only"
+              aria-label="Run pre-flight only"
+              title="Run browser and network pre-flight checks without joining"
               onClick={() => navigate("/preflight")}
             >
               Run pre-flight only <span aria-hidden="true">→</span>
