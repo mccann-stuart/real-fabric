@@ -429,7 +429,7 @@ function withSecurityHeaders(response: Response, correlationId: string): Respons
   headers.set("x-permitted-cross-domain-policies", "none");
   headers.set(
     "content-security-policy",
-    "default-src 'self'; connect-src 'self' https: wss:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+    "default-src 'self'; connect-src 'self' https: wss:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'none'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
   );
   headers.set("x-correlation-id", correlationId);
   return new Response(response.body, {
