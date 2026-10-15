@@ -216,6 +216,7 @@ describe("Micro-UX & Accessibility Improvements", () => {
     );
 
     expect(html).toContain('class="toggle-row"');
+    expect(html).toContain('title="Hears me (Ada AI)"');
     expect(html).toContain('type="checkbox"');
     expect(html).toContain('aria-label="Hears me (Ada AI)"');
     expect(html).toContain('aria-label="Hold to ask Ada AI (press and hold)"');
@@ -271,6 +272,8 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(idle).toContain("Copy invite");
     expect(idle).toContain('aria-label="Copy invite link to clipboard"');
     expect(idle).toContain('title="Copy invite link to clipboard"');
+    expect(idle).toContain('aria-label="Leave room TEST1234567890123456"');
+    expect(idle).toContain('title="Leave room TEST1234567890123456"');
 
     const copied = renderToStaticMarkup(
       React.createElement(RoomTopBar, { ...baseProps, copyState: "copied" }),
@@ -408,7 +411,22 @@ describe("Micro-UX & Accessibility Improvements", () => {
 
     expect(html).toContain('aria-modal="true"');
     expect(html).toContain('aria-busy="true"');
+    expect(html).toContain('aria-label="Leaving room…"');
+    expect(html).toContain('title="Leaving room…"');
     expect(html).toContain("Leaving…");
+
+    const idleHtml = renderToStaticMarkup(
+      React.createElement(LeaveRoomDialog, {
+        dialogRef: { current: null },
+        code: "TEST1234",
+        leaveError: null,
+        leaving: false,
+        onCancel: () => {},
+        onConfirmLeave: () => {},
+      }),
+    );
+    expect(idleHtml).toContain('aria-label="Leave room TEST1234"');
+    expect(idleHtml).toContain('title="Leave room TEST1234"');
   });
 
   it("triggers onCancel and closes dialog when clicking LeaveRoomDialog backdrop", () => {
@@ -570,7 +588,23 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(html).toContain("Test microphone permission");
   });
 
-  it("renders DemoScriptPanel action buttons and release gate live status with descriptive aria labels when running", () => {
+  it("renders DemoScriptPanel action buttons and release gate live status with descriptive aria labels and title tooltips", () => {
+    const idleHtml = renderToStaticMarkup(
+      React.createElement(DemoScriptPanel, {
+        currentStep: null,
+        runs: [],
+        cleanRuns: 0,
+        releaseGateMet: false,
+        running: false,
+        onBegin: () => {},
+        onRecord: () => {},
+        onAbandon: () => {},
+      }),
+    );
+
+    expect(idleHtml).toContain('aria-label="Start run 1"');
+    expect(idleHtml).toContain('title="Start run 1"');
+
     const html = renderToStaticMarkup(
       React.createElement(DemoScriptPanel, {
         currentStep: {
@@ -591,9 +625,13 @@ describe("Micro-UX & Accessibility Improvements", () => {
     );
 
     expect(html).toContain('aria-label="Mark cue at 0:00 as seen"');
+    expect(html).toContain('title="Mark cue at 0:00 as seen"');
     expect(html).toContain('aria-label="Mark cue at 0:00 as not seen"');
+    expect(html).toContain('title="Mark cue at 0:00 as not seen"');
     expect(html).toContain('aria-label="Skip cue at 0:00"');
+    expect(html).toContain('title="Skip cue at 0:00"');
     expect(html).toContain('aria-label="Abandon current demo run"');
+    expect(html).toContain('title="Abandon current demo run"');
     expect(html).toContain('class="gate" role="status" aria-live="polite"');
     expect(html).toContain("1 / 2 clean runs");
   });

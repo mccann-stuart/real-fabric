@@ -64,6 +64,7 @@ export function DemoScriptPanel({
               <button
                 type="button"
                 aria-label={`Evaluate cue at ${formatCue(currentStep.atSeconds)}`}
+                title={`Evaluate cue at ${formatCue(currentStep.atSeconds)}`}
                 onClick={() => onRecord("passed")}
               >
                 Evaluate cue
@@ -73,6 +74,7 @@ export function DemoScriptPanel({
                 <button
                   type="button"
                   aria-label={`Mark cue at ${formatCue(currentStep.atSeconds)} as seen`}
+                  title={`Mark cue at ${formatCue(currentStep.atSeconds)} as seen`}
                   onClick={() => onRecord("passed")}
                 >
                   Seen
@@ -80,6 +82,7 @@ export function DemoScriptPanel({
                 <button
                   type="button"
                   aria-label={`Mark cue at ${formatCue(currentStep.atSeconds)} as not seen`}
+                  title={`Mark cue at ${formatCue(currentStep.atSeconds)} as not seen`}
                   onClick={() => onRecord("failed")}
                 >
                   Not seen
@@ -87,6 +90,7 @@ export function DemoScriptPanel({
                 <button
                   type="button"
                   aria-label={`Skip cue at ${formatCue(currentStep.atSeconds)}`}
+                  title={`Skip cue at ${formatCue(currentStep.atSeconds)}`}
                   onClick={() => onRecord("skipped")}
                 >
                   Skip
@@ -97,6 +101,7 @@ export function DemoScriptPanel({
               type="button"
               className="button--danger"
               aria-label="Abandon current demo run"
+              title="Abandon current demo run"
               onClick={onAbandon}
             >
               Abandon run
@@ -104,7 +109,13 @@ export function DemoScriptPanel({
           </div>
         </div>
       ) : (
-        <button className="button button--primary" type="button" onClick={onBegin}>
+        <button
+          className="button button--primary"
+          type="button"
+          aria-label={runs.length === 0 ? "Start run 1" : `Start run ${runs.length + 1}`}
+          title={runs.length === 0 ? "Start run 1" : `Start run ${runs.length + 1}`}
+          onClick={onBegin}
+        >
           {runs.length === 0 ? "Start run 1" : `Start run ${runs.length + 1}`}
         </button>
       )}

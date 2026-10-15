@@ -11,6 +11,8 @@ minimumReleaseAgeExclude:
 overrides:
   # Bundles libheif 1.23.2, fixing GHSA-g89c-p67h-r497 and GHSA-2jg2-4ch7-h545.
   "miniflare>sharp": "0.35.4"
+  # Keep Miniflare on the current Undici release; requires Node.js 22.19.0+.
+  "miniflare>undici": "8.12.1"
 
 onlyBuiltDependencies:
   - "@biomejs/biome"
