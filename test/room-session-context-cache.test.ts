@@ -117,4 +117,39 @@ describe("SEC-13 — listener-observed activity", () => {
     expect(projected.participants.map((entry) => entry.lastActiveAt)).toEqual([100, 500]);
     expect(shared.participants.map((entry) => entry.lastActiveAt)).toEqual([10_000, 20_000]);
   });
+
+  it("preserves room reference when activity timestamps are unchanged", () => {
+    const p1 = { ...participant("human-1", "human"), joinedAt: 100, lastActiveAt: 500 };
+    const p2 = { ...participant("human-2", "human"), joinedAt: 200, lastActiveAt: 600 };
+    const shared = room([p1, p2], []);
+    const playersMap = new Map([
+      ["human-1", { lastActiveAt: 500 }],
+      ["human-2", { lastActiveAt: 600 }],
+    ]);
+
+    const firstProjection = projectObservedActivity(shared, playersMap);
+    const secondProjection = projectObservedActivity(firstProjection, playersMap);
+
+    expect(firstProjection).toBe(shared);
+    expect(secondProjection).toBe(firstProjection);
+  });
+
+  it("copies changed activity while retaining untouched participant references", () => {
+    const first = { ...participant("human-1", "human"), joinedAt: 100, lastActiveAt: 500 };
+    const second = { ...participant("human-2", "human"), joinedAt: 200, lastActiveAt: 600 };
+    const shared = room([first, second], []);
+    const projected = projectObservedActivity(
+      shared,
+      new Map([
+        [first.id, { lastActiveAt: 700 }],
+        [second.id, { lastActiveAt: 600 }],
+      ]),
+    );
+    expect(projected).not.toBe(shared);
+    expect(projected.participants).not.toBe(shared.participants);
+    expect(projected.participants[0]).toEqual({ ...first, lastActiveAt: 700 });
+    expect(projected.participants[1]).toBe(second);
+    expect(shared.participants[0]).toBe(first);
+    expect(first.lastActiveAt).toBe(500);
+  });
 });

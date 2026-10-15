@@ -228,7 +228,7 @@ function Toggle({
   ariaLabel?: string;
 }) {
   return (
-    <label className="toggle-row">
+    <label className="toggle-row" title={ariaLabel}>
       <span>{label}</span>
       <input
         type="checkbox"

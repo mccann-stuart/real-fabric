@@ -139,6 +139,11 @@ export function RoomPage({
     return map;
   }, [state?.subscriptions]);
 
+  const partialContextAiIdsSet = useMemo(
+    () => new Set(room?.partialContextAiIds ?? []),
+    [room?.partialContextAiIds],
+  );
+
   const changeRouting = useCallback(
     (aiId: string, hearsMe: boolean, iHearIt: boolean) => {
       void session?.changeRouting(aiId, hearsMe, iHearIt);
@@ -212,7 +217,9 @@ export function RoomPage({
           This share link contains only the room code. Enter through the join screen to mint
           ephemeral participant credentials.
         </p>
-        <p className="headphones">⌁ Headphones required</p>
+        <p className="headphones">
+          <span aria-hidden="true">⌁ </span>Headphones required
+        </p>
         <button
           className="button button--primary"
           type="button"
@@ -231,7 +238,7 @@ export function RoomPage({
       current={participant.id === viewerId}
       viewerId={viewerId}
       routing={room?.routing ?? []}
-      partialContext={room?.partialContextAiIds.includes(participant.id) ?? false}
+      partialContext={partialContextAiIdsSet.has(participant.id)}
       level={participant.id === viewerId && !state?.muted ? (state?.micLevel ?? 0) : 0}
       levelAvailable={
         participant.id === viewerId &&
@@ -301,7 +308,8 @@ export function RoomPage({
               title={inspectorOpen ? "Close inspector" : "Open inspector"}
               onClick={() => setInspectorOpen((open) => !open)}
             >
-              {inspectorOpen ? "Close inspector" : "Open inspector →"}
+              {inspectorOpen ? "Close inspector" : "Open inspector "}
+              {!inspectorOpen ? <span aria-hidden="true">→</span> : null}
             </button>
           </div>
         </section>

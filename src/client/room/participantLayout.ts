@@ -5,16 +5,20 @@ export function projectObservedActivity(
   room: RoomSnapshot,
   observedAt: ReadonlyMap<string, { readonly lastActiveAt: number }>,
 ): RoomSnapshot {
-  return {
-    ...room,
-    participants: room.participants.map((participant) => ({
-      ...participant,
-      lastActiveAt: Math.max(
-        participant.joinedAt,
-        observedAt.get(participant.id)?.lastActiveAt ?? 0,
-      ),
-    })),
-  };
+  // Copy only when listener-observed activity changes; retain unchanged participants.
+  let participants: Participant[] | undefined;
+  for (let index = 0; index < room.participants.length; index += 1) {
+    const participant = room.participants[index] as Participant;
+    const lastActiveAt = Math.max(
+      participant.joinedAt,
+      observedAt.get(participant.id)?.lastActiveAt ?? 0,
+    );
+    if (lastActiveAt !== participant.lastActiveAt) {
+      participants ??= room.participants.slice();
+      participants[index] = { ...participant, lastActiveAt };
+    }
+  }
+  return participants ? { ...room, participants } : room;
 }
 
 /**

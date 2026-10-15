@@ -53,15 +53,23 @@ export function EntryPage({
     <main className="entry-page">
       <header className="topbar">
         <Brand />
-        <button className="link-button" type="button" onClick={() => navigate("/preflight")}>
-          Protocol inspector →
+        <button
+          className="link-button"
+          type="button"
+          aria-label="Go to protocol inspector pre-flight page"
+          title="Go to protocol inspector pre-flight page"
+          onClick={() => navigate("/preflight")}
+        >
+          Protocol inspector <span aria-hidden="true">→</span>
         </button>
       </header>
       <div className="entry-layout">
         <section className="entry-form" aria-labelledby="entry-title">
           <h1 id="entry-title">People and AIs speaking over Media over QUIC.</h1>
           {/* H4: stated before joining. */}
-          <p className="headphones">⌁ Headphones required</p>
+          <p className="headphones">
+            <span aria-hidden="true">⌁ </span>Headphones required
+          </p>
           <div className="form-grid">
             <label htmlFor="entry-display-name">
               Your name
@@ -136,9 +144,11 @@ export function EntryPage({
             <button
               className="link-button link-button--large"
               type="button"
+              aria-label="Run pre-flight only"
+              title="Run browser and network pre-flight checks without joining"
               onClick={() => navigate("/preflight")}
             >
-              Run pre-flight only →
+              Run pre-flight only <span aria-hidden="true">→</span>
             </button>
           </div>
 
@@ -187,9 +197,18 @@ export function EntryPage({
                   ? "Microphone test active; re-test mic level"
                   : "Mic level test"
             }
+            title={
+              report.microphone === "checking"
+                ? "Testing microphone permission…"
+                : report.microphone === "ready"
+                  ? "Microphone test active; re-test mic level"
+                  : "Mic level test"
+            }
             onClick={() => void testMicrophone()}
           >
-            <span>◉ Mic level test</span>
+            <span>
+              <span aria-hidden="true">◉ </span>Mic level test
+            </span>
             <span className="mic-test__wave" aria-hidden="true">
               {MIC_BARS.map((bar) => (
                 <i

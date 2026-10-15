@@ -31,7 +31,9 @@ export function RoomTopBar({
           Room <b>{code}</b>
         </span>
         {/* H4: stated in the room as well as before joining. */}
-        <span className="headphones headphones--small">⌁ Headphones required</span>
+        <span className="headphones headphones--small">
+          <span aria-hidden="true">⌁ </span>Headphones required
+        </span>
         <button
           className={`button button--compact${copyState === "copied" ? " button--success" : ""}`}
           type="button"
@@ -74,6 +76,8 @@ export function RoomTopBar({
           className="button button--compact button--danger"
           type="button"
           aria-haspopup="dialog"
+          aria-label={`Leave room ${code}`}
+          title={`Leave room ${code}`}
           onClick={onOpenLeaveDialog}
         >
           Leave room
