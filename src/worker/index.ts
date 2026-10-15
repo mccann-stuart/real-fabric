@@ -36,10 +36,25 @@ const JSON_HEADERS = {
 const HTTP_SWITCHING_PROTOCOLS = 101;
 
 export default {
-  async fetch(request: Request, env: Env, _ctx?: ExecutionContext): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const correlationId = sanitizeCorrelationId(request.headers.get("x-correlation-id"));
+    const startedAt = Date.now();
     try {
       const response = await route(request, env, correlationId);
+      ctx.waitUntil(
+        Promise.resolve().then(() =>
+          console.log(
+            JSON.stringify({
+              event: "request_complete",
+              correlationId,
+              method: request.method,
+              route: normalisedRoute(new URL(request.url).pathname),
+              status: response.status,
+              durationMs: Date.now() - startedAt,
+            }),
+          ),
+        ),
+      );
       // A WebSocket upgrade response owns a live socket and cannot be cloned to add headers.
       if (response.status === HTTP_SWITCHING_PROTOCOLS) return response;
       return withSecurityHeaders(response, correlationId);
@@ -422,6 +437,10 @@ function withSecurityHeaders(response: Response, correlationId: string): Respons
     statusText: response.statusText,
     headers,
   });
+}
+
+function normalisedRoute(pathname: string): string {
+  return pathname.replace(/[A-Z0-9]{20}/g, ":room");
 }
 
 /** The relay's operator-facing name, for pre-flight and the Gate 1 record. */
