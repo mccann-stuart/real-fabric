@@ -395,6 +395,30 @@ describe("request validation", () => {
       }
     });
 
+    it("returns failure invalid_credentials when auth payload contains dangerous prototype pollution keys", () => {
+      const dangerousPayloads = [
+        JSON.parse(
+          '{"type": "auth", "participantId": "p-1", "token": "tok-1", "__proto__": {"admin": true}}',
+        ),
+        JSON.parse(
+          '{"type": "auth", "participantId": "p-1", "token": "tok-1", "constructor": {"prototype": {"admin": true}}}',
+        ),
+        JSON.parse(
+          '{"type": "auth", "participantId": "p-1", "token": "tok-1", "prototype": {"pollutes": true}}',
+        ),
+        JSON.parse(
+          '{"type": "auth", "participantId": "p-1", "token": "tok-1", "nested": {"__proto__": {"admin": true}}}',
+        ),
+      ];
+
+      for (const payload of dangerousPayloads) {
+        expect(parseAuthPayload(payload)).toEqual({
+          success: false,
+          error: "invalid_credentials",
+        });
+      }
+    });
+
     it("returns failure invalid_credentials for bad participantId or token types/lengths or control characters", () => {
       const invalidCredentials = [
         { type: "auth", participantId: "", token: "token123" },
