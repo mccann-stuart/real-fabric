@@ -152,10 +152,8 @@ class RealFabricMixer extends AudioWorkletProcessor {
       let readAny = false;
       for (let frame = 0; frame < frames; frame += 1) {
         const sample = track.read();
-        // ⚡ Bolt Optimization: Early break when track runs out of samples (available < 2).
-        // track.available only decreases during process(). Returning null once means
-        // all subsequent read() calls in this quantum will return null. Breaking terminates
-        // up to 127 redundant read() calls per empty/silent track on the 48kHz audio thread.
+        // Writes arrive between quanta. Once depleted, this track stays empty
+        // for the rest of this synchronous render quantum.
         if (sample === null) break;
         readAny = true;
         channel[frame] += sample;
