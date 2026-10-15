@@ -216,6 +216,7 @@ describe("Micro-UX & Accessibility Improvements", () => {
     );
 
     expect(html).toContain('class="toggle-row"');
+    expect(html).toContain('title="Hears me (Ada AI)"');
     expect(html).toContain('type="checkbox"');
     expect(html).toContain('aria-label="Hears me (Ada AI)"');
     expect(html).toContain('aria-label="Hold to ask Ada AI (press and hold)"');
@@ -271,6 +272,8 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(idle).toContain("Copy invite");
     expect(idle).toContain('aria-label="Copy invite link to clipboard"');
     expect(idle).toContain('title="Copy invite link to clipboard"');
+    expect(idle).toContain('aria-label="Leave room TEST1234567890123456"');
+    expect(idle).toContain('title="Leave room TEST1234567890123456"');
 
     const copied = renderToStaticMarkup(
       React.createElement(RoomTopBar, { ...baseProps, copyState: "copied" }),
@@ -408,7 +411,22 @@ describe("Micro-UX & Accessibility Improvements", () => {
 
     expect(html).toContain('aria-modal="true"');
     expect(html).toContain('aria-busy="true"');
+    expect(html).toContain('aria-label="Leaving room…"');
+    expect(html).toContain('title="Leaving room…"');
     expect(html).toContain("Leaving…");
+
+    const idleHtml = renderToStaticMarkup(
+      React.createElement(LeaveRoomDialog, {
+        dialogRef: { current: null },
+        code: "TEST1234",
+        leaveError: null,
+        leaving: false,
+        onCancel: () => {},
+        onConfirmLeave: () => {},
+      }),
+    );
+    expect(idleHtml).toContain('aria-label="Leave room TEST1234"');
+    expect(idleHtml).toContain('title="Leave room TEST1234"');
   });
 
   it("triggers onCancel and closes dialog when clicking LeaveRoomDialog backdrop", () => {
