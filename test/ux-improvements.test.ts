@@ -588,7 +588,23 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(html).toContain("Test microphone permission");
   });
 
-  it("renders DemoScriptPanel action buttons and release gate live status with descriptive aria labels when running", () => {
+  it("renders DemoScriptPanel action buttons and release gate live status with descriptive aria labels and title tooltips", () => {
+    const idleHtml = renderToStaticMarkup(
+      React.createElement(DemoScriptPanel, {
+        currentStep: null,
+        runs: [],
+        cleanRuns: 0,
+        releaseGateMet: false,
+        running: false,
+        onBegin: () => {},
+        onRecord: () => {},
+        onAbandon: () => {},
+      }),
+    );
+
+    expect(idleHtml).toContain('aria-label="Start run 1"');
+    expect(idleHtml).toContain('title="Start run 1"');
+
     const html = renderToStaticMarkup(
       React.createElement(DemoScriptPanel, {
         currentStep: {
@@ -609,9 +625,13 @@ describe("Micro-UX & Accessibility Improvements", () => {
     );
 
     expect(html).toContain('aria-label="Mark cue at 0:00 as seen"');
+    expect(html).toContain('title="Mark cue at 0:00 as seen"');
     expect(html).toContain('aria-label="Mark cue at 0:00 as not seen"');
+    expect(html).toContain('title="Mark cue at 0:00 as not seen"');
     expect(html).toContain('aria-label="Skip cue at 0:00"');
+    expect(html).toContain('title="Skip cue at 0:00"');
     expect(html).toContain('aria-label="Abandon current demo run"');
+    expect(html).toContain('title="Abandon current demo run"');
     expect(html).toContain('class="gate" role="status" aria-live="polite"');
     expect(html).toContain("1 / 2 clean runs");
   });
