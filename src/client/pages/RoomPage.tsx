@@ -139,6 +139,11 @@ export function RoomPage({
     return map;
   }, [state?.subscriptions]);
 
+  const partialContextAiIdsSet = useMemo(
+    () => new Set(room?.partialContextAiIds ?? []),
+    [room?.partialContextAiIds],
+  );
+
   const changeRouting = useCallback(
     (aiId: string, hearsMe: boolean, iHearIt: boolean) => {
       void session?.changeRouting(aiId, hearsMe, iHearIt);
@@ -231,7 +236,7 @@ export function RoomPage({
       current={participant.id === viewerId}
       viewerId={viewerId}
       routing={room?.routing ?? []}
-      partialContext={room?.partialContextAiIds.includes(participant.id) ?? false}
+      partialContext={partialContextAiIdsSet.has(participant.id)}
       level={participant.id === viewerId && !state?.muted ? (state?.micLevel ?? 0) : 0}
       levelAvailable={
         participant.id === viewerId &&
