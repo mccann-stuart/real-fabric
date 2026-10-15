@@ -34,7 +34,3 @@
 ## 2026-11-27 - Maximize Durable Object SQL Multi-Row Batching under Parameter Cap
 **Learning:** Cloudflare Workers Durable Object SQLite enforces a strict 100 bound parameter limit per query execution. In `reconcileSimulated`, chunk sizes were hardcoded to 12. Adjusting chunk sizes based on per-row column counts (24 rows x 4 params = 96 <= 100 for humans; 16 rows x 6 params = 96 <= 100 for AIs) and adding a secondary index `idx_routing_ai_hears` on `routing(ai_id, hears_me)` reduces insert batches for larger simulations. Local correctness tests do not establish a measured speed-up.
 **Action:** When batching multi-row `INSERT` queries in Durable Object SQLite, calculate maximum chunk sizes dynamically or per-entity type against the 100-parameter limit, and index join/filter columns like `(ai_id, hears_me)`.
-
-## 2026-12-02 - Short-Circuit Reference Preservation in Session Activity Projection
-**Learning:** `projectObservedActivity` mapped `room.participants` into new participant objects on every `RoomSession.emit()` call. Short-circuiting object allocation by checking whether any participant's `lastActiveAt` timestamp actually changed eliminates 100% of participant and snapshot object allocations when activity is static, preserving referential stability for React component consumers.
-**Action:** In projection functions called on frequent state updates, verify whether mapped values have changed before allocating new objects or array containers.

@@ -5,37 +5,20 @@ export function projectObservedActivity(
   room: RoomSnapshot,
   observedAt: ReadonlyMap<string, { readonly lastActiveAt: number }>,
 ): RoomSnapshot {
-  // ⚡ Bolt Optimization: Avoid allocating new participant objects and a new RoomSnapshot
-  // when participant lastActiveAt timestamps have not changed, reducing GC pressure and
-  // preserving referential stability across frequent RoomSession state emissions.
-  let changed = false;
-  const participants = room.participants;
-  const len = participants.length;
-  const newParticipants: Participant[] = new Array(len);
-
-  for (let index = 0; index < len; index += 1) {
-    const participant = participants[index] as Participant;
-    const newLastActiveAt = Math.max(
+  // Copy only when listener-observed activity changes; retain unchanged participants.
+  let participants: Participant[] | undefined;
+  for (let index = 0; index < room.participants.length; index += 1) {
+    const participant = room.participants[index] as Participant;
+    const lastActiveAt = Math.max(
       participant.joinedAt,
       observedAt.get(participant.id)?.lastActiveAt ?? 0,
     );
-    if (newLastActiveAt !== participant.lastActiveAt) {
-      changed = true;
-      newParticipants[index] = {
-        ...participant,
-        lastActiveAt: newLastActiveAt,
-      };
-    } else {
-      newParticipants[index] = participant;
+    if (lastActiveAt !== participant.lastActiveAt) {
+      participants ??= room.participants.slice();
+      participants[index] = { ...participant, lastActiveAt };
     }
   }
-
-  if (!changed) return room;
-
-  return {
-    ...room,
-    participants: newParticipants,
-  };
+  return participants ? { ...room, participants } : room;
 }
 
 /**
