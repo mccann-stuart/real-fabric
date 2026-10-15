@@ -704,6 +704,22 @@ describe("Micro-UX & Accessibility Improvements", () => {
             enforcement: "cooperative",
             updatedAt: 1_000,
           },
+          {
+            humanId: "another-viewer",
+            aiId: "atlas",
+            hearsMe: false,
+            iHearIt: false,
+            enforcement: "cooperative",
+            updatedAt: 1_000,
+          },
+          {
+            humanId: "another-viewer",
+            aiId: "sage",
+            hearsMe: false,
+            iHearIt: false,
+            enforcement: "cooperative",
+            updatedAt: 1_000,
+          },
         ],
         viewerId: "you",
         publishing: false,
@@ -717,6 +733,10 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(html).toContain("Not subscribed");
     expect(html).toContain("On (cooperative)");
     expect(html).toContain("Not exposed");
+    // Another human's rows must neither override the viewer nor expose missing consent.
+    const details = html.slice(html.indexOf("<tbody>"), html.indexOf("</tbody>"));
+    expect(details).toContain("On (cooperative)");
+    expect(details).not.toContain("Off (cooperative)");
   });
 
   it("renders SVG title elements for relay and participant graph nodes", () => {
