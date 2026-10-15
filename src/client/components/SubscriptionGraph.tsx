@@ -86,7 +86,7 @@ export const SubscriptionGraph = memo(function SubscriptionGraph({
   const centre = size / 2;
   const radius = centre - NODE_ORBIT_PADDING;
 
-  // Performance optimization (⚡ Bolt): Memoize active participant filtering, edge building, trigonometric node positioning, and routing lookup map
+  // Reuse participant positions, accepted edges and viewer-specific routing lookups.
   const { active, edges, positions, subscribedSet, routingByAiMap } = useMemo(() => {
     const activeParticipants = participants.filter((participant) => participant.state !== "left");
     const computedEdges = buildEdges(participants, routing, viewerId, publishing, subscribedIds);
