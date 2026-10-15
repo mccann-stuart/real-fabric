@@ -48,6 +48,9 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(html).toContain('aria-describedby="simulation-config-desc"');
     expect(html).toContain('id="simulation-config-desc"');
     expect(html).toContain('aria-label="Mic level test"');
+    expect(html).toContain('aria-label="Run pre-flight only"');
+    expect(html).toContain('<span aria-hidden="true">⌁ </span>Headphones required');
+    expect(html).toContain('Protocol inspector <span aria-hidden="true">→</span>');
     expect(html).toContain("Microphone level not exposed until the test runs.");
   });
 
@@ -586,6 +589,9 @@ describe("Micro-UX & Accessibility Improvements", () => {
     );
 
     expect(html).toContain("Test microphone permission");
+    expect(html).toContain('aria-label="Test microphone permission"');
+    expect(html).toContain('title="Test microphone permission"');
+    expect(html).toContain('<span aria-hidden="true">← </span>Back to room entry');
   });
 
   it("renders DemoScriptPanel action buttons and release gate live status with descriptive aria labels and title tooltips", () => {

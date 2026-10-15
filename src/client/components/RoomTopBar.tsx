@@ -31,7 +31,9 @@ export function RoomTopBar({
           Room <b>{code}</b>
         </span>
         {/* H4: stated in the room as well as before joining. */}
-        <span className="headphones headphones--small">⌁ Headphones required</span>
+        <span className="headphones headphones--small">
+          <span aria-hidden="true">⌁ </span>Headphones required
+        </span>
         <button
           className={`button button--compact${copyState === "copied" ? " button--success" : ""}`}
           type="button"

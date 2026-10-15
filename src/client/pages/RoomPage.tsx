@@ -217,7 +217,9 @@ export function RoomPage({
           This share link contains only the room code. Enter through the join screen to mint
           ephemeral participant credentials.
         </p>
-        <p className="headphones">⌁ Headphones required</p>
+        <p className="headphones">
+          <span aria-hidden="true">⌁ </span>Headphones required
+        </p>
         <button
           className="button button--primary"
           type="button"
@@ -306,7 +308,8 @@ export function RoomPage({
               title={inspectorOpen ? "Close inspector" : "Open inspector"}
               onClick={() => setInspectorOpen((open) => !open)}
             >
-              {inspectorOpen ? "Close inspector" : "Open inspector →"}
+              {inspectorOpen ? "Close inspector" : "Open inspector "}
+              {!inspectorOpen ? <span aria-hidden="true">→</span> : null}
             </button>
           </div>
         </section>

@@ -22,20 +22,42 @@ export function PreflightPage({
     <main className="preflight-page">
       <header className="topbar">
         <Brand />
-        <button className="link-button" type="button" onClick={() => navigate("/")}>
-          ← Back to room entry
+        <button
+          className="link-button"
+          type="button"
+          aria-label="Back to room entry"
+          title="Back to room entry"
+          onClick={() => navigate("/")}
+        >
+          <span aria-hidden="true">← </span>Back to room entry
         </button>
       </header>
       <section className="preflight-intro">
         <div>
           <h1>Conference network pre-flight</h1>
           <p>Checks this browser and network without joining a room or publishing audio.</p>
-          <p className="headphones">⌁ Headphones required</p>
+          <p className="headphones">
+            <span aria-hidden="true">⌁ </span>Headphones required
+          </p>
           <button
             className="button button--primary"
             type="button"
             disabled={report.microphone === "checking"}
             aria-busy={report.microphone === "checking"}
+            aria-label={
+              report.microphone === "checking"
+                ? "Testing microphone permission…"
+                : report.microphone === "ready"
+                  ? "Re-test microphone permission"
+                  : "Test microphone permission"
+            }
+            title={
+              report.microphone === "checking"
+                ? "Testing microphone permission…"
+                : report.microphone === "ready"
+                  ? "Re-test microphone permission"
+                  : "Test microphone permission"
+            }
             onClick={() => void testMicrophone()}
           >
             {report.microphone === "checking"
