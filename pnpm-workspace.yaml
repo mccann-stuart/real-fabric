@@ -9,8 +9,11 @@ minimumReleaseAgeExclude:
   - '@cloudflare/workers-types@5.20260825.1'
 
 overrides:
-  # Bundles libheif 1.23.2, fixing GHSA-g89c-p67h-r497 and GHSA-2jg2-4ch7-h545.
-  "miniflare>sharp": "0.35.4"
+  # Fix indexed source-map section offset DoS (GHSA-68fv-2mgg-jv7q).
+  "source-map-js": "1.2.2"
+  # Bundles libheif 1.23.5, retaining fixes for GHSA-g89c-p67h-r497 and GHSA-2jg2-4ch7-h545.
+  # Bundles librsvg 2.63.2, fixing GHSA-wq5f-xc86-pv6w.
+  "miniflare>sharp": "0.35.5"
   # Keep Miniflare on the current Undici release; requires Node.js 22.19.0+.
   "miniflare>undici": "8.12.1"
 
