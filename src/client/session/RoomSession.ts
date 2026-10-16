@@ -1873,10 +1873,10 @@ export class RoomSession {
   private metrics(): SessionMetrics {
     const stats = this.transport.sessionStats();
     const players = [...this.players.values()];
-    const subscribed = players.map((player) => player.participantId);
-    const counts = fanOut(subscribed, this.publishing);
-    const objectStats = players.map((player) => player.objectStats());
-    // Aggregate in one pass, retaining whether each counter was observed (H15).
+    const counts = fanOut(players, this.publishing);
+    // ⚡ Bolt Optimization: Aggregate player objectStats and count active decoders
+    // in a single direct loop over `players` without allocating intermediate arrays
+    // (`subscribed`, `objectStats`, or `players.filter`).
     let hasLateDrops = false;
     let hasCancelledDrops = false;
     let hasConcealedFrames = false;
@@ -1899,9 +1899,14 @@ export class RoomSession {
     let hasReceiverHold = false;
     let hasDecodeCallback = false;
     let hasDriftEstimate = false;
+    let activeDecoders = 0;
 
-    for (let i = 0; i < objectStats.length; i += 1) {
-      const entry = objectStats[i];
+    for (let i = 0; i < players.length; i += 1) {
+      const player = players[i];
+      if (!player) continue;
+      if (!player.released) activeDecoders += 1;
+
+      const entry = player.objectStats();
       if (!entry) continue;
       if (entry.lateDrops.exposed) {
         hasLateDrops = true;
@@ -2073,9 +2078,7 @@ export class RoomSession {
       worstDriftPpm: !hasDriftEstimate
         ? notExposed("No subscribed track has enough arrivals for a drift estimate.")
         : measured(maxDriftPpm),
-      activeDecoders: transportEstablished
-        ? measured(players.filter((player) => !player.released).length)
-        : notExposed(unavailable),
+      activeDecoders: transportEstablished ? measured(activeDecoders) : notExposed(unavailable),
       audioInputs: this.devices.inputCount(),
       deviceChanges: this.devices.deviceChanges(),
     };
