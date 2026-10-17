@@ -71,9 +71,10 @@ describe("request validation", () => {
       expect(optionalString({ rejoinToken: undefined }, "rejoinToken", 10)).toBeUndefined();
     });
 
-    it("returns the string when field is a valid string within maximumLength", () => {
-      expect(optionalString({ wakeName: "" }, "wakeName", 10)).toBe("");
-      expect(optionalString({ wakeName: "hello" }, "wakeName", 10)).toBe("hello");
+    it("returns the string when field is a valid string within maximumLength, or undefined if empty/whitespace", () => {
+      expect(optionalString({ wakeName: "" }, "wakeName", 10)).toBeUndefined();
+      expect(optionalString({ wakeName: "   " }, "wakeName", 10)).toBeUndefined();
+      expect(optionalString({ wakeName: "  hello  " }, "wakeName", 10)).toBe("hello");
       expect(optionalString({ wakeName: "1234567890" }, "wakeName", 10)).toBe("1234567890");
     });
 

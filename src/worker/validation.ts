@@ -117,7 +117,7 @@ export function requiredString(
   options: StringValidationOptions = {},
 ): string {
   const value = body[field];
-  if (typeof value !== "string" || value.trim().length === 0) {
+  if (typeof value !== "string" || value.length === 0) {
     throw new HttpError(400, "invalid_request", `Field '${field}' must be a non-empty string.`);
   }
   // Enforce a hard bound on raw string length before regex scanning or trimming
@@ -138,6 +138,9 @@ export function requiredString(
     );
   }
   const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    throw new HttpError(400, "invalid_request", `Field '${field}' must be a non-empty string.`);
+  }
   if (trimmed.length > maximumLength) {
     throw new HttpError(
       400,
@@ -156,7 +159,7 @@ export function optionalString(
 ): string | undefined {
   const value = body[field];
   if (value === undefined) return undefined;
-  if (typeof value !== "string" || value.length > maximumLength) {
+  if (typeof value !== "string" || value.length > maximumLength * 4 + 64) {
     throw new HttpError(
       400,
       "invalid_request",
@@ -171,7 +174,15 @@ export function optionalString(
       `Field '${field}' contains invalid control characters.`,
     );
   }
-  return value;
+  const trimmed = value.trim();
+  if (trimmed.length > maximumLength) {
+    throw new HttpError(
+      400,
+      "invalid_request",
+      `Field '${field}' must be a string of at most ${maximumLength} characters.`,
+    );
+  }
+  return trimmed.length > 0 ? trimmed : undefined;
 }
 
 export function requiredBoolean(body: Record<string, unknown>, field: string): boolean {
