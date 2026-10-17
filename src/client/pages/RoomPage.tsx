@@ -263,6 +263,9 @@ export function RoomPage({
         onCopyInvite={() => void copyInvite()}
         micAction={micAction}
         liveAudioEligible={configuration.liveAudioEligible}
+        publishing={state?.publishing}
+        muted={state?.muted}
+        onToggleMute={() => setMuted(!(state?.muted ?? false))}
         onStartAudio={() => void startAudio()}
         onOpenLeaveDialog={() => {
           setLeaveError(null);

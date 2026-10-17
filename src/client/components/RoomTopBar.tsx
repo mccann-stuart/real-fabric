@@ -10,6 +10,9 @@ interface RoomTopBarProps {
     label: string;
   };
   liveAudioEligible: boolean;
+  publishing?: boolean | undefined;
+  muted?: boolean | undefined;
+  onToggleMute?: () => void;
   onStartAudio: () => void;
   onOpenLeaveDialog: () => void;
 }
@@ -20,6 +23,9 @@ export function RoomTopBar({
   onCopyInvite,
   micAction,
   liveAudioEligible,
+  publishing = false,
+  muted = false,
+  onToggleMute,
   onStartAudio,
   onOpenLeaveDialog,
 }: RoomTopBarProps) {
@@ -70,6 +76,17 @@ export function RoomTopBar({
             onClick={onStartAudio}
           >
             {micAction.label}
+          </button>
+        ) : publishing && onToggleMute ? (
+          <button
+            className={`button button--compact${muted ? " button--danger" : ""}`}
+            type="button"
+            aria-pressed={muted}
+            aria-label={muted ? "Unmute microphone" : "Mute microphone"}
+            title={muted ? "Unmute microphone" : "Mute microphone"}
+            onClick={onToggleMute}
+          >
+            {muted ? "Unmute" : "Mute"}
           </button>
         ) : null}
         <button
