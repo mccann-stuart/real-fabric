@@ -124,10 +124,20 @@ export class AdaptiveJitterBuffer<T> {
     // Avoids findIndex linear predicate call when oldest frame is ready.
     const head = this.frames[0];
     let index = -1;
-    if (head && head.receivedAt <= now - this.targetMs) {
+    const targetCutoff = now - this.targetMs;
+    if (head && head.receivedAt <= targetCutoff) {
       index = 0;
     } else {
-      index = this.frames.findIndex((frame) => frame.receivedAt <= now - this.targetMs);
+      // ⚡ Bolt Optimization: Use explicit loop instead of findIndex to avoid closure allocation
+      // on out-of-order/underrun paths.
+      const len = this.frames.length;
+      for (let i = 1; i < len; i += 1) {
+        const frame = this.frames[i];
+        if (frame && frame.receivedAt <= targetCutoff) {
+          index = i;
+          break;
+        }
+      }
     }
 
     if (index < 0) {
