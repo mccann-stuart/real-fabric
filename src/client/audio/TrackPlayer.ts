@@ -39,6 +39,29 @@ export const MAXIMUM_DECODER_QUEUE_SIZE = 16;
 const MAXIMUM_PENDING_DECODE_TIMINGS = 256;
 export const DRIFT_RECOVERY_OBSERVATIONS = 50;
 
+export interface TrackPlayerMetricsAccumulator {
+  hasLateDrops: boolean;
+  lateDrops: number;
+  hasCancelledDrops: boolean;
+  cancelledDrops: number;
+  hasConcealedFrames: boolean;
+  concealedFrames: number;
+  hasComfortNoiseFrames: boolean;
+  comfortNoiseFrames: number;
+  playableObjects: number;
+  hasBufferDepth: boolean;
+  maxBufferDepth: number;
+  aggregateBufferDepth: number;
+  hasBufferTarget: boolean;
+  maxBufferTarget: number;
+  hasReceiverHold: boolean;
+  maxReceiverHold: number;
+  hasDecodeCallback: boolean;
+  maxDecodeCallback: number;
+  hasDriftEstimate: boolean;
+  maxDriftPpm: number;
+}
+
 export interface TrackPlayerCallbacks {
   onFirstObject?: (trackId: string) => void;
   onDriftCorrection?: (correction: DriftCorrection) => void;
@@ -283,6 +306,54 @@ export class TrackPlayer {
 
   setNominalBuffer(nominalMs: number): void {
     this.buffer.setNominal(nominalMs);
+  }
+
+  /**
+   * ⚡ Bolt Optimization: Fast allocation-free metrics accumulation.
+   * Directly updates numeric primitive fields in the accumulator without allocating 12 Measurement objects per player.
+   */
+  accumulateMetrics(acc: TrackPlayerMetricsAccumulator): void {
+    acc.hasLateDrops = true;
+    acc.lateDrops += this.buffer.lateDrops;
+
+    acc.hasCancelledDrops = true;
+    acc.cancelledDrops += this.buffer.cancelledDrops;
+
+    acc.hasConcealedFrames = true;
+    acc.concealedFrames += this.concealedFrames;
+
+    acc.hasComfortNoiseFrames = true;
+    acc.comfortNoiseFrames += this.comfortNoiseFrames;
+
+    acc.playableObjects += this.objects;
+
+    acc.hasBufferDepth = true;
+    const depthMs = this.buffer.depthMs;
+    if (depthMs > acc.maxBufferDepth) acc.maxBufferDepth = depthMs;
+    acc.aggregateBufferDepth += depthMs;
+
+    acc.hasBufferTarget = true;
+    const targetMs = this.buffer.targetMs;
+    if (targetMs > acc.maxBufferTarget) acc.maxBufferTarget = targetMs;
+
+    const receiverHold = this.receiverHold.mean;
+    if (receiverHold !== null) {
+      acc.hasReceiverHold = true;
+      if (receiverHold > acc.maxReceiverHold) acc.maxReceiverHold = receiverHold;
+    }
+
+    const decodeCallback = this.decodeCallback.mean;
+    if (decodeCallback !== null) {
+      acc.hasDecodeCallback = true;
+      if (decodeCallback > acc.maxDecodeCallback) acc.maxDecodeCallback = decodeCallback;
+    }
+
+    const skewPpm = this.drift.rawSkewPpm();
+    if (skewPpm !== null) {
+      acc.hasDriftEstimate = true;
+      const absSkew = Math.abs(skewPpm);
+      if (absSkew > acc.maxDriftPpm) acc.maxDriftPpm = absSkew;
+    }
   }
 
   objectStats(): {

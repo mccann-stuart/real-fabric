@@ -44,7 +44,7 @@ import {
 import { encodeAudioObject } from "../audio/frame";
 import { MixerGraph } from "../audio/MixerGraph";
 import { PlaybackDeduplicator } from "../audio/PlaybackDeduplicator";
-import { TrackPlayer } from "../audio/TrackPlayer";
+import { TrackPlayer, type TrackPlayerMetricsAccumulator } from "../audio/TrackPlayer";
 import type { CapturePath } from "../audio/UniversalAudioCaptureAdapter";
 import { inspectCaptureSupport } from "../audio/UniversalAudioCaptureAdapter";
 import { projectObservedActivity } from "../room/participantLayout";
@@ -1872,78 +1872,85 @@ export class RoomSession {
 
   private metrics(): SessionMetrics {
     const stats = this.transport.sessionStats();
-    const players = [...this.players.values()];
-    const subscribed = players.map((player) => player.participantId);
-    const counts = fanOut(subscribed, this.publishing);
-    const objectStats = players.map((player) => player.objectStats());
-    // Aggregate in one pass, retaining whether each counter was observed (H15).
-    let hasLateDrops = false;
-    let hasCancelledDrops = false;
-    let hasConcealedFrames = false;
-    let hasComfortNoiseFrames = false;
-    let cancelledDrops = 0;
-    let concealedFrames = 0;
-    let comfortNoiseFrames = 0;
-    let lateDrops = 0;
-    let playableObjects = 0;
+    // ⚡ Bolt Optimization: Allocation-free single-pass metrics accumulation over player tracks,
+    // avoiding array allocations and 12 Measurement wrapper object allocations per player.
+    const acc: TrackPlayerMetricsAccumulator = {
+      hasLateDrops: false,
+      lateDrops: 0,
+      hasCancelledDrops: false,
+      cancelledDrops: 0,
+      hasConcealedFrames: false,
+      concealedFrames: 0,
+      hasComfortNoiseFrames: false,
+      comfortNoiseFrames: 0,
+      playableObjects: 0,
+      hasBufferDepth: false,
+      maxBufferDepth: -Infinity,
+      aggregateBufferDepth: 0,
+      hasBufferTarget: false,
+      maxBufferTarget: -Infinity,
+      hasReceiverHold: false,
+      maxReceiverHold: -Infinity,
+      hasDecodeCallback: false,
+      maxDecodeCallback: -Infinity,
+      hasDriftEstimate: false,
+      maxDriftPpm: -Infinity,
+    };
 
-    let maxBufferDepth = -Infinity;
-    let maxBufferTarget = -Infinity;
-    let maxReceiverHold = -Infinity;
-    let maxDecodeCallback = -Infinity;
-    let maxDriftPpm = -Infinity;
-    let aggregateBufferDepth = 0;
+    const counts = fanOut(Array.from(this.players.keys()), this.publishing);
+    let activeDecodersCount = 0;
+    const playerCount = this.players.size;
+    for (const player of this.players.values()) {
+      if (!player.released) activeDecodersCount += 1;
+      if (typeof player.accumulateMetrics === "function") {
+        player.accumulateMetrics(acc);
+      } else if (
+        typeof (player as unknown as { objectStats?: () => unknown }).objectStats === "function"
+      ) {
+        const entry = player.objectStats() as ReturnType<TrackPlayer["objectStats"]>;
+        if (entry.lateDrops.exposed) {
+          acc.hasLateDrops = true;
+          acc.lateDrops += entry.lateDrops.value;
+        }
+        if (entry.cancelledDrops.exposed) {
+          acc.hasCancelledDrops = true;
+          acc.cancelledDrops += entry.cancelledDrops.value;
+        }
+        if (entry.concealedFrames.exposed) {
+          acc.hasConcealedFrames = true;
+          acc.concealedFrames += entry.concealedFrames.value;
+        }
+        if (entry.comfortNoiseFrames.exposed) {
+          acc.hasComfortNoiseFrames = true;
+          acc.comfortNoiseFrames += entry.comfortNoiseFrames.value;
+        }
+        if (entry.objects.exposed) acc.playableObjects += entry.objects.value;
 
-    let hasBufferDepth = false;
-    let hasBufferTarget = false;
-    let hasReceiverHold = false;
-    let hasDecodeCallback = false;
-    let hasDriftEstimate = false;
-
-    for (let i = 0; i < objectStats.length; i += 1) {
-      const entry = objectStats[i];
-      if (!entry) continue;
-      if (entry.lateDrops.exposed) {
-        hasLateDrops = true;
-        lateDrops += entry.lateDrops.value;
-      }
-      if (entry.cancelledDrops.exposed) {
-        hasCancelledDrops = true;
-        cancelledDrops += entry.cancelledDrops.value;
-      }
-      if (entry.concealedFrames.exposed) {
-        hasConcealedFrames = true;
-        concealedFrames += entry.concealedFrames.value;
-      }
-      if (entry.comfortNoiseFrames.exposed) {
-        hasComfortNoiseFrames = true;
-        comfortNoiseFrames += entry.comfortNoiseFrames.value;
-      }
-      if (entry.objects.exposed) playableObjects += entry.objects.value;
-
-      if (entry.depthMs.exposed) {
-        hasBufferDepth = true;
-        if (entry.depthMs.value > maxBufferDepth) maxBufferDepth = entry.depthMs.value;
-        aggregateBufferDepth += entry.depthMs.value;
-      }
-      if (entry.targetMs.exposed) {
-        hasBufferTarget = true;
-        if (entry.targetMs.value > maxBufferTarget) maxBufferTarget = entry.targetMs.value;
-      }
-      if (entry.receiverHoldMs.exposed) {
-        hasReceiverHold = true;
-        if (entry.receiverHoldMs.value > maxReceiverHold)
-          maxReceiverHold = entry.receiverHoldMs.value;
-      }
-      if (entry.decodeCallbackMs.exposed) {
-        hasDecodeCallback = true;
-        if (entry.decodeCallbackMs.value > maxDecodeCallback)
-          maxDecodeCallback = entry.decodeCallbackMs.value;
-      }
-      if (entry.skewPpm.exposed) {
-        hasDriftEstimate = true;
-        const absSkew = Math.abs(entry.skewPpm.value);
-        if (absSkew > maxDriftPpm) maxDriftPpm = absSkew;
+        if (entry.depthMs.exposed) {
+          acc.hasBufferDepth = true;
+          if (entry.depthMs.value > acc.maxBufferDepth) acc.maxBufferDepth = entry.depthMs.value;
+          acc.aggregateBufferDepth += entry.depthMs.value;
+        }
+        if (entry.targetMs.exposed) {
+          acc.hasBufferTarget = true;
+          if (entry.targetMs.value > acc.maxBufferTarget)
+            acc.maxBufferTarget = entry.targetMs.value;
+        }
+        if (entry.receiverHoldMs.exposed) {
+          acc.hasReceiverHold = true;
+          if (entry.receiverHoldMs.value > acc.maxReceiverHold)
+            acc.maxReceiverHold = entry.receiverHoldMs.value;
+        }
+        if (entry.decodeCallbackMs.exposed) {
+          acc.hasDecodeCallback = true;
+          if (entry.decodeCallbackMs.value > acc.maxDecodeCallback)
+            acc.maxDecodeCallback = entry.decodeCallbackMs.value;
+        }
+        if (entry.skewPpm.exposed) {
+          acc.hasDriftEstimate = true;
+          const absSkew = Math.abs(entry.skewPpm.value);
+          if (absSkew > acc.maxDriftPpm) acc.maxDriftPpm = absSkew;
+        }
       }
     }
 
@@ -1958,7 +1965,7 @@ export class RoomSession {
      */
     const aggregate = (total: number, observed: boolean): Measurement<number> => {
       if (!transportEstablished) return notExposed(unavailable);
-      if (players.length > 0 && !observed) return notExposed(noObjects);
+      if (playerCount > 0 && !observed) return notExposed(noObjects);
       return measured(total);
     };
     return {
@@ -1975,18 +1982,18 @@ export class RoomSession {
         : notExposed("This participant is not publishing."),
       subscribedTracks:
         this.phase.name === "live" ? measured(counts.subscribedTracks) : notExposed(unavailable),
-      worstBufferMs: !hasBufferDepth ? notExposed(noObjects) : measured(maxBufferDepth),
-      jitterTargetMs: !hasBufferTarget
+      worstBufferMs: !acc.hasBufferDepth ? notExposed(noObjects) : measured(acc.maxBufferDepth),
+      jitterTargetMs: !acc.hasBufferTarget
         ? notExposed("No subscribed jitter buffer is active.")
-        : measured(maxBufferTarget),
+        : measured(acc.maxBufferTarget),
       captureFrameMs: captureLatency.frameFillMs,
       encodeCallbackMs: captureLatency.encodeCallbackMs,
-      receiverHoldMs: !hasReceiverHold
+      receiverHoldMs: !acc.hasReceiverHold
         ? notExposed("No received object has reached a decoder yet.")
-        : measured(maxReceiverHold),
-      decodeCallbackMs: !hasDecodeCallback
+        : measured(acc.maxReceiverHold),
+      decodeCallbackMs: !acc.hasDecodeCallback
         ? notExposed("No Opus decoder output callback has completed yet.")
-        : measured(maxDecodeCallback),
+        : measured(acc.maxDecodeCallback),
       outputLatencyMs: this.mixer.outputLatencyMs(),
       transportRttMs:
         typeof stats.transportRttMs === "number"
@@ -2008,10 +2015,10 @@ export class RoomSession {
         typeof stats.subscribeSetupMs === "number"
           ? measured(stats.subscribeSetupMs)
           : notExposed("No explicit track subscription request has completed yet."),
-      lateDrops: aggregate(lateDrops, hasLateDrops),
-      cancelledDrops: aggregate(cancelledDrops, hasCancelledDrops),
-      concealedFrames: aggregate(concealedFrames, hasConcealedFrames),
-      comfortNoiseFrames: aggregate(comfortNoiseFrames, hasComfortNoiseFrames),
+      lateDrops: aggregate(acc.lateDrops, acc.hasLateDrops),
+      cancelledDrops: aggregate(acc.cancelledDrops, acc.hasCancelledDrops),
+      concealedFrames: aggregate(acc.concealedFrames, acc.hasConcealedFrames),
+      comfortNoiseFrames: aggregate(acc.comfortNoiseFrames, acc.hasComfortNoiseFrames),
       lastBargeInMs:
         this.lastBargeIn === null
           ? notExposed("No barge-in has occurred in this session.")
@@ -2066,15 +2073,17 @@ export class RoomSession {
           ? notExposed(noObjects)
           : measured(Math.max(0, this.now() - stats.lastSubscribedObjectAt)),
       lateDropRate:
-        playableObjects === 0 ? notExposed(noObjects) : measured(lateDrops / playableObjects),
+        acc.playableObjects === 0
+          ? notExposed(noObjects)
+          : measured(acc.lateDrops / acc.playableObjects),
       aggregateBufferMs: transportEstablished
-        ? measured(aggregateBufferDepth)
+        ? measured(acc.aggregateBufferDepth)
         : notExposed(unavailable),
-      worstDriftPpm: !hasDriftEstimate
+      worstDriftPpm: !acc.hasDriftEstimate
         ? notExposed("No subscribed track has enough arrivals for a drift estimate.")
-        : measured(maxDriftPpm),
+        : measured(acc.maxDriftPpm),
       activeDecoders: transportEstablished
-        ? measured(players.filter((player) => !player.released).length)
+        ? measured(activeDecodersCount)
         : notExposed(unavailable),
       audioInputs: this.devices.inputCount(),
       deviceChanges: this.devices.deviceChanges(),
