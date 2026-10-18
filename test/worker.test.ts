@@ -38,7 +38,9 @@ describe("Real Fabric Worker", () => {
     expect(response.headers.get("cross-origin-opener-policy")).toBe("same-origin");
     expect(response.headers.get("cross-origin-resource-policy")).toBe("same-origin");
     expect(response.headers.get("x-permitted-cross-domain-policies")).toBe("none");
+    expect(response.headers.get("x-dns-prefetch-control")).toBe("off");
     expect(response.headers.get("content-security-policy")).toContain("form-action 'self'");
+    expect(response.headers.get("content-security-policy")).toContain("worker-src 'self'");
 
     const body = (await response.json()) as {
       error: { code: string; message: string; correlationId: string };
