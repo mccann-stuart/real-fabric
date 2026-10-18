@@ -11,7 +11,11 @@ const LABELS: Record<CheckState, string> = {
 
 export function StatusLight({ state }: { state: CheckState }) {
   return (
-    <span className={`status status--${state}`}>
+    <span
+      className={`status status--${state}`}
+      role="status"
+      aria-label={`Status: ${LABELS[state]}`}
+    >
       <span className="status__light" aria-hidden="true" />
       {LABELS[state]}
     </span>
