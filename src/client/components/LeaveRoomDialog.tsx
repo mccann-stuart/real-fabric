@@ -53,6 +53,8 @@ export function LeaveRoomDialog({
           className="button button--compact"
           type="button"
           disabled={leaving}
+          aria-label={`Stay in room ${code}`}
+          title={`Stay in room ${code}`}
           onClick={() => {
             onCancel();
             dialogRef.current?.close();

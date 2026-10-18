@@ -428,6 +428,8 @@ describe("Micro-UX & Accessibility Improvements", () => {
         onConfirmLeave: () => {},
       }),
     );
+    expect(idleHtml).toContain('aria-label="Stay in room TEST1234"');
+    expect(idleHtml).toContain('title="Stay in room TEST1234"');
     expect(idleHtml).toContain('aria-label="Leave room TEST1234"');
     expect(idleHtml).toContain('title="Leave room TEST1234"');
   });
