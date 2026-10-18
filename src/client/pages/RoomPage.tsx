@@ -441,6 +441,8 @@ export function RoomPage({
             className="mobile-audio-rail__danger"
             type="button"
             aria-haspopup="dialog"
+            aria-label={`Leave room ${code}`}
+            title={`Leave room ${code}`}
             onClick={() => {
               setLeaveError(null);
               leaveDialog.current?.showModal();
