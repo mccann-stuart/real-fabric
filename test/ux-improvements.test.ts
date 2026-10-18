@@ -488,6 +488,49 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(html).toContain("Starting audio…");
   });
 
+  it("renders RoomTopBar Mute/Unmute button with accessible labels when audio is publishing", () => {
+    const unmutedHtml = renderToStaticMarkup(
+      React.createElement(RoomTopBar, {
+        code: "TEST1234567890123456",
+        copyState: "idle",
+        onCopyInvite: () => {},
+        micAction: { visible: false, disabled: false, label: "Start microphone" },
+        liveAudioEligible: true,
+        publishing: true,
+        muted: false,
+        onToggleMute: () => {},
+        onStartAudio: () => {},
+        onOpenLeaveDialog: () => {},
+      }),
+    );
+
+    expect(unmutedHtml).toContain("Mute");
+    expect(unmutedHtml).toContain('aria-pressed="false"');
+    expect(unmutedHtml).toContain('aria-label="Mute microphone"');
+    expect(unmutedHtml).toContain('title="Mute microphone"');
+
+    const mutedHtml = renderToStaticMarkup(
+      React.createElement(RoomTopBar, {
+        code: "TEST1234567890123456",
+        copyState: "idle",
+        onCopyInvite: () => {},
+        micAction: { visible: false, disabled: false, label: "Start microphone" },
+        liveAudioEligible: true,
+        publishing: true,
+        muted: true,
+        onToggleMute: () => {},
+        onStartAudio: () => {},
+        onOpenLeaveDialog: () => {},
+      }),
+    );
+
+    expect(mutedHtml).toContain("Unmute");
+    expect(mutedHtml).toContain("button--danger");
+    expect(mutedHtml).toContain('aria-pressed="true"');
+    expect(mutedHtml).toContain('aria-label="Unmute microphone"');
+    expect(mutedHtml).toContain('title="Unmute microphone"');
+  });
+
   it("renders styled retry button in RoomStatusStack terminal phase", () => {
     const html = renderToStaticMarkup(
       React.createElement(RoomStatusStack, {
