@@ -197,4 +197,31 @@ describe("inspectRelayCredential & configuredRelayCredential", () => {
       expect(configuredRelayCredential(paddedToken, 99_999)).toBe(rawToken);
     });
   });
+
+  describe("nbf claim validation", () => {
+    it("returns status invalid when current time is before nbf seconds", () => {
+      const futureNbfToken = makeJwt({ exp: 1_000, nbf: 500 });
+      // nowMs = 499_000 ms -> 499 seconds < 500 nbf -> invalid
+      expect(inspectRelayCredential(futureNbfToken, 499_000)).toEqual({
+        status: "invalid",
+        credential: null,
+      });
+      expect(configuredRelayCredential(futureNbfToken, 499_000)).toBeNull();
+    });
+
+    it("returns status available when current time is at or after nbf seconds", () => {
+      const nbfToken = makeJwt({ exp: 1_000, nbf: 500 });
+      // Exact nbf boundary: nowMs = 500_000 ms -> 500 seconds >= 500 nbf -> available
+      expect(inspectRelayCredential(nbfToken, 500_000)).toEqual({
+        status: "available",
+        credential: nbfToken,
+      });
+      // After nbf boundary: nowMs = 600_000 ms -> 600 seconds >= 500 nbf -> available
+      expect(inspectRelayCredential(nbfToken, 600_000)).toEqual({
+        status: "available",
+        credential: nbfToken,
+      });
+      expect(configuredRelayCredential(nbfToken, 500_000)).toBe(nbfToken);
+    });
+  });
 });
