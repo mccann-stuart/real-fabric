@@ -15,6 +15,10 @@ export class MeanMetric {
     this.total += value;
   }
 
+  get mean(): number | null {
+    return this.samples === 0 ? null : this.total / this.samples;
+  }
+
   measurement(reason: string): Measurement<number> {
     return this.samples === 0 ? notExposed(reason) : measured(this.total / this.samples);
   }

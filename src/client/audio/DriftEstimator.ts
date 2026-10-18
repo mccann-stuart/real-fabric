@@ -133,6 +133,10 @@ export class DriftEstimator {
     return this.estimates > 0;
   }
 
+  rawSkewPpm(): number | null {
+    return this.hasEstimate ? this.smoothedSkewPpm : null;
+  }
+
   /** H15: no estimate before warm-up reads as zero drift. */
   skewPpm(): Measurement<number> {
     if (!this.hasEstimate) {
