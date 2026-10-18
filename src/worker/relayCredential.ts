@@ -51,6 +51,14 @@ export function inspectRelayCredential(
     if (nowMs / 1_000 >= expiresAtSeconds) {
       return { status: "expired", credential: null };
     }
+    const nbfSeconds = (claims as Record<string, unknown>).nbf;
+    if (
+      typeof nbfSeconds === "number" &&
+      Number.isFinite(nbfSeconds) &&
+      nowMs / 1_000 < nbfSeconds
+    ) {
+      return { status: "invalid", credential: null };
+    }
     return { status: "available", credential };
   } catch {
     return { status: "invalid", credential: null };
