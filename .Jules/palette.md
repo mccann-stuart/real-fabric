@@ -9,3 +9,7 @@
 ## 2026-10-18 - Pair unobservable metric tooltips with `role="note"` and `aria-label`
 **Learning:** `span` elements using `title` attributes for tooltips on unobservable metrics ("Not exposed") do not announce the explanation reason to screen readers, and adding `aria-label` directly to generic spans triggers linting errors.
 **Action:** Annotate unobservable measurement spans with `role="note"` and `aria-label={`${NOT_EXPOSED}: ${measurement.reason}`}` to expose technical reasons to assistive technology while keeping visual presentation identical.
+
+## 2026-10-25 - Pair status light indicators in grids with contextual check labels in `aria-label` and `title`
+**Learning:** Generic `aria-label="Status: Ready"` on status light components with `role="status"` lacks context when announced by screen readers during live updates in grid layouts.
+**Action:** Always pass the specific capability label to status light components so `aria-label` and `title` combine the check name with its status (e.g., `aria-label="WebTransport: Ready"`).

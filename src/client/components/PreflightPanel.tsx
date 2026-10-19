@@ -60,13 +60,13 @@ export function PreflightPanel({
         {REQUIRED_CHECKS.map(([key, label]) => (
           <div className="preflight-check" key={key}>
             <strong>{label}</strong>
-            <StatusLight state={report[key] as CheckState} />
+            <StatusLight state={report[key] as CheckState} label={label} />
           </div>
         ))}
         {/* §11.2: HTTP/3 and QUIC reachability, probed rather than assumed. */}
         <div className="preflight-check">
           <strong>HTTP/3 and QUIC</strong>
-          <StatusLight state={probeLight(report.network.state)} />
+          <StatusLight state={probeLight(report.network.state)} label="HTTP/3 and QUIC" />
         </div>
       </fieldset>
       <fieldset className="preflight-grid preflight-grid--optional">
@@ -74,7 +74,7 @@ export function PreflightPanel({
         {OPTIONAL_CHECKS.map(([key, label]) => (
           <div className="preflight-check" key={key}>
             <strong>{label}</strong>
-            <StatusLight state={report[key] as CheckState} />
+            <StatusLight state={report[key] as CheckState} label={label} />
           </div>
         ))}
       </fieldset>
