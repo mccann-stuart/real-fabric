@@ -9,15 +9,18 @@ const LABELS: Record<CheckState, string> = {
   not_tested: "Not tested",
 };
 
-export function StatusLight({ state }: { state: CheckState }) {
+export function StatusLight({ state, label }: { state: CheckState; label?: string }) {
+  const statusText = LABELS[state];
+  const accessibleLabel = label ? `${label}: ${statusText}` : `Status: ${statusText}`;
   return (
     <span
       className={`status status--${state}`}
       role="status"
-      aria-label={`Status: ${LABELS[state]}`}
+      aria-label={accessibleLabel}
+      title={accessibleLabel}
     >
       <span className="status__light" aria-hidden="true" />
-      {LABELS[state]}
+      {statusText}
     </span>
   );
 }

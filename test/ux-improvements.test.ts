@@ -687,7 +687,7 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(html).toContain("1 / 2 clean runs");
   });
 
-  it("renders PreflightPanel with fieldset legend groupings for required and optional checks", () => {
+  it("renders PreflightPanel with fieldset legend groupings and contextual status light accessibility labels and tooltips", () => {
     const html = renderToStaticMarkup(
       React.createElement(PreflightPanel, {
         report: {
@@ -723,6 +723,12 @@ describe("Micro-UX & Accessibility Improvements", () => {
 
     expect(html).toContain("Required capabilities");
     expect(html).toContain("Optional enhancements");
+    expect(html).toContain('aria-label="WebTransport: Ready"');
+    expect(html).toContain('title="WebTransport: Ready"');
+    expect(html).toContain('aria-label="Microphone: Ready"');
+    expect(html).toContain('title="Microphone: Ready"');
+    expect(html).toContain('aria-label="HTTP/3 and QUIC: Ready"');
+    expect(html).toContain('title="HTTP/3 and QUIC: Ready"');
   });
 
   it("shows actual subscription and consent states without treating missing routing as off", () => {
