@@ -266,6 +266,9 @@ export class RoomSession {
   private readonly participantsById = new Map<string, Participant>();
   private readonly aiParticipants: Participant[] = [];
   private readonly hearsMeByHumanAndAi = new Map<string, Map<string, boolean>>();
+  // ⚡ Bolt Optimization: Pre-computed list of listening AIs per human participant
+  // updated on snapshot/routing changes to bypass Map lookups on 50Hz audio object hot path.
+  private readonly listeningAisByHuman = new Map<string, string[]>();
   private observedDiscovery: DiscoveryMechanism | null = null;
   private captureMode: CaptureMode = { name: "idle" };
   private network: ProbeResult = notRunProbe("The relay reachability probe has not started.");
@@ -1388,17 +1391,17 @@ export class RoomSession {
     }
   }
 
+  // ⚡ Bolt Optimization: Use pre-computed listeningAisByHuman map to avoid
+  // participant role checks, outer map lookups, and un-subscribed AI iterations
+  // on every 20ms audio frame arrival (50Hz per track).
   private noteScriptedContext(fromParticipantId: string): void {
-    const sender = this.participantsById.get(fromParticipantId);
-    if (sender?.role !== "human") return;
+    const listeningAis = this.listeningAisByHuman.get(fromParticipantId);
+    if (!listeningAis) return;
 
-    const aiMap = this.hearsMeByHumanAndAi.get(fromParticipantId);
-    if (!aiMap) return;
-
-    for (let i = 0; i < this.aiParticipants.length; i++) {
-      const ai = this.aiParticipants[i];
-      if (ai && aiMap.get(ai.id)) {
-        this.scripted.noteHeardUtterance(ai.id, fromParticipantId);
+    for (let i = 0; i < listeningAis.length; i++) {
+      const aiId = listeningAis[i];
+      if (aiId) {
+        this.scripted.noteHeardUtterance(aiId, fromParticipantId);
       }
     }
   }
@@ -1760,6 +1763,17 @@ export class RoomSession {
       }
     }
 
+    this.listeningAisByHuman.clear();
+    for (const [humanId, aiMap] of this.hearsMeByHumanAndAi) {
+      const listeningAis: string[] = [];
+      for (const [aiId, hearsMe] of aiMap) {
+        if (hearsMe) listeningAis.push(aiId);
+      }
+      if (listeningAis.length > 0) {
+        this.listeningAisByHuman.set(humanId, listeningAis);
+      }
+    }
+
     this.director.setAiToAi(room.aiToAi.enabled);
   }
 
@@ -1817,6 +1831,7 @@ export class RoomSession {
     this.participantsById.clear();
     this.aiParticipants.length = 0;
     this.hearsMeByHumanAndAi.clear();
+    this.listeningAisByHuman.clear();
     this.closePlayers();
     this.devices.stop();
     await this.capture.stop();
