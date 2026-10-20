@@ -15,6 +15,7 @@ import { SubscriptionGraph } from "../src/client/components/SubscriptionGraph";
 import * as useEntryFormModule from "../src/client/hooks/useEntryForm";
 import { EntryPage } from "../src/client/pages/EntryPage";
 import { PreflightPage } from "../src/client/pages/PreflightPage";
+import { RoomPage } from "../src/client/pages/RoomPage";
 import type { Participant, RoomSnapshot, RoutingPreference } from "../src/shared/contracts";
 import { notExposed } from "../src/shared/measurement";
 import { matchConfiguration } from "../src/shared/pinnedConfiguration";
@@ -837,5 +838,55 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(html).toContain('title="No session setup handshake has completed"');
     expect(html).toContain('aria-label="Not exposed: No session setup handshake has completed"');
     expect(html).toContain("Not exposed");
+  });
+
+  it("renders RoomPage mobile audio rail primary button with accessible ARIA attributes", () => {
+    const storageMap = new Map<string, string>();
+    const mockStorage = {
+      getItem: (key: string) => storageMap.get(key) ?? null,
+      setItem: (key: string, value: string) => storageMap.set(key, String(value)),
+      removeItem: (key: string) => storageMap.delete(key),
+      clear: () => storageMap.clear(),
+    };
+    if (typeof globalThis.sessionStorage === "undefined") {
+      Object.defineProperty(globalThis, "sessionStorage", {
+        value: mockStorage,
+        writable: true,
+        configurable: true,
+      });
+    }
+
+    const iphoneConfig = matchConfiguration({
+      userAgent:
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 27_0 like Mac OS X) AppleWebKit/619.1.12 (KHTML, like Gecko) Version/27.0 Mobile/15E148 Safari/604.1",
+      platform: "iPhone",
+    });
+    sessionStorage.setItem(
+      "real-fabric:TESTROOM123",
+      JSON.stringify({
+        code: "TESTROOM123",
+        participantId: "human-1",
+        rejoinToken: "token-123",
+        displayName: "Ada",
+        storedAt: Date.now(),
+      }),
+    );
+
+    try {
+      const html = renderToStaticMarkup(
+        React.createElement(RoomPage, {
+          code: "TESTROOM123",
+          configuration: iphoneConfig,
+          navigate: () => {},
+        }),
+      );
+
+      expect(html).toContain('class="mobile-audio-rail__primary"');
+      expect(html).toContain('aria-busy="false"');
+      expect(html).toContain('aria-label="Start microphone"');
+      expect(html).toContain('title="Start microphone"');
+    } finally {
+      sessionStorage.removeItem("real-fabric:TESTROOM123");
+    }
   });
 });
