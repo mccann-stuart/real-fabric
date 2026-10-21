@@ -1872,11 +1872,10 @@ export class RoomSession {
 
   private metrics(): SessionMetrics {
     const stats = this.transport.sessionStats();
-    const players = [...this.players.values()];
-    const counts = fanOut(players, this.publishing);
+    const counts = fanOut(this.players.size, this.publishing);
     // ⚡ Bolt Optimization: Aggregate player objectStats and count active decoders
-    // in a single direct loop over `players` without allocating intermediate arrays
-    // (`subscribed`, `objectStats`, or `players.filter`).
+    // in a single direct loop over `this.players.values()` without allocating intermediate
+    // arrays (`players`, `subscribed`, `objectStats`, or `players.filter`).
     let hasLateDrops = false;
     let hasCancelledDrops = false;
     let hasConcealedFrames = false;
@@ -1901,8 +1900,7 @@ export class RoomSession {
     let hasDriftEstimate = false;
     let activeDecoders = 0;
 
-    for (let i = 0; i < players.length; i += 1) {
-      const player = players[i];
+    for (const player of this.players.values()) {
       if (!player) continue;
       if (!player.released) activeDecoders += 1;
 
@@ -1963,7 +1961,7 @@ export class RoomSession {
      */
     const aggregate = (total: number, observed: boolean): Measurement<number> => {
       if (!transportEstablished) return notExposed(unavailable);
-      if (players.length > 0 && !observed) return notExposed(noObjects);
+      if (this.players.size > 0 && !observed) return notExposed(noObjects);
       return measured(total);
     };
     return {
