@@ -21,7 +21,7 @@ describe("request validation", () => {
       expect(requiredEnum({ mode: "gamma" }, "mode", allowedValues)).toBe("gamma");
     });
 
-    it("throws HttpError 400 invalid_request for missing, non-string, or unallowed values", () => {
+    it("throws HttpError 400 invalid_request for missing, non-string, unallowed, or oversized values", () => {
       const invalidCases: Array<[string, Record<string, unknown>]> = [
         ["missing field", {}],
         ["null value", { mode: null }],
@@ -32,6 +32,7 @@ describe("request validation", () => {
         ["array value", { mode: ["alpha"] }],
         ["unallowed string value", { mode: "delta" }],
         ["case mismatch string value", { mode: "ALPHA" }],
+        ["oversized string value", { mode: "a".repeat(200) }],
       ];
 
       for (const [description, body] of invalidCases) {
