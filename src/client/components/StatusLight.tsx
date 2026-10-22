@@ -14,6 +14,7 @@ export function StatusLight({ state }: { state: CheckState }) {
     <span
       className={`status status--${state}`}
       role="status"
+      title={`Status: ${LABELS[state]}`}
       aria-label={`Status: ${LABELS[state]}`}
     >
       <span className="status__light" aria-hidden="true" />

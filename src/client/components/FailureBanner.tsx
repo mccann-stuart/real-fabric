@@ -67,7 +67,10 @@ export function FailureList({
       <FailureBanner code={primary} {...(onDismiss ? { onDismiss } : {})} />
       {secondary.length > 0 ? (
         <details className="failure-list__more">
-          <summary>
+          <summary
+            aria-label={`Toggle ${secondary.length} more active ${secondary.length === 1 ? "notice" : "notices"}`}
+            title={`Toggle ${secondary.length} more active ${secondary.length === 1 ? "notice" : "notices"}`}
+          >
             {secondary.length} more active {secondary.length === 1 ? "notice" : "notices"}
           </summary>
           <div className="failure-list__secondary">

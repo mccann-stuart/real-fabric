@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { CapturePath } from "../src/client/audio/UniversalAudioCaptureAdapter";
 import { DemoScriptPanel } from "../src/client/components/DemoScriptPanel";
+import { FailureList } from "../src/client/components/FailureBanner";
 import { Inspector } from "../src/client/components/Inspector";
 import { LeaveRoomDialog } from "../src/client/components/LeaveRoomDialog";
 import { MeasurementValue } from "../src/client/components/MeasurementValue";
@@ -11,6 +12,7 @@ import { PreflightPanel } from "../src/client/components/PreflightPanel";
 import { PresenterStrip } from "../src/client/components/PresenterStrip";
 import { RoomStatusStack } from "../src/client/components/RoomStatusStack";
 import { RoomTopBar } from "../src/client/components/RoomTopBar";
+import { StatusLight } from "../src/client/components/StatusLight";
 import { SubscriptionGraph } from "../src/client/components/SubscriptionGraph";
 import * as useEntryFormModule from "../src/client/hooks/useEntryForm";
 import { EntryPage } from "../src/client/pages/EntryPage";
@@ -687,7 +689,7 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(html).toContain("1 / 2 clean runs");
   });
 
-  it("renders PreflightPanel with fieldset legend groupings for required and optional checks", () => {
+  it("renders PreflightPanel with fieldset legend groupings and omits empty reason paragraphs", () => {
     const html = renderToStaticMarkup(
       React.createElement(PreflightPanel, {
         report: {
@@ -723,6 +725,24 @@ describe("Micro-UX & Accessibility Improvements", () => {
 
     expect(html).toContain("Required capabilities");
     expect(html).toContain("Optional enhancements");
+    expect(html).not.toContain('<p class="preflight-reason"></p>');
+  });
+
+  it("renders StatusLight with title tooltip and aria-label", () => {
+    const html = renderToStaticMarkup(React.createElement(StatusLight, { state: "ready" }));
+    expect(html).toContain('title="Status: Ready"');
+    expect(html).toContain('aria-label="Status: Ready"');
+  });
+
+  it("renders FailureList summary with explicit aria-label and title tooltip", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(FailureList, {
+        codes: ["udp_blocked", "draft_mismatch"],
+      }),
+    );
+
+    expect(html).toContain('aria-label="Toggle 1 more active notice"');
+    expect(html).toContain('title="Toggle 1 more active notice"');
   });
 
   it("shows actual subscription and consent states without treating missing routing as off", () => {
