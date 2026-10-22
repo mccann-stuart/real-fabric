@@ -78,11 +78,11 @@ export function PreflightPanel({
           </div>
         ))}
       </fieldset>
-      <p className="preflight-reason">{report.relayReason}</p>
-      <p className="preflight-reason">{report.codecReason}</p>
-      <p className="preflight-reason">{report.captureReason}</p>
-      <p className="preflight-reason">{report.playoutReason}</p>
-      <p className="preflight-reason">{report.network.detail}</p>
+      {report.relayReason ? <p className="preflight-reason">{report.relayReason}</p> : null}
+      {report.codecReason ? <p className="preflight-reason">{report.codecReason}</p> : null}
+      {report.captureReason ? <p className="preflight-reason">{report.captureReason}</p> : null}
+      {report.playoutReason ? <p className="preflight-reason">{report.playoutReason}</p> : null}
+      {report.network.detail ? <p className="preflight-reason">{report.network.detail}</p> : null}
       {report.network.remediation ? (
         <p className="preflight-reason">{report.network.remediation}</p>
       ) : null}
