@@ -26,14 +26,16 @@ export interface StringValidationOptions {
 
 /**
  * Recursively checks if an object or nested object/array contains dangerous prototype keys
- * (`__proto__`, `constructor`, or `prototype`) to prevent prototype pollution (CWE-1321).
+ * (`__proto__`, `constructor`, or `prototype`) to prevent prototype pollution (CWE-1321)
+ * and enforces a maximum nesting depth limit (depth > 32) to prevent call stack exhaustion (CWE-674 / CWE-400).
  */
-function hasDangerousPrototypeKeys(value: unknown): boolean {
+function hasDangerousPrototypeKeys(value: unknown, depth = 0): boolean {
+  if (depth > 32) return true;
   if (!value || typeof value !== "object") return false;
 
   if (Array.isArray(value)) {
     for (const item of value) {
-      if (hasDangerousPrototypeKeys(item)) return true;
+      if (hasDangerousPrototypeKeys(item, depth + 1)) return true;
     }
     return false;
   }
@@ -43,7 +45,7 @@ function hasDangerousPrototypeKeys(value: unknown): boolean {
     if (key === "__proto__" || key === "constructor" || key === "prototype") {
       return true;
     }
-    if (hasDangerousPrototypeKeys(record[key])) {
+    if (hasDangerousPrototypeKeys(record[key], depth + 1)) {
       return true;
     }
   }
