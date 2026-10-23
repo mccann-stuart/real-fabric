@@ -159,6 +159,22 @@ export class PcmFrameAssembler {
 
     let sourceOffset = 0;
     while (sourceOffset < samples.length) {
+      // Performance optimization (⚡ Bolt): Fast-path full-frame slices when pending buffer is empty.
+      // Directly slicing full 20ms frames from input samples bypasses intermediate pending buffer writes,
+      // cutting float copying overhead in half during continuous audio capture framing.
+      if (
+        this.pendingSamples === 0 &&
+        samples.length - sourceOffset >= CAPTURE_FRAME_SAMPLES
+      ) {
+        onFrame(
+          samples.slice(sourceOffset, sourceOffset + CAPTURE_FRAME_SAMPLES),
+          this.nextTimestamp,
+        );
+        sourceOffset += CAPTURE_FRAME_SAMPLES;
+        this.nextTimestamp += AUDIO_FRAME_DURATION_MS * 1_000;
+        continue;
+      }
+
       const copied = Math.min(
         CAPTURE_FRAME_SAMPLES - this.pendingSamples,
         samples.length - sourceOffset,
@@ -168,8 +184,6 @@ export class PcmFrameAssembler {
       sourceOffset += copied;
 
       if (this.pendingSamples === CAPTURE_FRAME_SAMPLES) {
-        // Performance optimization (⚡ Bolt): Re-use / zero-copy subarray view when pending buffer is exact or full,
-        // using slice only on frame emission to pass owner-isolated Float32Array without extra temporary copies.
         onFrame(this.pending.slice(), this.nextTimestamp);
         this.pendingSamples = 0;
         this.nextTimestamp += AUDIO_FRAME_DURATION_MS * 1_000;
