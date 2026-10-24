@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { CapturePath } from "../src/client/audio/UniversalAudioCaptureAdapter";
 import { DemoScriptPanel } from "../src/client/components/DemoScriptPanel";
+import { FailureBanner } from "../src/client/components/FailureBanner";
 import { Inspector } from "../src/client/components/Inspector";
 import { LeaveRoomDialog } from "../src/client/components/LeaveRoomDialog";
 import { MeasurementValue } from "../src/client/components/MeasurementValue";
@@ -837,5 +838,18 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(html).toContain('title="No session setup handshake has completed"');
     expect(html).toContain('aria-label="Not exposed: No session setup handshake has completed"');
     expect(html).toContain("Not exposed");
+  });
+
+  it("renders FailureBanner dismiss button with accessible aria-label and title", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(FailureBanner, {
+        code: "udp_blocked",
+        onDismiss: () => {},
+      }),
+    );
+
+    expect(html).toContain('aria-label="Dismiss notice: HTTP/3 or UDP blocked"');
+    expect(html).toContain('title="Dismiss notice: HTTP/3 or UDP blocked"');
+    expect(html).toContain('<span aria-hidden="true">×</span>');
   });
 });

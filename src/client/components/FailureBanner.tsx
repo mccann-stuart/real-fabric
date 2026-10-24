@@ -32,8 +32,8 @@ export function FailureBanner({
           <button
             type="button"
             onClick={() => onDismiss(code)}
-            aria-label={`Dismiss ${failure.title}`}
-            title={`Dismiss ${failure.title}`}
+            aria-label={`Dismiss notice: ${failure.title}`}
+            title={`Dismiss notice: ${failure.title}`}
           >
             <span aria-hidden="true">×</span>
           </button>
