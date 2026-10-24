@@ -28,7 +28,7 @@ export interface StringValidationOptions {
  * Recursively checks if an object or nested object/array contains dangerous prototype keys
  * (`__proto__`, `constructor`, or `prototype`) to prevent prototype pollution (CWE-1321).
  */
-function hasDangerousPrototypeKeys(value: unknown): boolean {
+export function hasDangerousPrototypeKeys(value: unknown): boolean {
   if (!value || typeof value !== "object") return false;
 
   if (Array.isArray(value)) {

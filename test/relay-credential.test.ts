@@ -59,6 +59,23 @@ describe("inspectRelayCredential & configuredRelayCredential", () => {
         credential: null,
       });
     });
+
+    it("returns status invalid when token string exceeds 8192 characters", () => {
+      const longToken = `header.${"a".repeat(8195)}.signature`;
+      expect(inspectRelayCredential(longToken)).toEqual({
+        status: "invalid",
+        credential: null,
+      });
+    });
+
+    it("returns status invalid when claims payload contains prototype pollution keys", () => {
+      const dangerousClaims = JSON.parse('{"exp": 200000, "__proto__": {"polluted": true}}');
+      const token = makeJwt(dangerousClaims);
+      expect(inspectRelayCredential(token)).toEqual({
+        status: "invalid",
+        credential: null,
+      });
+    });
   });
 
   describe("try-catch error handling for base64 decoding and JSON parsing", () => {

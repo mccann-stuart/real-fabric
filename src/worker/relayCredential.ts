@@ -1,4 +1,5 @@
 import type { RelayCredentialStatus } from "../shared/contracts";
+import { hasDangerousPrototypeKeys } from "./validation";
 
 /**
  * Cloudflare draft-16 accepts only tokens registered against an isolated relay.
@@ -38,6 +39,9 @@ export function inspectRelayCredential(
   const credential = secret.trim();
   if (!credential) return { status: "missing", credential: null };
 
+  // Enforce a upper bound on total token string length to prevent resource exhaustion (CWE-400 / CWE-770).
+  if (credential.length > 8192) return { status: "invalid", credential: null };
+
   const segments = credential.split(".");
   if (segments.length !== 3 || segments.some((segment) => !JWT_SEGMENT.test(segment))) {
     return { status: "invalid", credential: null };
@@ -48,6 +52,10 @@ export function inspectRelayCredential(
     if (!payload) return { status: "invalid", credential: null };
     const claims: unknown = JSON.parse(decodeBase64Url(payload));
     if (!claims || typeof claims !== "object" || Array.isArray(claims)) {
+      return { status: "invalid", credential: null };
+    }
+    // Security (CWE-1321): Reject dangerous prototype pollution keys in JWT payload claims.
+    if (hasDangerousPrototypeKeys(claims)) {
       return { status: "invalid", credential: null };
     }
     const expiresAtSeconds = (claims as Record<string, unknown>).exp;
