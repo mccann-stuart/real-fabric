@@ -518,7 +518,7 @@ describe("request validation", () => {
       } satisfies Partial<HttpError>);
     });
 
-    it("throws HttpError 400 invalid_json when request body contains dangerous prototype pollution keys", async () => {
+    it("throws HttpError 400 invalid_json when request body contains dangerous prototype pollution keys or excessive depth", async () => {
       const dangerousBodies = [
         '{"__proto__": {"admin": true}}',
         '{"constructor": {"prototype": {"admin": true}}}',
@@ -539,6 +539,22 @@ describe("request validation", () => {
           message: "Dangerous object key in request body.",
         } satisfies Partial<HttpError>);
       }
+
+      // Deeply nested payload exceeding 32 levels of nesting (CWE-674 / CWE-400)
+      let deeplyNestedObj: Record<string, unknown> = { key: "value" };
+      for (let i = 0; i < 35; i += 1) {
+        deeplyNestedObj = { child: deeplyNestedObj };
+      }
+      const deeplyNestedRequest = new Request("https://example.test", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(deeplyNestedObj),
+      });
+      await expect(readJsonObject(deeplyNestedRequest)).rejects.toMatchObject({
+        status: 400,
+        code: "invalid_json",
+        message: "Dangerous object key in request body.",
+      } satisfies Partial<HttpError>);
     });
 
     it("accepts valid JSON bodies containing strings that mention prototype keywords as value content", async () => {
