@@ -35,7 +35,8 @@ export class AdaptiveJitterBuffer<T> {
   underruns = 0;
   /** H6: objects discarded because their group was cancelled. */
   cancelledDrops = 0;
-  private frames: BufferedFrame<T>[] = [];
+  private frames: (BufferedFrame<T> | undefined)[] = [];
+  private headIndex = 0;
   private lastArrivalAt: number | null = null;
   private jitterMs = 0;
   private cancelledGroups = new Set<number>();
@@ -49,7 +50,8 @@ export class AdaptiveJitterBuffer<T> {
     }
 
     // Bound both insertion work and retained memory before ordering the frame.
-    if (this.frames.length >= MAXIMUM_BUFFERED_FRAMES) {
+    const activeCount = this.frames.length - this.headIndex;
+    if (activeCount >= MAXIMUM_BUFFERED_FRAMES) {
       this.lateDrops += 1;
       return;
     }
@@ -58,12 +60,12 @@ export class AdaptiveJitterBuffer<T> {
     // Maintain sequence order with O(1) fast-path push for in-order arrivals and
     // backward search for out-of-order frames, eliminating O(N log N) sorting per frame.
     const len = this.frames.length;
-    const lastFrame = this.frames[len - 1];
-    if (len === 0 || (lastFrame && frame.sequence > lastFrame.sequence)) {
+    const lastFrame = len > this.headIndex ? this.frames[len - 1] : undefined;
+    if (activeCount === 0 || (lastFrame && frame.sequence > lastFrame.sequence)) {
       this.frames.push(frame);
     } else {
       let i = len - 1;
-      while (i >= 0) {
+      while (i >= this.headIndex) {
         const candidate = this.frames[i];
         if (candidate && candidate.sequence <= frame.sequence) {
           if (candidate.sequence === frame.sequence) {
@@ -97,16 +99,16 @@ export class AdaptiveJitterBuffer<T> {
     // ⚡ Bolt Optimization: Fast-path check for stale frames before looping.
     // If head frame is not stale, no frame is stale in ordered arrival, eliminating array compaction overhead.
     const staleBefore = frame.receivedAt - this.maximumMs;
-    const firstFrame = this.frames[0];
+    const firstFrame = this.frames[this.headIndex];
     if (firstFrame && firstFrame.receivedAt < staleBefore) {
       let writeIndex = 0;
       let prunedCount = 0;
-      for (let readIndex = 0; readIndex < this.frames.length; readIndex += 1) {
+      for (let readIndex = this.headIndex; readIndex < this.frames.length; readIndex += 1) {
         const candidate = this.frames[readIndex];
         if (candidate && candidate.receivedAt < staleBefore) {
           prunedCount += 1;
         } else if (candidate) {
-          if (writeIndex !== readIndex) {
+          if (writeIndex !== readIndex - this.headIndex) {
             this.frames[writeIndex] = candidate;
           }
           writeIndex += 1;
@@ -115,32 +117,43 @@ export class AdaptiveJitterBuffer<T> {
       if (prunedCount > 0) {
         this.lateDrops += prunedCount;
         this.frames.length = writeIndex;
+        this.headIndex = 0;
       }
     }
   }
 
   pull(now: number): T | undefined {
-    // ⚡ Bolt Optimization: O(1) fast-path head check for standard in-order audio playback (50Hz hot path).
-    // Avoids findIndex linear predicate call when oldest frame is ready.
-    const head = this.frames[0];
-    let index = -1;
+    // ⚡ Bolt Optimization: O(1) head offset pointer (`headIndex`) avoids Array.prototype.shift()
+    // re-indexing overhead on 50Hz audio frame playback.
+    const activeCount = this.frames.length - this.headIndex;
+    if (activeCount === 0) {
+      this.underruns += 1;
+      if (this.underruns % 8 === 0) {
+        this.jitterMs += AUDIO_FRAME_DURATION_MS / 2;
+        this.retarget();
+      }
+      return undefined;
+    }
+
     const targetCutoff = now - this.targetMs;
+    const head = this.frames[this.headIndex];
+    let relativeIndex = -1;
     if (head && head.receivedAt <= targetCutoff) {
-      index = 0;
+      relativeIndex = 0;
     } else {
       // ⚡ Bolt Optimization: Use explicit loop instead of findIndex to avoid closure allocation
       // on out-of-order/underrun paths.
       const len = this.frames.length;
-      for (let i = 1; i < len; i += 1) {
+      for (let i = this.headIndex + 1; i < len; i += 1) {
         const frame = this.frames[i];
         if (frame && frame.receivedAt <= targetCutoff) {
-          index = i;
+          relativeIndex = i - this.headIndex;
           break;
         }
       }
     }
 
-    if (index < 0) {
+    if (relativeIndex < 0) {
       this.underruns += 1;
       // A run of underruns means the target is too tight for this path.
       if (this.underruns % 8 === 0) {
@@ -150,10 +163,23 @@ export class AdaptiveJitterBuffer<T> {
       return undefined;
     }
 
-    if (index === 0) {
-      return this.frames.shift()?.value;
+    if (relativeIndex === 0) {
+      const frame = this.frames[this.headIndex];
+      this.frames[this.headIndex] = undefined;
+      this.headIndex += 1;
+      if (this.headIndex >= this.frames.length) {
+        this.frames.length = 0;
+        this.headIndex = 0;
+      } else if (this.headIndex >= 16) {
+        this.frames = this.frames.slice(this.headIndex);
+        this.headIndex = 0;
+      }
+      return frame?.value;
     }
-    return this.frames.splice(index, 1)[0]?.value;
+
+    const absIndex = this.headIndex + relativeIndex;
+    const frame = this.frames.splice(absIndex, 1)[0];
+    return frame?.value;
   }
 
   /**
@@ -162,20 +188,19 @@ export class AdaptiveJitterBuffer<T> {
    */
   cancelGroup(groupId: number): number {
     this.cancelledGroups.add(groupId);
-    const before = this.frames.length;
+    const before = this.frames.length - this.headIndex;
     // ⚡ Bolt Optimization: In-place filtering to avoid allocating new array during cancellation.
     let writeIndex = 0;
-    for (let readIndex = 0; readIndex < this.frames.length; readIndex += 1) {
+    for (let readIndex = this.headIndex; readIndex < this.frames.length; readIndex += 1) {
       const candidate = this.frames[readIndex];
       if (candidate && candidate.groupId !== groupId) {
-        if (writeIndex !== readIndex) {
-          this.frames[writeIndex] = candidate;
-        }
+        this.frames[writeIndex] = candidate;
         writeIndex += 1;
       }
     }
     const dropped = before - writeIndex;
     this.frames.length = writeIndex;
+    this.headIndex = 0;
     this.cancelledDrops += dropped;
 
     // Bound the cancellation memory; groups are monotonic and one second long.
@@ -203,17 +228,18 @@ export class AdaptiveJitterBuffer<T> {
   /** FR3: rebuild this track's buffer, used at a silence after bad drift. */
   clear(): void {
     this.frames = [];
+    this.headIndex = 0;
     this.lastArrivalAt = null;
     this.jitterMs = 0;
     this.targetMs = this.nominalMs;
   }
 
   get depth(): number {
-    return this.frames.length;
+    return Math.max(0, this.frames.length - this.headIndex);
   }
 
   get depthMs(): number {
-    return this.frames.length * AUDIO_FRAME_DURATION_MS;
+    return this.depth * AUDIO_FRAME_DURATION_MS;
   }
 
   /** H15: jitter is only exposed once an arrival interval has been observed. */
