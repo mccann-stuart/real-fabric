@@ -21,11 +21,21 @@ const JWT_SEGMENT = /^[A-Za-z0-9_-]+$/;
  * The relay remains the signature authority; decoding `exp` here is not JWT
  * verification and does not resolve the relay-wide scope of this credential.
  */
+const MAX_RELAY_TOKEN_LENGTH = 4096;
+
 export function inspectRelayCredential(
   secret: string | undefined,
   nowMs = Date.now(),
 ): RelayCredentialInspection {
-  const credential = secret?.trim();
+  if (!secret) return { status: "missing", credential: null };
+
+  // Enforce raw string length bound before trimming or regex splitting
+  // to prevent CPU/memory resource exhaustion on huge inputs (CWE-20 / CWE-400).
+  if (secret.length > MAX_RELAY_TOKEN_LENGTH) {
+    return { status: "invalid", credential: null };
+  }
+
+  const credential = secret.trim();
   if (!credential) return { status: "missing", credential: null };
 
   const segments = credential.split(".");

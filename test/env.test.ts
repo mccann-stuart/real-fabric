@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { configFlag, configValue } from "../src/worker/env";
+import { inspectRelayCredential } from "../src/worker/relayCredential";
 
 describe("env configuration helpers", () => {
   describe("configValue", () => {
@@ -23,6 +24,29 @@ describe("env configuration helpers", () => {
       expect(configFlag("1")).toBe(false);
       expect(configFlag("yes")).toBe(false);
       expect(configFlag("")).toBe(false);
+    });
+  });
+
+  describe("inspectRelayCredential", () => {
+    it("returns status 'missing' for empty or undefined tokens", () => {
+      expect(inspectRelayCredential(undefined)).toEqual({ status: "missing", credential: null });
+      expect(inspectRelayCredential("   ")).toEqual({ status: "missing", credential: null });
+    });
+
+    it("returns status 'invalid' for tokens exceeding maximum length (4096 chars)", () => {
+      const hugeToken = "a".repeat(4097);
+      expect(inspectRelayCredential(hugeToken)).toEqual({ status: "invalid", credential: null });
+    });
+
+    it("returns status 'invalid' for malformed tokens", () => {
+      expect(inspectRelayCredential("not.a.valid.jwt")).toEqual({
+        status: "invalid",
+        credential: null,
+      });
+      expect(inspectRelayCredential("invalid-token-format")).toEqual({
+        status: "invalid",
+        credential: null,
+      });
     });
   });
 });
