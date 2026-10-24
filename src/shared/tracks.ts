@@ -55,9 +55,15 @@ export interface FanOut {
   subscribedTracks: number;
 }
 
-export function fanOut(subscribedParticipantIds: readonly unknown[], publishing: boolean): FanOut {
+export function fanOut(
+  subscribedParticipantIds: number | readonly unknown[],
+  publishing: boolean,
+): FanOut {
   return {
     publishedTracks: publishing ? 1 : 0,
-    subscribedTracks: subscribedParticipantIds.length,
+    subscribedTracks:
+      typeof subscribedParticipantIds === "number"
+        ? subscribedParticipantIds
+        : subscribedParticipantIds.length,
   };
 }
