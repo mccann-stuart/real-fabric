@@ -216,7 +216,9 @@ export function requiredEnum<T extends string>(
   allowed: readonly T[],
 ): T {
   const value = body[field];
-  if (typeof value !== "string" || !allowed.includes(value as T)) {
+  // Enforce a hard bound on raw string length before scanning allowed values array
+  // to prevent resource exhaustion and CPU overhead on oversized inputs (CWE-20 / CWE-400).
+  if (typeof value !== "string" || value.length > 128 || !allowed.includes(value as T)) {
     throw new HttpError(
       400,
       "invalid_request",
