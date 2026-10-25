@@ -300,7 +300,9 @@ export function RoomPage({
             </div>
           ) : null}
           {layout.prominent.length === 0 ? (
-            <p className="empty-room">No active participants are exposed.</p>
+            <p className="empty-room" role="status">
+              No active participants are exposed.
+            </p>
           ) : null}
           <div className="mobile-actions">
             <button
@@ -400,6 +402,9 @@ export function RoomPage({
             <button
               className="mobile-audio-rail__primary"
               disabled={micAction.disabled}
+              aria-busy={micAction.disabled}
+              aria-label={micAction.disabled ? `${micAction.label} (please wait)` : micAction.label}
+              title={micAction.disabled ? `${micAction.label} (please wait)` : micAction.label}
               type="button"
               onClick={() => void startAudio()}
             >
