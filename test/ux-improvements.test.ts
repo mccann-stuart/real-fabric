@@ -1,6 +1,7 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import { storeSession } from "../src/client/api";
 import type { CapturePath } from "../src/client/audio/UniversalAudioCaptureAdapter";
 import { DemoScriptPanel } from "../src/client/components/DemoScriptPanel";
 import { FailureBanner } from "../src/client/components/FailureBanner";
@@ -16,6 +17,7 @@ import { SubscriptionGraph } from "../src/client/components/SubscriptionGraph";
 import * as useEntryFormModule from "../src/client/hooks/useEntryForm";
 import { EntryPage } from "../src/client/pages/EntryPage";
 import { PreflightPage } from "../src/client/pages/PreflightPage";
+import { RoomPage } from "../src/client/pages/RoomPage";
 import type { Participant, RoomSnapshot, RoutingPreference } from "../src/shared/contracts";
 import { notExposed } from "../src/shared/measurement";
 import { matchConfiguration } from "../src/shared/pinnedConfiguration";
@@ -851,5 +853,42 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(html).toContain('aria-label="Dismiss notice: HTTP/3 or UDP blocked"');
     expect(html).toContain('title="Dismiss notice: HTTP/3 or UDP blocked"');
     expect(html).toContain('<span aria-hidden="true">×</span>');
+  });
+
+  it("renders mobile inspector buttons on RoomPage with visual text matching aria-label for WCAG 2.5.3 compliance", () => {
+    const originalSessionStorage = globalThis.sessionStorage;
+    const store = new Map<string, string>();
+    globalThis.sessionStorage = {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => store.set(key, value),
+      removeItem: (key: string) => store.delete(key),
+      clear: () => store.clear(),
+      length: 0,
+      key: () => null,
+    };
+
+    try {
+      const code = "TEST1234567890123456";
+      storeSession({
+        code,
+        participantId: "human-1",
+        rejoinToken: "token-1",
+        displayName: "Ada",
+      });
+
+      const html = renderToStaticMarkup(
+        React.createElement(RoomPage, {
+          code,
+          configuration: TEST_CONFIGURATION,
+          navigate: () => {},
+        }),
+      );
+
+      expect(html).toContain('aria-label="Open inspector"');
+      expect(html).toContain('title="Open inspector"');
+      expect(html).toContain("Open inspector");
+    } finally {
+      globalThis.sessionStorage = originalSessionStorage;
+    }
   });
 });
