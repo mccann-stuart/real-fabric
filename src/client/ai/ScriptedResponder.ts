@@ -52,6 +52,13 @@ export class ScriptedResponder {
   private nextAnswer = 0;
   private items: ScriptedItem[] = [];
 
+  // ⚡ Bolt Optimization: Single-entry MRU cache for active (aiId, humanId) utterance counts
+  // to eliminate nested Map lookups during sequential audio object frame arrivals.
+  private lastAiId: string | null = null;
+  private lastHumanId: string | null = null;
+  private lastCount = 0;
+  private lastPerHuman: Map<string, number> | null = null;
+
   getItems(): readonly ScriptedItem[] {
     return this.items;
   }
@@ -77,12 +84,22 @@ export class ScriptedResponder {
 
   /** Called when an object arrives from a human this AI is subscribed to. */
   noteHeardUtterance(aiId: string, humanId: string): void {
+    if (aiId === this.lastAiId && humanId === this.lastHumanId && this.lastPerHuman !== null) {
+      this.lastCount += 1;
+      this.lastPerHuman.set(humanId, this.lastCount);
+      return;
+    }
     let perHuman = this.heard.get(aiId);
     if (!perHuman) {
       perHuman = new Map<string, number>();
       this.heard.set(aiId, perHuman);
     }
-    perHuman.set(humanId, (perHuman.get(humanId) ?? 0) + 1);
+    const count = (perHuman.get(humanId) ?? 0) + 1;
+    perHuman.set(humanId, count);
+    this.lastAiId = aiId;
+    this.lastHumanId = humanId;
+    this.lastCount = count;
+    this.lastPerHuman = perHuman;
   }
 
   /**
@@ -91,6 +108,9 @@ export class ScriptedResponder {
    * that pair restarts.
    */
   resetHeard(aiId: string, humanId: string): void {
+    if (aiId === this.lastAiId && humanId === this.lastHumanId) {
+      this.lastCount = 0;
+    }
     this.heard.get(aiId)?.set(humanId, 0);
   }
 
@@ -123,6 +143,10 @@ export class ScriptedResponder {
   }
 
   clear(): void {
+    this.lastAiId = null;
+    this.lastHumanId = null;
+    this.lastCount = 0;
+    this.lastPerHuman = null;
     this.heard.clear();
     this.nextAnswer = 0;
     this.items = [];
