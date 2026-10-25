@@ -137,6 +137,25 @@ describe("H2 — one independent track per participant, no mixing upstream", () 
     expect(trackKey({ namespace: "", name: "name" })).toBe("/name");
   });
 
+  it("benchmarks parseTrackName performance over 1,000,000 calls", () => {
+    const N = 1_000_000;
+    const testNames = [
+      "audio/participant-12345678-abcd",
+      "presence/participant-87654321-dcba",
+      "other/participant-invalid",
+    ];
+    const start = performance.now();
+    for (let i = 0; i < N; i += 1) {
+      const name = testNames[i % 3];
+      if (name) parseTrackName(name);
+    }
+    const duration = performance.now() - start;
+    expect(parseTrackName("audio/p1")).toEqual({ kind: "audio", participantId: "p1" });
+    expect(parseTrackName("presence/p2")).toEqual({ kind: "presence", participantId: "p2" });
+    expect(parseTrackName("other/p3")).toBeNull();
+    console.log(`[BENCHMARK] parseTrackName (${N} ops): ${duration.toFixed(2)} ms`);
+  });
+
   it("keeps the uplink at one track regardless of audience size", () => {
     expect(fanOut(["a", "b", "c"], true)).toEqual({ publishedTracks: 1, subscribedTracks: 3 });
     expect(fanOut(new Array(50).fill("x"), true).publishedTracks).toBe(1);
