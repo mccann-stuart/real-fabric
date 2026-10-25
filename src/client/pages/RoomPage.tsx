@@ -311,8 +311,8 @@ export function RoomPage({
               title={inspectorOpen ? "Close inspector" : "Open inspector"}
               onClick={() => setInspectorOpen((open) => !open)}
             >
-              {inspectorOpen ? "Close inspector" : "Open inspector "}
-              {!inspectorOpen ? <span aria-hidden="true">→</span> : null}
+              {inspectorOpen ? "Close inspector" : "Open inspector"}
+              {!inspectorOpen ? <span aria-hidden="true"> →</span> : null}
             </button>
           </div>
         </section>
@@ -438,7 +438,7 @@ export function RoomPage({
             title={inspectorOpen ? "Close inspector" : "Open inspector"}
             onClick={() => setInspectorOpen((open) => !open)}
           >
-            Inspector
+            {inspectorOpen ? "Close inspector" : "Open inspector"}
           </button>
           <button
             className="mobile-audio-rail__danger"
