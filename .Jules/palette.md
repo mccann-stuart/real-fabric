@@ -9,3 +9,7 @@
 ## 2026-10-18 - Pair unobservable metric tooltips with `role="note"` and `aria-label`
 **Learning:** `span` elements using `title` attributes for tooltips on unobservable metrics ("Not exposed") do not announce the explanation reason to screen readers, and adding `aria-label` directly to generic spans triggers linting errors.
 **Action:** Annotate unobservable measurement spans with `role="note"` and `aria-label={`${NOT_EXPOSED}: ${measurement.reason}`}` to expose technical reasons to assistive technology while keeping visual presentation identical.
+
+## 2026-10-18 - Pass capability context to status indicators in grid layouts
+**Learning:** Generic status indicators using `role="status"` with `aria-label="Status: Ready"` override visible text with uncontextualised state descriptions, causing screen readers in grid layouts to hear repeated "Status: Ready" without knowing which capability item is being described.
+**Action:** Always accept an optional capability label in status components to construct contextual ARIA labels (e.g. `aria-label={`${label}: ${statusText}`}`) so assistive technology announces both the capability name and state.

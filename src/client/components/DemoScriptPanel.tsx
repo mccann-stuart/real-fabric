@@ -130,7 +130,9 @@ export function DemoScriptPanel({
               className={`demo-step demo-step--${result?.outcome ?? "pending"}${isCurrent ? " demo-step--current" : ""}`}
               aria-current={isCurrent ? "step" : undefined}
             >
-              <time>{formatCue(step.atSeconds)}</time>
+              <time dateTime={`PT${Math.floor(step.atSeconds / 60)}M${step.atSeconds % 60}S`}>
+                {formatCue(step.atSeconds)}
+              </time>
               <span>{step.action}</span>
               <em className="demo-step__outcome">{describe(result)}</em>
             </li>

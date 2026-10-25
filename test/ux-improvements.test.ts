@@ -656,6 +656,7 @@ describe("Micro-UX & Accessibility Improvements", () => {
 
     expect(idleHtml).toContain('aria-label="Start run 1"');
     expect(idleHtml).toContain('title="Start run 1"');
+    expect(idleHtml).toContain('<time dateTime="PT0M0S">0:00</time>');
 
     const html = renderToStaticMarkup(
       React.createElement(DemoScriptPanel, {
@@ -724,6 +725,8 @@ describe("Micro-UX & Accessibility Improvements", () => {
 
     expect(html).toContain("Required capabilities");
     expect(html).toContain("Optional enhancements");
+    expect(html).toContain('aria-label="Secure context: Ready"');
+    expect(html).toContain('aria-label="HTTP/3 and QUIC: Ready"');
   });
 
   it("shows actual subscription and consent states without treating missing routing as off", () => {
