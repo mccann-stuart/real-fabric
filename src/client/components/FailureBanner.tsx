@@ -23,6 +23,8 @@ export function FailureBanner({
     <section
       className={`failure-banner failure-banner--${failure.severity}`}
       role={failure.severity === "blocking" ? "alert" : "status"}
+      aria-live={failure.severity === "blocking" ? "assertive" : "polite"}
+      aria-atomic="true"
       data-failure={code}
     >
       <div className="failure-banner__head">
