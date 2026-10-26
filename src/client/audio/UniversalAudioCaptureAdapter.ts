@@ -157,19 +157,30 @@ export class PcmFrameAssembler {
       this.hasTimestamp = true;
     }
 
+    // Fast-path: Exact 20ms frame quantum when pending buffer is empty.
+    // Bypasses pending buffer set while keeping owner-isolated Float32Array clone via .slice().
+    if (this.pendingSamples === 0 && samples.length === CAPTURE_FRAME_SAMPLES) {
+      onFrame(samples.slice(), this.nextTimestamp);
+      this.nextTimestamp += AUDIO_FRAME_DURATION_MS * 1_000;
+      return;
+    }
+
     let sourceOffset = 0;
-    while (sourceOffset < samples.length) {
-      const copied = Math.min(
-        CAPTURE_FRAME_SAMPLES - this.pendingSamples,
-        samples.length - sourceOffset,
-      );
-      this.pending.set(samples.subarray(sourceOffset, sourceOffset + copied), this.pendingSamples);
+    const len = samples.length;
+    while (sourceOffset < len) {
+      const copied = Math.min(CAPTURE_FRAME_SAMPLES - this.pendingSamples, len - sourceOffset);
+      if (sourceOffset === 0 && copied === len) {
+        this.pending.set(samples, this.pendingSamples);
+      } else {
+        this.pending.set(
+          samples.subarray(sourceOffset, sourceOffset + copied),
+          this.pendingSamples,
+        );
+      }
       this.pendingSamples += copied;
       sourceOffset += copied;
 
       if (this.pendingSamples === CAPTURE_FRAME_SAMPLES) {
-        // Performance optimization (⚡ Bolt): Re-use / zero-copy subarray view when pending buffer is exact or full,
-        // using slice only on frame emission to pass owner-isolated Float32Array without extra temporary copies.
         onFrame(this.pending.slice(), this.nextTimestamp);
         this.pendingSamples = 0;
         this.nextTimestamp += AUDIO_FRAME_DURATION_MS * 1_000;
