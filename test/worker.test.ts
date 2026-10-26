@@ -619,6 +619,28 @@ describe("Real Fabric Worker", () => {
     const closeEvent3 = await closed3;
     expect(closeEvent3.code).toBe(4401);
     expect(closeEvent3.reason).toBe("participant control credentials required");
+
+    // Test case 4: control characters in participantId
+    const response4 = await SELF.fetch(
+      `https://real-fabric.test/api/rooms/${created.room.code}/events`,
+      { headers: { upgrade: "websocket" } },
+    );
+    expect(response4.status).toBe(101);
+    const socket4 = response4.webSocket as WebSocket;
+    socket4.accept();
+
+    const closed4 = nextClose(socket4);
+    socket4.send(
+      JSON.stringify({
+        type: "auth",
+        participantId: "user\x00id",
+        token: created.rejoinToken,
+      }),
+    );
+
+    const closeEvent4 = await closed4;
+    expect(closeEvent4.code).toBe(4401);
+    expect(closeEvent4.reason).toBe("participant control credentials required");
   });
 
   it("closes WebSocket connections that send binary messages or invalid post-auth messages", async () => {

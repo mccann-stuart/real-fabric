@@ -255,15 +255,16 @@ export function parseAuthPayload(payload: unknown): AuthPayloadResult {
   const participantId = p.participantId;
   const token = p.token;
 
-  // Reject control characters in credentials to prevent control character injection (CWE-20 / CWE-116).
+  // Security (CWE-20 / CWE-116 / CWE-400): Perform string presence and raw length checks before
+  // running regex pattern evaluation to prevent control character injection and mitigate CPU exhaustion.
   if (
     typeof participantId !== "string" ||
     participantId.length === 0 ||
     participantId.length > 64 ||
-    ALL_CONTROL_CHARACTERS.test(participantId) ||
     typeof token !== "string" ||
     token.length === 0 ||
     token.length > 128 ||
+    ALL_CONTROL_CHARACTERS.test(participantId) ||
     ALL_CONTROL_CHARACTERS.test(token)
   ) {
     return { success: false, error: "invalid_credentials" };
