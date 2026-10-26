@@ -840,7 +840,7 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(html).toContain("Not exposed");
   });
 
-  it("renders FailureBanner dismiss button with accessible aria-label and title", () => {
+  it("renders FailureBanner dismiss button with accessible aria-label, title and live region attributes", () => {
     const html = renderToStaticMarkup(
       React.createElement(FailureBanner, {
         code: "udp_blocked",
@@ -850,6 +850,16 @@ describe("Micro-UX & Accessibility Improvements", () => {
 
     expect(html).toContain('aria-label="Dismiss notice: HTTP/3 or UDP blocked"');
     expect(html).toContain('title="Dismiss notice: HTTP/3 or UDP blocked"');
+    expect(html).toContain('aria-live="assertive"');
+    expect(html).toContain('aria-atomic="true"');
     expect(html).toContain('<span aria-hidden="true">×</span>');
+
+    const transientHtml = renderToStaticMarkup(
+      React.createElement(FailureBanner, {
+        code: "participant_disconnected",
+      }),
+    );
+    expect(transientHtml).toContain('aria-live="polite"');
+    expect(transientHtml).toContain('aria-atomic="true"');
   });
 });
