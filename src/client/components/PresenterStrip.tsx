@@ -105,6 +105,8 @@ export function PresenterStrip({
             min={0}
             max={MAX_SIMULATED_PARTICIPANTS}
             value={simulatedHumans}
+            aria-label={`Simulated humans (0 to ${MAX_SIMULATED_PARTICIPANTS})`}
+            title={`Simulated humans (0 to ${MAX_SIMULATED_PARTICIPANTS})`}
             onChange={(event) => onSimulate(clamp(Number(event.target.value)), simulatedAis)}
           />
         </label>
@@ -116,16 +118,18 @@ export function PresenterStrip({
             min={0}
             max={MAX_SIMULATED_PARTICIPANTS}
             value={simulatedAis}
+            aria-label={`Simulated AIs (0 to ${MAX_SIMULATED_PARTICIPANTS})`}
+            title={`Simulated AIs (0 to ${MAX_SIMULATED_PARTICIPANTS})`}
             onChange={(event) => onSimulate(simulatedHumans, clamp(Number(event.target.value)))}
           />
         </label>
         {/* H10: off by default, and the counter is visible once enabled. */}
-        <label className="toggle-row">
+        <label className="toggle-row" title="Allow AI participants to respond to each other">
           <span>AI hears AI</span>
           <input
             type="checkbox"
             checked={room.aiToAi.enabled}
-            aria-label="AI hears AI"
+            aria-label="AI hears AI (allow AI participants to respond to each other)"
             onChange={(event) => onAiToAi(event.target.checked)}
           />
           <i aria-hidden="true" />
