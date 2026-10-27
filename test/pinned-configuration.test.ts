@@ -400,6 +400,22 @@ describe("pinnedConfiguration", () => {
         "desktop",
       );
     });
+
+    it("safely bounds oversized userAgent and platform inputs to prevent resource exhaustion (CWE-20 / CWE-400)", () => {
+      const MACOS_CHROME_141 =
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
+      const hugeUserAgent = `${MACOS_CHROME_141} ${"x".repeat(5000)}`;
+      const hugePlatform = `macOS ${"y".repeat(500)}`;
+
+      const match = matchConfiguration({
+        userAgent: hugeUserAgent,
+        brands: [{ brand: "Google Chrome", version: "141" }],
+        platform: hugePlatform,
+      });
+
+      expect(match.status).toBe("provisional");
+      expect(match.browser).toBe("Google Chrome 141");
+    });
   });
 
   describe("currentUserAgentFacts", () => {

@@ -128,16 +128,37 @@ export interface UserAgentFacts {
  * a Macintosh user agent reporting touch points is iPadOS in desktop mode
  * rather than an admitted Mac.
  */
+const MAX_USER_AGENT_LENGTH = 2048;
+const MAX_PLATFORM_LENGTH = 128;
+
 export function matchConfiguration(
   facts: UserAgentFacts,
   capabilityEvidence?: BrowserCapabilityEvidence,
 ): ConfigurationMatch {
-  const platform = detectPlatform(facts);
-  const device = detectDevice(facts);
+  // Enforce raw string presence and length upper-bound checks before running regexes
+  // to prevent CPU/memory resource exhaustion and ReDoS on oversized inputs (CWE-20 / CWE-400).
+  const rawUa = typeof facts.userAgent === "string" ? facts.userAgent : "";
+  const boundedUa =
+    rawUa.length > MAX_USER_AGENT_LENGTH ? rawUa.slice(0, MAX_USER_AGENT_LENGTH) : rawUa;
 
-  if (device === "iPhone") return matchIphone(facts, platform, capabilityEvidence);
+  const rawPlatform = typeof facts.platform === "string" ? facts.platform : undefined;
+  const boundedPlatform =
+    rawPlatform !== undefined && rawPlatform.length > MAX_PLATFORM_LENGTH
+      ? rawPlatform.slice(0, MAX_PLATFORM_LENGTH)
+      : rawPlatform;
 
-  const chrome = detectChrome(facts);
+  const safeFacts: UserAgentFacts = {
+    ...facts,
+    userAgent: boundedUa,
+    ...(boundedPlatform !== undefined ? { platform: boundedPlatform } : {}),
+  };
+
+  const platform = detectPlatform(safeFacts);
+  const device = detectDevice(safeFacts);
+
+  if (device === "iPhone") return matchIphone(safeFacts, platform, capabilityEvidence);
+
+  const chrome = detectChrome(safeFacts);
   if (chrome && platform === PINNED_CONFIGURATION.platform) {
     if (chrome.majorVersion < PINNED_CONFIGURATION.minimumMajorVersion) {
       return result({
@@ -163,12 +184,12 @@ export function matchConfiguration(
     });
   }
 
-  const desktopSafari = detectDesktopSafari(facts);
+  const desktopSafari = detectDesktopSafari(safeFacts);
   if (desktopSafari && platform === MACOS_SAFARI_CONFIGURATION.platform) {
     // iPadOS Safari requests desktop sites by default and then reports the same
     // Macintosh token as a Mac. Touch points are the only exposed difference,
     // and Apple ships no touch-screen Mac, so a touch-capable "Mac" fails closed.
-    if ((facts.maxTouchPoints ?? 0) > 1) {
+    if ((safeFacts.maxTouchPoints ?? 0) > 1) {
       return result({
         status: "readOnly",
         browser: `Safari ${desktopSafari.majorVersion}`,
@@ -208,8 +229,8 @@ export function matchConfiguration(
   if (platform === "iOS") {
     return result({
       status: "readOnly",
-      browser: describeUnknownBrowser(facts),
-      browserMajorVersion: detectSafari(facts)?.majorVersion ?? null,
+      browser: describeUnknownBrowser(safeFacts),
+      browserMajorVersion: detectSafari(safeFacts)?.majorVersion ?? null,
       platform,
       device,
       target: null,
@@ -219,7 +240,7 @@ export function matchConfiguration(
 
   return result({
     status: "unsupported",
-    browser: chrome ? `${chrome.brand} ${chrome.majorVersion}` : describeUnknownBrowser(facts),
+    browser: chrome ? `${chrome.brand} ${chrome.majorVersion}` : describeUnknownBrowser(safeFacts),
     browserMajorVersion: chrome?.majorVersion ?? null,
     platform,
     device,
