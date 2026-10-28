@@ -120,7 +120,7 @@ export function PresenterStrip({
           />
         </label>
         {/* H10: off by default, and the counter is visible once enabled. */}
-        <label className="toggle-row">
+        <label className="toggle-row" title="Toggle AI hears AI communication mode">
           <span>AI hears AI</span>
           <input
             type="checkbox"

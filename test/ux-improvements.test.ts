@@ -176,6 +176,7 @@ describe("Micro-UX & Accessibility Improvements", () => {
 
     expect(html).toContain('aria-label="Export sanitised session telemetry JSON"');
     expect(html).toContain('title="Export sanitised session telemetry JSON"');
+    expect(html).toContain('title="Toggle AI hears AI communication mode"');
     expect(html).toContain("Export sanitised JSON");
     expect(html).toContain('aria-hidden="true"');
     expect(html).toContain('class="turn-counter" role="status" aria-live="polite"');
@@ -623,6 +624,8 @@ describe("Micro-UX & Accessibility Improvements", () => {
     );
 
     expect(html).toContain('class="button button--compact"');
+    expect(html).toContain('aria-label="Retry room connection now"');
+    expect(html).toContain('title="Retry room connection now"');
     expect(html).toContain("Retry now");
   });
 
@@ -684,6 +687,7 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(html).toContain('title="Skip cue at 0:00"');
     expect(html).toContain('aria-label="Abandon current demo run"');
     expect(html).toContain('title="Abandon current demo run"');
+    expect(html).toContain('<time dateTime="PT0M0S">0:00</time>');
     expect(html).toContain('class="gate" role="status" aria-live="polite"');
     expect(html).toContain("1 / 2 clean runs");
   });
