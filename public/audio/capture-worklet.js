@@ -40,40 +40,81 @@ class RealFabricCapture extends AudioWorkletProcessor {
     const output = outputs[0];
     if (output?.[0]) output[0].fill(0);
     const frames = input?.[0]?.length ?? 0;
+    if (frames === 0) return !this.closed;
 
-    for (let frame = 0; frame < frames; frame += 1) {
-      if (!this.current) {
-        this.current = this.available.pop() ?? null;
-        this.offset = 0;
-      }
-      if (!this.current) {
-        this.droppedSamples += 1;
-        continue;
-      }
-      if (this.offset === 0) this.frameStart = currentFrame + frame;
+    const numChannels = input ? input.length : 0;
+    const invChannels = 1 / Math.max(1, numChannels);
 
-      let sample = 0;
-      for (let channel = 0; channel < input.length; channel += 1) {
-        sample += input[channel][frame] ?? 0;
-      }
-      this.current[this.offset] = sample / Math.max(1, input.length);
-      this.offset += 1;
+    // ⚡ Bolt Optimization: Separate fast-path for mono audio capture (99%+ of microphone inputs).
+    // Avoids repeated channel loop iteration, Math.max division, and nullish coalescing checks on every frame sample.
+    if (numChannels === 1 && input[0]) {
+      const channel0 = input[0];
+      for (let frame = 0; frame < frames; frame += 1) {
+        if (!this.current) {
+          this.current = this.available.pop() ?? null;
+          this.offset = 0;
+        }
+        if (!this.current) {
+          this.droppedSamples += 1;
+          continue;
+        }
+        if (this.offset === 0) this.frameStart = currentFrame + frame;
 
-      if (this.offset === FRAME_SAMPLES) {
-        const complete = this.current;
-        this.current = this.available.pop() ?? null;
-        this.offset = 0;
-        const droppedFrames = Math.floor(this.droppedSamples / FRAME_SAMPLES);
-        this.droppedSamples %= FRAME_SAMPLES;
-        this.port.postMessage(
-          {
-            type: "frame",
-            buffer: complete.buffer,
-            timestamp: (this.frameStart / sampleRate) * 1_000_000,
-            droppedFrames,
-          },
-          [complete.buffer],
-        );
+        this.current[this.offset] = channel0[frame];
+        this.offset += 1;
+
+        if (this.offset === FRAME_SAMPLES) {
+          const complete = this.current;
+          this.current = this.available.pop() ?? null;
+          this.offset = 0;
+          const droppedFrames = Math.floor(this.droppedSamples / FRAME_SAMPLES);
+          this.droppedSamples %= FRAME_SAMPLES;
+          this.port.postMessage(
+            {
+              type: "frame",
+              buffer: complete.buffer,
+              timestamp: (this.frameStart / sampleRate) * 1_000_000,
+              droppedFrames,
+            },
+            [complete.buffer],
+          );
+        }
+      }
+    } else {
+      for (let frame = 0; frame < frames; frame += 1) {
+        if (!this.current) {
+          this.current = this.available.pop() ?? null;
+          this.offset = 0;
+        }
+        if (!this.current) {
+          this.droppedSamples += 1;
+          continue;
+        }
+        if (this.offset === 0) this.frameStart = currentFrame + frame;
+
+        let sample = 0;
+        for (let channel = 0; channel < numChannels; channel += 1) {
+          sample += input[channel][frame];
+        }
+        this.current[this.offset] = sample * invChannels;
+        this.offset += 1;
+
+        if (this.offset === FRAME_SAMPLES) {
+          const complete = this.current;
+          this.current = this.available.pop() ?? null;
+          this.offset = 0;
+          const droppedFrames = Math.floor(this.droppedSamples / FRAME_SAMPLES);
+          this.droppedSamples %= FRAME_SAMPLES;
+          this.port.postMessage(
+            {
+              type: "frame",
+              buffer: complete.buffer,
+              timestamp: (this.frameStart / sampleRate) * 1_000_000,
+              droppedFrames,
+            },
+            [complete.buffer],
+          );
+        }
       }
     }
 
