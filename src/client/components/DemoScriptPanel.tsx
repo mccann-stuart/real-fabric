@@ -130,7 +130,7 @@ export function DemoScriptPanel({
               className={`demo-step demo-step--${result?.outcome ?? "pending"}${isCurrent ? " demo-step--current" : ""}`}
               aria-current={isCurrent ? "step" : undefined}
             >
-              <time>{formatCue(step.atSeconds)}</time>
+              <time dateTime={formatIsoDuration(step.atSeconds)}>{formatCue(step.atSeconds)}</time>
               <span>{step.action}</span>
               <em className="demo-step__outcome">{describe(result)}</em>
             </li>
@@ -149,4 +149,10 @@ function describe(result: StepResult | undefined): string {
 function formatCue(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
   return `${minutes}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+function formatIsoDuration(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return `PT${minutes}M${remainingSeconds}S`;
 }
