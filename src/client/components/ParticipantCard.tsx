@@ -241,8 +241,17 @@ function Toggle({
   );
 }
 
+// ⚡ Bolt Optimization: Cache slugified activity strings to eliminate string allocations
+// and regex execution overhead on every ParticipantCard render in the participant grid.
+const SLUG_CACHE = new Map<string, string>();
+
 function slug(value: string): string {
-  return value.toLowerCase().replace(/\s+/g, "-");
+  let result = SLUG_CACHE.get(value);
+  if (result === undefined) {
+    result = value.toLowerCase().replace(/\s+/g, "-");
+    SLUG_CACHE.set(value, result);
+  }
+  return result;
 }
 
 function subscriptionLabel(status: TrackSubscriptionState["status"]): string {
