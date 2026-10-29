@@ -9,3 +9,7 @@
 ## 2026-10-18 - Pair unobservable metric tooltips with `role="note"` and `aria-label`
 **Learning:** `span` elements using `title` attributes for tooltips on unobservable metrics ("Not exposed") do not announce the explanation reason to screen readers, and adding `aria-label` directly to generic spans triggers linting errors.
 **Action:** Annotate unobservable measurement spans with `role="note"` and `aria-label={`${NOT_EXPOSED}: ${measurement.reason}`}` to expose technical reasons to assistive technology while keeping visual presentation identical.
+
+## 2026-10-25 - Maintain WCAG 2.5.3 (Label in Name) when supplementing text buttons with `aria-label`
+**Learning:** When supplementing buttons with `aria-label` to provide screen reader context, the `aria-label` must begin with or contain the exact visible inner text (e.g. `aria-label="Retry now — reconnect to room"` for `"Retry now"`). Deviating from the visible text breaks speech recognition software and voice-command navigation.
+**Action:** Always ensure the visible button label appears at the start of any `aria-label`, and avoid redundant `title` attributes on text buttons to prevent UI tooltip clutter.

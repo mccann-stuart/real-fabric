@@ -532,7 +532,7 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(mutedHtml).toContain('title="Unmute microphone"');
   });
 
-  it("renders styled retry button in RoomStatusStack terminal phase", () => {
+  it("renders styled retry button in RoomStatusStack terminal phase with accessible attributes", () => {
     const html = renderToStaticMarkup(
       React.createElement(RoomStatusStack, {
         configuration: TEST_CONFIGURATION,
@@ -623,6 +623,7 @@ describe("Micro-UX & Accessibility Improvements", () => {
     );
 
     expect(html).toContain('class="button button--compact"');
+    expect(html).toContain('aria-label="Retry now — reconnect to room"');
     expect(html).toContain("Retry now");
   });
 
