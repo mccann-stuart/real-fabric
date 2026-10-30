@@ -711,6 +711,37 @@ describe("Real Fabric Worker", () => {
     expect((await closed).code).toBe(1009);
   });
 
+  it("rejects oversized post-authentication WebSocket messages", async () => {
+    const createdResponse = await SELF.fetch("https://real-fabric.test/api/rooms", {
+      method: "POST",
+      headers: { "content-type": "application/json", "cf-connecting-ip": "192.0.2.153" },
+      body: JSON.stringify({ displayName: "Alan" }),
+    });
+    const created = (await createdResponse.json()) as CreateRoomResponse;
+    const response = await SELF.fetch(
+      `https://real-fabric.test/api/rooms/${created.room.code}/events`,
+      { headers: { upgrade: "websocket" } },
+    );
+    expect(response.status).toBe(101);
+    const socket = response.webSocket as WebSocket;
+    socket.accept();
+
+    socket.send(
+      JSON.stringify({
+        type: "auth",
+        participantId: created.participant.id,
+        token: created.rejoinToken,
+      }),
+    );
+    await nextMessage(socket);
+
+    const closed = nextClose(socket);
+    socket.send("x".repeat(513));
+    const closeEvent = await closed;
+    expect(closeEvent.code).toBe(1009);
+    expect(closeEvent.reason).toBe("control message too large");
+  });
+
   it("closes a connection whose initial authentication deadline expires", async () => {
     const createdResponse = await SELF.fetch("https://real-fabric.test/api/rooms", {
       method: "POST",
