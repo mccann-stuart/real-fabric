@@ -16,9 +16,26 @@ import { SubscriptionGraph } from "../src/client/components/SubscriptionGraph";
 import * as useEntryFormModule from "../src/client/hooks/useEntryForm";
 import { EntryPage } from "../src/client/pages/EntryPage";
 import { PreflightPage } from "../src/client/pages/PreflightPage";
+import { RoomPage } from "../src/client/pages/RoomPage";
 import type { Participant, RoomSnapshot, RoutingPreference } from "../src/shared/contracts";
 import { notExposed } from "../src/shared/measurement";
 import { matchConfiguration } from "../src/shared/pinnedConfiguration";
+
+const storage = new Map<string, string>();
+const mockSessionStorage = {
+  getItem: (key: string) => storage.get(key) ?? null,
+  setItem: (key: string, value: string) => storage.set(key, String(value)),
+  removeItem: (key: string) => storage.delete(key),
+  clear: () => storage.clear(),
+};
+
+if (typeof globalThis.sessionStorage === "undefined") {
+  Object.defineProperty(globalThis, "sessionStorage", {
+    value: mockSessionStorage,
+    writable: true,
+    configurable: true,
+  });
+}
 
 const TEST_CONFIGURATION = matchConfiguration({
   userAgent: "Mozilla/5.0 (Macintosh) Chrome/141.0.0.0 Safari/537.36",
@@ -532,7 +549,7 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(mutedHtml).toContain('title="Unmute microphone"');
   });
 
-  it("renders styled retry button in RoomStatusStack terminal phase", () => {
+  it("renders styled retry button in RoomStatusStack terminal phase with accessible ARIA label and title tooltip", () => {
     const html = renderToStaticMarkup(
       React.createElement(RoomStatusStack, {
         configuration: TEST_CONFIGURATION,
@@ -623,7 +640,23 @@ describe("Micro-UX & Accessibility Improvements", () => {
     );
 
     expect(html).toContain('class="button button--compact"');
+    expect(html).toContain('aria-label="Retry connection now"');
+    expect(html).toContain('title="Retry connection now"');
     expect(html).toContain("Retry now");
+  });
+
+  it("renders RoomPage join gate button with accessible aria-label and title tooltip", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(RoomPage, {
+        code: "TEST1234567890123456",
+        configuration: TEST_CONFIGURATION,
+        navigate: () => {},
+      }),
+    );
+
+    expect(html).toContain('aria-label="Join room TEST1234567890123456"');
+    expect(html).toContain('title="Join room TEST1234567890123456"');
+    expect(html).toContain("Join room");
   });
 
   it("renders PreflightPage test microphone button with default text", () => {

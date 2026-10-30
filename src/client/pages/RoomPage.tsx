@@ -223,6 +223,8 @@ export function RoomPage({
         <button
           className="button button--primary"
           type="button"
+          aria-label={`Join room ${code}`}
+          title={`Join room ${code}`}
           onClick={() => navigate(`/?room=${code}`)}
         >
           Join room
@@ -401,6 +403,9 @@ export function RoomPage({
               className="mobile-audio-rail__primary"
               disabled={micAction.disabled}
               type="button"
+              aria-busy={micAction.disabled}
+              aria-label={micAction.disabled ? `${micAction.label} (please wait)` : micAction.label}
+              title={micAction.disabled ? `${micAction.label} (please wait)` : micAction.label}
               onClick={() => void startAudio()}
             >
               {micAction.label}
