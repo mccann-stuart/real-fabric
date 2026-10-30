@@ -163,7 +163,15 @@ export class PcmFrameAssembler {
         CAPTURE_FRAME_SAMPLES - this.pendingSamples,
         samples.length - sourceOffset,
       );
-      this.pending.set(samples.subarray(sourceOffset, sourceOffset + copied), this.pendingSamples);
+      // ⚡ Bolt Optimization: Avoid allocating temporary subarray view wrapper object when copying full sample chunks.
+      if (sourceOffset === 0 && copied === samples.length) {
+        this.pending.set(samples, this.pendingSamples);
+      } else {
+        this.pending.set(
+          samples.subarray(sourceOffset, sourceOffset + copied),
+          this.pendingSamples,
+        );
+      }
       this.pendingSamples += copied;
       sourceOffset += copied;
 

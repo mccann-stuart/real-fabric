@@ -38,3 +38,7 @@
 ## 2026-11-28 - Single-Pass Telemetry Aggregation in RoomSession Metrics
 **Learning:** `RoomSession.metrics()` was performing multiple array transformations (`players.map(...)` for participant IDs, `players.map(...)` for object stats, and `players.filter(...)` for active decoders) on every telemetry measurement tick. Updating `fanOut` to accept `readonly unknown[]` and accumulating active decoders and object stats directly in a single `for` loop over `players` eliminates intermediate array allocations and reduces execution time by ~36% (from ~550ms to ~350ms per 100k calls).
 **Action:** Consolidate multiple array mapping/filtering operations into a single direct pass when calculating aggregate session metrics.
+
+## 2026-12-01 - Avoid Object and Subarray View Allocations on Audio Hot Paths
+**Learning:** `DriftEstimator.observe` runs at 50Hz per audio track. Allocating an `{ mediaTimestampMs, outputTimeMs }` object on every frame when the sample interval (250ms) has not elapsed creates ~50 temporary object allocations per second per track. Using scalar primitive properties (`lastObservedMediaTime` and `lastObservedOutputTime`) avoids 92% of object allocations. Similarly, in `PcmFrameAssembler.push`, calling `.subarray()` on full-span sample chunks created unnecessary `Float32Array` view wrapper objects before `set()`.
+**Action:** Use scalar primitives for tracking previous observation values on high-frequency streams, and pass TypedArrays directly to `.set()` when copying whole spans rather than creating `.subarray()` views.
