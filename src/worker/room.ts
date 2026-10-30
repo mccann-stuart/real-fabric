@@ -661,13 +661,14 @@ export class Room extends DurableObject<Env> {
       return;
     }
 
+    if (message.length > CONTROL_AUTH_MESSAGE_MAX_LENGTH) {
+      socket.close(1009, "control message too large");
+      return;
+    }
+
     const attachment = socket.deserializeAttachment() as SocketAttachment | null;
 
     if (!attachment?.participantId) {
-      if (message.length > CONTROL_AUTH_MESSAGE_MAX_LENGTH) {
-        socket.close(1009, "authentication message too large");
-        return;
-      }
       let payload: unknown;
       try {
         payload = JSON.parse(message);
