@@ -52,7 +52,10 @@ interface ClockObservation {
 
 export class DriftEstimator {
   private samples: ClockObservation[] = [];
-  private lastObserved: ClockObservation | null = null;
+  // ⚡ Bolt Optimization: Track scalar primitive properties instead of allocating an object
+  // on every 20ms audio frame arrival (50Hz hot path) when sampling interval has not elapsed.
+  private lastObservedMediaTime = -1;
+  private lastObservedOutputTime = -1;
   private estimates = 0;
   private smoothedSkewPpm = 0;
   private lastCorrection: DriftCorrection | null = null;
@@ -68,11 +71,9 @@ export class DriftEstimator {
   observe(mediaTimestampMs: number, outputTimeMs: number): void {
     if (!Number.isFinite(mediaTimestampMs) || !Number.isFinite(outputTimeMs)) return;
 
-    const observation = { mediaTimestampMs, outputTimeMs };
-    const previous = this.lastObserved;
-    if (previous) {
-      const mediaStep = mediaTimestampMs - previous.mediaTimestampMs;
-      const outputStep = outputTimeMs - previous.outputTimeMs;
+    if (this.lastObservedMediaTime >= 0) {
+      const mediaStep = mediaTimestampMs - this.lastObservedMediaTime;
+      const outputStep = outputTimeMs - this.lastObservedOutputTime;
       if (
         mediaStep <= 0 ||
         outputStep < 0 ||
@@ -81,11 +82,12 @@ export class DriftEstimator {
         this.reset();
       }
     }
-    this.lastObserved = observation;
+    this.lastObservedMediaTime = mediaTimestampMs;
+    this.lastObservedOutputTime = outputTimeMs;
 
     const lastSample = this.samples[this.samples.length - 1];
     if (!lastSample) {
-      this.samples.push(observation);
+      this.samples.push({ mediaTimestampMs, outputTimeMs });
       return;
     }
 
@@ -93,7 +95,7 @@ export class DriftEstimator {
     // points. The committed point remains the interval anchor.
     if (outputTimeMs - lastSample.outputTimeMs < DRIFT_SAMPLE_INTERVAL_MS) return;
 
-    this.samples.push(observation);
+    this.samples.push({ mediaTimestampMs, outputTimeMs });
     const keepAfter = outputTimeMs - DRIFT_WINDOW_MS;
     while (this.samples.length > 0 && (this.samples[0]?.outputTimeMs ?? outputTimeMs) < keepAfter) {
       this.samples.shift();
@@ -158,7 +160,8 @@ export class DriftEstimator {
   /** FR3: rebuild this track's buffer at the next silence. */
   reset(): void {
     this.samples = [];
-    this.lastObserved = null;
+    this.lastObservedMediaTime = -1;
+    this.lastObservedOutputTime = -1;
     this.estimates = 0;
     this.smoothedSkewPpm = 0;
     this.lastCorrection = null;
