@@ -623,6 +623,8 @@ describe("Micro-UX & Accessibility Improvements", () => {
     );
 
     expect(html).toContain('class="button button--compact"');
+    expect(html).toContain('aria-label="Retry now — reconnect to room"');
+    expect(html).toContain('title="Retry now — reconnect to room"');
     expect(html).toContain("Retry now");
   });
 
