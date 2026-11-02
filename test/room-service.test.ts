@@ -334,6 +334,23 @@ describe("H9 and §8 — consent is per human and AI pair", () => {
     });
     expect(ownerAddAiRes.status).toBe(201);
   });
+
+  it("refuses presenter actions when room owner_id is unassigned (fail-closed SEC-02)", async () => {
+    const created = await createRoom();
+    const stub = roomStub(created.room.code);
+    await runInDurableObject(stub, async (_instance: Room, state) => {
+      state.storage.sql.exec("UPDATE room_meta SET owner_id = NULL WHERE singleton = 1");
+    });
+
+    const addAiRes = await call<ApiError>(`/api/rooms/${created.room.code}/ai`, {
+      participantId: created.participant.id,
+      rejoinToken: created.rejoinToken,
+      displayName: "Rogue AI",
+      simulated: false,
+    });
+    expect(addAiRes.status).toBe(403);
+    expect(addAiRes.value.error?.code).toBe("presenter_only");
+  });
 });
 
 describe("SEC-13 — activity stays with the observing listener", () => {
