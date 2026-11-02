@@ -1140,7 +1140,9 @@ export class Room extends DurableObject<Env> {
   private async assertPresenter(credential: ParticipantCredential): Promise<ParticipantRow> {
     const row = await this.assertHuman(credential);
     const meta = this.meta();
-    if (!meta || (meta.owner_id !== null && meta.owner_id !== row.id)) {
+    // Security (SEC-02 / CWE-862): Enforce fail-closed authorization. If owner_id is null
+    // or does not match the caller, reject with 403 presenter_only.
+    if (!meta || meta.owner_id !== row.id) {
       throw roomError(403, "presenter_only", "Only the room presenter can perform this action.");
     }
     return row;
