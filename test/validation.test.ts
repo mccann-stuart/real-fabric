@@ -32,6 +32,7 @@ describe("request validation", () => {
         ["array value", { mode: ["alpha"] }],
         ["unallowed string value", { mode: "delta" }],
         ["case mismatch string value", { mode: "ALPHA" }],
+        ["oversized string value", { mode: "a".repeat(200) }],
       ];
 
       for (const [description, body] of invalidCases) {
