@@ -228,6 +228,50 @@ describe("Micro-UX & Accessibility Improvements", () => {
     expect(html).toContain('title="Press and hold (or Space/Enter) to address Ada AI"');
   });
 
+  it("disables ask-button and displays explanatory tooltip when AI is reconnecting", () => {
+    const reconnectingAi: Participant = {
+      id: "ai-1",
+      displayName: "Ada AI",
+      role: "ai",
+      state: "reconnecting",
+      address: "ai/ada",
+      simulated: false,
+      pipeline: "listening",
+      joinedAt: 1000,
+      reconnectUntil: 2000,
+      wakeName: "ada",
+      lastActiveAt: 1000,
+    };
+
+    const mockRouting: RoutingPreference[] = [
+      {
+        humanId: "human-1",
+        aiId: "ai-1",
+        hearsMe: true,
+        iHearIt: true,
+        enforcement: "cooperative",
+        updatedAt: 1000,
+      },
+    ];
+
+    const html = renderToStaticMarkup(
+      React.createElement(ParticipantCard, {
+        participant: reconnectingAi,
+        current: false,
+        viewerId: "human-1",
+        routing: mockRouting,
+        partialContext: false,
+        onRouting: () => {},
+      }),
+    );
+
+    expect(html).toContain('class="ask-button"');
+    expect(html).toContain("disabled");
+    expect(html).toContain('title="Ada AI is reconnecting"');
+    expect(html).toContain('aria-label="Hold to ask Ada AI (Ada AI is reconnecting)"');
+    expect(html).toContain('aria-describedby="ask-desc-ai-1"');
+  });
+
   it("shows a measured microphone level only while capture is available", () => {
     const human: Participant = {
       id: "human-1",

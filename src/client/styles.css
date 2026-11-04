@@ -650,6 +650,12 @@ input::placeholder {
   font: 12px var(--mono);
   margin-top: 5px;
 }
+.ask-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  background: #1c2225;
+  color: var(--muted);
+}
 .routing-controls small {
   display: block;
   padding: 5px 4px 1px;
