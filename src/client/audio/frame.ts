@@ -20,7 +20,11 @@ export function encodeAudioObject(metadata: AudioFrameMetadata, opusFrame: Uint8
   view.setUint8(0, AUDIO_FORMAT_VERSION);
   view.setUint8(1, (metadata.endOfTurn ? 1 : 0) | (metadata.cancelled ? 2 : 0));
   view.setUint32(2, metadata.participantHash);
-  view.setBigUint64(6, BigInt(metadata.mediaTimestamp));
+  // Performance optimization (⚡ Bolt): Splitting 64-bit millisecond timestamp into two 32-bit
+  // words avoids BigInt object heap allocation and slow DataView setBigUint64 on every 20ms frame.
+  const timestamp = metadata.mediaTimestamp;
+  view.setUint32(6, (timestamp / 4_294_967_296) | 0);
+  view.setUint32(10, timestamp >>> 0);
   view.setUint32(14, metadata.sequence);
   view.setUint16(18, AUDIO_FRAME_DURATION_MS);
   view.setUint16(20, opusFrame.byteLength);
@@ -45,9 +49,11 @@ export function decodeAudioObject(value: Uint8Array): {
   if (value.byteLength !== AUDIO_OBJECT_HEADER_BYTES + payloadLength)
     throw new Error("Audio object payload length does not match its header.");
   const flags = view.getUint8(1);
+  // Performance optimization (⚡ Bolt): Reconstituting 64-bit millisecond timestamp from two 32-bit
+  // words avoids temporary BigInt creation from getBigUint64 and subsequent Number() cast.
   const metadata: AudioFrameMetadata = {
     participantHash: view.getUint32(2),
-    mediaTimestamp: Number(view.getBigUint64(6)),
+    mediaTimestamp: view.getUint32(6) * 4_294_967_296 + view.getUint32(10),
     sequence: view.getUint32(14),
   };
   if (flags & 1) metadata.endOfTurn = true;

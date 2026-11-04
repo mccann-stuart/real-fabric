@@ -37,4 +37,38 @@ describe("audio object format", () => {
       cancelled: true,
     });
   });
+
+  it("accurately round-trips timestamps exceeding 32-bit integer boundaries without precision loss", () => {
+    const largeTimestamp = 1_730_720_000_123; // Epoch timestamp > 2^32
+    const encoded = encodeAudioObject(
+      { participantHash: 999, mediaTimestamp: largeTimestamp, sequence: 1 },
+      new Uint8Array([0xaa, 0xbb]),
+    );
+    const decoded = decodeAudioObject(encoded);
+    expect(decoded.metadata.mediaTimestamp).toBe(largeTimestamp);
+  });
+
+  it("benchmarks encodeAudioObject and decodeAudioObject over 100,000 frames", () => {
+    const payload = new Uint8Array(60); // 60 bytes typical 20ms Opus frame
+    const metadata = {
+      participantHash: 12345,
+      mediaTimestamp: 1_730_720_000_000,
+      sequence: 50,
+      endOfTurn: false,
+    };
+
+    const iterations = 100_000;
+    const start = performance.now();
+    for (let i = 0; i < iterations; i++) {
+      metadata.sequence = i;
+      metadata.mediaTimestamp += 20;
+      const encoded = encodeAudioObject(metadata, payload);
+      decodeAudioObject(encoded);
+    }
+    const duration = performance.now() - start;
+    console.log(
+      `[BENCHMARK] encodeAudioObject + decodeAudioObject (${iterations} ops): ${duration.toFixed(2)} ms`,
+    );
+    expect(duration).toBeGreaterThan(0);
+  });
 });
