@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  extractClientIp,
   HttpError,
   optionalString,
   parseAuthPayload,
@@ -335,6 +336,72 @@ describe("request validation", () => {
           } satisfies Partial<HttpError>);
         }
       }
+    });
+  });
+
+  describe("extractClientIp", () => {
+    it("returns trimmed IP address for valid IPv4 and IPv6 strings", () => {
+      const ipv4Req = new Request("https://example.test", {
+        headers: { "cf-connecting-ip": "192.0.2.1" },
+      });
+      expect(extractClientIp(ipv4Req)).toBe("192.0.2.1");
+
+      const ipv4PaddedReq = new Request("https://example.test", {
+        headers: { "cf-connecting-ip": "  198.51.100.250  " },
+      });
+      expect(extractClientIp(ipv4PaddedReq)).toBe("198.51.100.250");
+
+      const ipv6Req = new Request("https://example.test", {
+        headers: { "cf-connecting-ip": "2001:db8::8a2e:370:7334" },
+      });
+      expect(extractClientIp(ipv6Req)).toBe("2001:db8::8a2e:370:7334");
+    });
+
+    it("falls back to 'local' when cf-connecting-ip header is missing or empty", () => {
+      const noHeaderReq = new Request("https://example.test");
+      expect(extractClientIp(noHeaderReq)).toBe("local");
+
+      const emptyReq = new Request("https://example.test", {
+        headers: { "cf-connecting-ip": "" },
+      });
+      expect(extractClientIp(emptyReq)).toBe("local");
+
+      const whitespaceReq = new Request("https://example.test", {
+        headers: { "cf-connecting-ip": "    " },
+      });
+      expect(extractClientIp(whitespaceReq)).toBe("local");
+    });
+
+    it("falls back to 'local' when cf-connecting-ip exceeds maximum length of 64 characters", () => {
+      const oversizedReq = new Request("https://example.test", {
+        headers: { "cf-connecting-ip": "1".repeat(65) },
+      });
+      expect(extractClientIp(oversizedReq)).toBe("local");
+    });
+
+    it("falls back to 'local' when cf-connecting-ip contains control characters or whitespace", () => {
+      const validHeaderWithWhitespaceReq = new Request("https://example.test", {
+        headers: { "cf-connecting-ip": "192.0.2.1 admin" },
+      });
+      expect(extractClientIp(validHeaderWithWhitespaceReq)).toBe("local");
+
+      // For control characters that may bypass or be rejected by fetch Header validation,
+      // test with a Request mock or getter
+      const mockControlReq = {
+        headers: {
+          get: (name: string) =>
+            name.toLowerCase() === "cf-connecting-ip" ? "192.0.2.1\x00" : null,
+        },
+      } as unknown as Request;
+      expect(extractClientIp(mockControlReq)).toBe("local");
+
+      const mockDelReq = {
+        headers: {
+          get: (name: string) =>
+            name.toLowerCase() === "cf-connecting-ip" ? "192.0.2.1\x7F" : null,
+        },
+      } as unknown as Request;
+      expect(extractClientIp(mockDelReq)).toBe("local");
     });
   });
 
