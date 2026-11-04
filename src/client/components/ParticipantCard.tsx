@@ -53,17 +53,17 @@ export const ParticipantCard = memo(function ParticipantCard({
   const addressing = useRef(false);
 
   const isAi = participant.role === "ai";
-  const activity: AiDisplayActivity | "Reconnecting" | "Speaking" | "Listening" =
-    participant.state === "reconnecting"
-      ? "Reconnecting"
-      : isAi
-        ? aiDisplayActivity(participant, routing, viewerId, partialContext)
-        : speaking
-          ? "Speaking"
-          : "Listening";
+  const isReconnecting = participant.state === "reconnecting";
+  const activity: AiDisplayActivity | "Reconnecting" | "Speaking" | "Listening" = isReconnecting
+    ? "Reconnecting"
+    : isAi
+      ? aiDisplayActivity(participant, routing, viewerId, partialContext)
+      : speaking
+        ? "Speaking"
+        : "Listening";
 
   const handleAddressStart = () => {
-    if (addressing.current) return;
+    if (addressing.current || isReconnecting) return;
     addressing.current = true;
     setIsAddressing(true);
     onAddressDown?.(participant.id);
@@ -169,14 +169,21 @@ export const ParticipantCard = memo(function ParticipantCard({
           <button
             className="ask-button"
             type="button"
+            disabled={isReconnecting}
             aria-pressed={isAddressing}
             aria-describedby={`ask-desc-${participant.id}`}
             aria-label={
-              isAddressing
-                ? `Asking ${participant.displayName}; release to stop`
-                : `Hold to ask ${participant.displayName} (press and hold)`
+              isReconnecting
+                ? `Hold to ask ${participant.displayName} (${participant.displayName} is reconnecting)`
+                : isAddressing
+                  ? `Asking ${participant.displayName}; release to stop`
+                  : `Hold to ask ${participant.displayName} (press and hold)`
             }
-            title={`Press and hold (or Space/Enter) to address ${participant.displayName}`}
+            title={
+              isReconnecting
+                ? `${participant.displayName} is reconnecting`
+                : `Press and hold (or Space/Enter) to address ${participant.displayName}`
+            }
             onPointerDown={handleAddressStart}
             onPointerUp={handleAddressEnd}
             onPointerLeave={handleAddressEnd}
