@@ -1026,6 +1026,48 @@ describe("AC-14 — the sanitised export carries no identifying content", () => 
     expect(serialised).toContain("opaque-id");
     expect(serialised).not.toContain("Ada Lovelace");
   });
+
+  it("rejects oversized strings, empty strings, control characters, NaN, and prototype properties (AC-14)", () => {
+    const telemetry = new SessionTelemetry();
+
+    // 1. Oversized string (> 80 characters)
+    telemetry.record({ type: "oversized_test", value: "a".repeat(81) });
+
+    // 2. Empty string
+    telemetry.record({ type: "empty_test", value: "" });
+
+    // 3. String containing ASCII control characters (CWE-116 / CWE-20)
+    telemetry.record({ type: "control_char_null", value: "clean\x00corrupt" });
+    telemetry.record({ type: "control_char_esc", value: "clean\x1b[31mred" });
+    telemetry.record({ type: "control_char_del", value: "clean\x7fdel" });
+
+    // 4. Non-finite numbers (NaN, Infinity, -Infinity)
+    telemetry.record({ type: "nan_test", value: Number.NaN });
+    telemetry.record({ type: "inf_test", value: Number.POSITIVE_INFINITY });
+    telemetry.record({ type: "neg_inf_test", value: Number.NEGATIVE_INFINITY });
+
+    // 5. Prototype-inherited properties on event object
+    const protoObj = { value: "inherited_value", type: "proto_type" };
+    const eventWithProto = Object.create(protoObj);
+    eventWithProto.type = "own_type";
+    telemetry.record(eventWithProto);
+
+    const report = telemetry.report("ROOM") as { events: Array<Record<string, unknown>> };
+    const eventMap = new Map(report.events.map((e) => [e.type, e.value]));
+
+    expect(eventMap.get("oversized_test")).toBeUndefined();
+    expect(eventMap.get("empty_test")).toBeUndefined();
+    expect(eventMap.get("control_char_null")).toBeUndefined();
+    expect(eventMap.get("control_char_esc")).toBeUndefined();
+    expect(eventMap.get("control_char_del")).toBeUndefined();
+    expect(eventMap.get("nan_test")).toBeUndefined();
+    expect(eventMap.get("inf_test")).toBeUndefined();
+    expect(eventMap.get("neg_inf_test")).toBeUndefined();
+
+    // Own type is kept, prototype-inherited value is stripped
+    expect(eventMap.get("own_type")).toBeUndefined();
+    expect(JSON.stringify(report)).not.toContain("inherited_value");
+  });
 });
 
 describe("FR5 — bounded reconnection with a terminal state", () => {

@@ -148,7 +148,7 @@ function validObjectRateSample(sample: ObjectRateSample): boolean {
 function sanitiseEvent<Event extends Partial<TelemetryEvent>>(event: Event): Event {
   const result: Record<string, unknown> = {};
   for (const key in event) {
-    if (PERMITTED_KEYS.has(key)) {
+    if (Object.hasOwn(event, key) && PERMITTED_KEYS.has(key)) {
       const value = (event as Record<string, unknown>)[key];
       if (isProtocolValue(value)) {
         result[key] = value;
@@ -158,12 +158,26 @@ function sanitiseEvent<Event extends Partial<TelemetryEvent>>(event: Event): Eve
   return result as Event;
 }
 
+const MAX_PROTOCOL_VALUE_LENGTH = 80;
+// biome-ignore lint/suspicious/noControlCharactersInRegex: Intentionally matching control characters for telemetry sanitization
+const CONTROL_CHARACTERS = /[\x00-\x1F\x7F]/;
+
 /**
  * A value rides along only when it is plainly protocol data. Display names,
  * device labels and transcripts arrive as free text, and whitespace is what
  * separates that from a code, an opaque id or a number.
  */
 function isProtocolValue(value: unknown): boolean {
-  if (typeof value === "number" || typeof value === "boolean") return true;
-  return typeof value === "string" && !/\s/.test(value);
+  if (typeof value === "boolean") return true;
+  if (typeof value === "number") return Number.isFinite(value);
+  // Security (AC-14 / CWE-20 / CWE-116 / CWE-400): Protocol strings must be non-empty,
+  // bounded in length, free of ASCII control characters, and free of whitespace to prevent
+  // token smuggling, control character injection, or memory inflation in telemetry reports.
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= MAX_PROTOCOL_VALUE_LENGTH &&
+    !CONTROL_CHARACTERS.test(value) &&
+    !/\s/.test(value)
+  );
 }
