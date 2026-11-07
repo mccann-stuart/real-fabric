@@ -16,6 +16,7 @@ import { SubscriptionGraph } from "../src/client/components/SubscriptionGraph";
 import * as useEntryFormModule from "../src/client/hooks/useEntryForm";
 import { EntryPage } from "../src/client/pages/EntryPage";
 import { PreflightPage } from "../src/client/pages/PreflightPage";
+import { RoomPage } from "../src/client/pages/RoomPage";
 import type { Participant, RoomSnapshot, RoutingPreference } from "../src/shared/contracts";
 import { notExposed } from "../src/shared/measurement";
 import { matchConfiguration } from "../src/shared/pinnedConfiguration";
@@ -624,6 +625,34 @@ describe("Micro-UX & Accessibility Improvements", () => {
 
     expect(html).toContain('class="button button--compact"');
     expect(html).toContain("Retry now");
+    expect(html).toContain('aria-label="Retry now: attempt to reconnect to room"');
+    expect(html).toContain('title="Retry now: attempt to reconnect to room"');
+  });
+
+  it("renders RoomPage unauthenticated join gate button with accessible labels", () => {
+    vi.stubGlobal("sessionStorage", {
+      getItem: () => null,
+      setItem: () => {},
+      removeItem: () => {},
+      clear: () => {},
+      length: 0,
+      key: () => null,
+    });
+    try {
+      const html = renderToStaticMarkup(
+        React.createElement(RoomPage, {
+          code: "TEST1234",
+          configuration: TEST_CONFIGURATION,
+          navigate: () => {},
+        }),
+      );
+
+      expect(html).toContain('aria-label="Join room TEST1234"');
+      expect(html).toContain('title="Join room TEST1234"');
+      expect(html).toContain("Join room");
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("renders PreflightPage test microphone button with default text", () => {
