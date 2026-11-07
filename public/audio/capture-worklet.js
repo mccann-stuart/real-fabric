@@ -52,11 +52,22 @@ class RealFabricCapture extends AudioWorkletProcessor {
       }
       if (this.offset === 0) this.frameStart = currentFrame + frame;
 
+      // ⚡ Bolt Optimization: AudioWorklet input quanta run 375 times/sec on the 48kHz audio thread.
+      // Fast-path mono input (vast majority of microphone streams) to direct indexing without nested loops
+      // or division; for multi-channel input, pre-compute reciprocal channel multiplier to replace division
+      // with multiplication and eliminate redundant nullish coalescing branch checks on in-bounds typed arrays.
       let sample = 0;
-      for (let channel = 0; channel < input.length; channel += 1) {
-        sample += input[channel][frame] ?? 0;
+      const numChannels = input.length;
+      if (numChannels === 1) {
+        sample = input[0][frame];
+      } else if (numChannels > 1) {
+        const invChannels = 1 / numChannels;
+        for (let channel = 0; channel < numChannels; channel += 1) {
+          sample += input[channel][frame];
+        }
+        sample *= invChannels;
       }
-      this.current[this.offset] = sample / Math.max(1, input.length);
+      this.current[this.offset] = sample;
       this.offset += 1;
 
       if (this.offset === FRAME_SAMPLES) {
