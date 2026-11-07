@@ -12,6 +12,7 @@ import type { ParticipantCredential } from "./room";
 import { Room } from "./room";
 import { decodeRoomError } from "./roomError";
 import {
+  extractClientIp,
   HttpError,
   optionalString,
   readJsonObject,
@@ -355,7 +356,7 @@ function roomNotFound(): HttpError {
 }
 
 async function enforceCreationRateLimit(request: Request, env: Env): Promise<void> {
-  const address = request.headers.get("cf-connecting-ip") ?? "local";
+  const address = extractClientIp(request);
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(address));
   const key = Array.from(new Uint8Array(digest).slice(0, 8), (byte) =>
     byte.toString(16).padStart(2, "0"),
@@ -371,7 +372,7 @@ async function enforceCreationRateLimit(request: Request, env: Env): Promise<voi
 }
 
 async function enforceJoinRateLimit(request: Request, env: Env): Promise<void> {
-  const address = request.headers.get("cf-connecting-ip") ?? "local";
+  const address = extractClientIp(request);
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(address));
   const key = Array.from(new Uint8Array(digest).slice(0, 8), (byte) =>
     byte.toString(16).padStart(2, "0"),
@@ -384,7 +385,7 @@ async function enforceJoinRateLimit(request: Request, env: Env): Promise<void> {
 }
 
 async function enforceHealthRateLimit(request: Request, env: Env): Promise<void> {
-  const address = request.headers.get("cf-connecting-ip") ?? "local";
+  const address = extractClientIp(request);
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(address));
   const key = Array.from(new Uint8Array(digest).slice(0, 8), (byte) =>
     byte.toString(16).padStart(2, "0"),
