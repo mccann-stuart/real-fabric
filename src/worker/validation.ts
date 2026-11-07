@@ -295,3 +295,27 @@ export function sanitizeCorrelationId(headerValue: string | null): string {
   }
   return crypto.randomUUID();
 }
+
+/** Maximum allowed length for a client IP address string (e.g. IPv6 with scope ID). */
+const MAX_IP_HEADER_LENGTH = 64;
+
+/**
+ * Extracts and sanitizes the client IP address from the `cf-connecting-ip` header (CWE-20 / CWE-400).
+ * Enforces raw string length bounding and rejects control characters or whitespace before rate limiting hashing.
+ * Falls back safely to "local" when missing, empty, or invalid.
+ */
+export function extractClientIp(request: Request): string {
+  const headerValue = request.headers.get("cf-connecting-ip");
+  if (!headerValue || typeof headerValue !== "string") {
+    return "local";
+  }
+  // Enforce length limit before trim or regex to prevent resource exhaustion (CWE-20 / CWE-400)
+  if (headerValue.length > MAX_IP_HEADER_LENGTH) {
+    return "local";
+  }
+  const trimmed = headerValue.trim();
+  if (trimmed.length === 0 || ALL_CONTROL_CHARACTERS.test(trimmed) || /\s/.test(trimmed)) {
+    return "local";
+  }
+  return trimmed;
+}
